@@ -16,7 +16,7 @@ Built for [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), trac
 - Merchants, guild masters and five rival participants are **AI agents** with their own NEAR wallets.
 - Players sign in with email: no seed phrases, no wallet popups, no gas prompts.
 
-Full design: [`docs/Grudgebound_Plan.pdf`](docs/Grudgebound_Plan.pdf). Art direction: [`docs/ART_PROMPTS.md`](docs/ART_PROMPTS.md).
+Art direction: [`docs/ART_PROMPTS.md`](docs/ART_PROMPTS.md). Rules and judging criteria: [`docs/HACKATHON.md`](docs/HACKATHON.md).
 
 ## Try it
 
@@ -74,7 +74,7 @@ server/      game server (real-time ticks, HTTP API)
 agents/      AI agents: runtime, NEAR AI client, merchant tooltips
 client/      Next.js app hosting the Phaser 3 game (app/ pages, components/, game/ scenes)
 contracts/   Rust contracts: items (NEP-245), rite (points, rules, vows)
-docs/        plan PDF, hackathon rules, art direction and concept art
+docs/        hackathon rules, art direction and concept art
 ```
 
 ## Configuration

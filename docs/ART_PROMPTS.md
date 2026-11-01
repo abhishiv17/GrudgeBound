@@ -7,8 +7,8 @@ They work with any image generator. Copy a prompt, paste it after the style bloc
 
 ## 0. Art decisions (read first)
 
-**The style guide is the "Paper Market" image** (`docs/art/concepts/01-paper-market-STYLE-GUIDE.jpeg`).
-Attach it as a reference image to every prompt and say "match this style exactly".
+**The style guide is the paper set** (`docs/art/concepts/paper-1-town-map.jpeg` to `paper-4-battle.jpeg`).
+Attach `paper-2-explore.jpeg` (and `paper-4-battle.jpeg` for battle work) as reference images to every prompt and say "match this style exactly".
 
 | Decision | Rule |
 |---|---|
@@ -18,7 +18,8 @@ Attach it as a reference image to every prompt and say "match this style exactly
 | Emotions | Exactly three: **Rage** (red), **Sorrow** (blue), **Dread** (violet). |
 | Kessa | The paper-lantern referee spirit. **Not a Ward and not an emotion.** |
 | Wards | Lantern Ward (night market), Ash Ward (foundry), Tide Ward (docks), Bone Ward (temples and archives). |
-| Hub map | Layout of the "Rift City" map (central plaza, Rite Spire, Vow Shrine, Binding Hall, Exchange, Observatory) but in the harbor-town look. No floating islands or castles. |
+| Hub map | Follow `paper-1-town-map.jpeg`: four Wards around a central plaza (Rite Spire, Vow Shrine, Binding Hall, Exchange, Observatory), in the harbor-town look. No floating islands or castles. |
+| Player character | Must not look like any famous hero. **Avoid green tunic + pointed cap + satchel** (reads as a well-known Nintendo character). |
 | Camera in game | Top-down 3/4 view on a 32x32 grid. **Not isometric.** |
 | Text | No text inside generated images. Titles and labels are added in the game or in an editor. |
 
@@ -26,11 +27,15 @@ Attach it as a reference image to every prompt and say "match this style exactly
 
 | Image | Verdict |
 |---|---|
-| 01-paper-market-STYLE-GUIDE | Style guide. Curses of receipts, letters and ledgers; Kessa is exactly right. |
-| 02-tidepool-ledger | Good for **Tide Ward** curses only. The Mediterranean look loses the Japanese feel. |
-| 03-porcelain-pact | Charming, but a different theme. Could inspire one district. |
-| 04-ui-sheet | Use for UI layout ideas only. The animal creatures and cherry-blossom castle are off-style. Wrongly shows a "Kessa Ward". |
-| 05-world-map | Use the layout, not the look. Wrongly shows a "Kessa Ward". |
+Each set has four screens: `1-town-map`, `2-explore`, `3-market`, `4-battle`.
+
+| Set | Verdict |
+|---|---|
+| `paper-*` | **Style guide.** Paper, ink and lantern look; curses made of town objects; Ward names correct. Base all game art on this. |
+| `tide-*` | Good reference for the **Tide Ward** only (docks, sea-creature curses with coin purses). Too bright and Mediterranean for the whole game. |
+| `porcelain-*` | Use for UI layout ideas only (market and battle panels). **Do not use the player character**: the green tunic, pointed cap and satchel look too much like a famous Nintendo hero. |
+
+The first five drafts (`01-` to `05-`) were replaced by these sets and are no longer in the repo.
 
 ---
 

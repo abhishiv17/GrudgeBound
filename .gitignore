@@ -33,3 +33,6 @@ Thumbs.db
 out/
 next-env.d.ts
 *.tsbuildinfo
+
+# Internal plan document (shared with the team directly, not published)
+docs/*.pdf
