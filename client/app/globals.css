@@ -1,66 +1,145 @@
+/*
+ * Grudgebound design tokens and base styles.
+ * Palette: docs/ART_PROMPTS.md sections 0 and 2 (paper, ink, coin gold, crimson seal, three emotions).
+ * Component styles live in ./styles/*.css.
+ */
 :root {
-  --ink: #1a1726;
+  /* style guide */
   --paper: #f3e9d2;
-  --crimson: #b0153a;
+  --ink: #1a1726;
   --gold: #d9a532;
+  --crimson: #b0153a;
+  --rage: #c8402a;
+  --sorrow: #2b6cb0;
+  --dread: #6b46c1;
+
+  /* supporting tones */
+  --paper-hi: #fbf5e6;
+  --paper-2: #e9dbbb;
+  --paper-3: #d6c29a;
+  --paper-edge: #b89f73;
+  --ink-2: #2a2538;
+  --ink-3: #4a4458;
+  --ink-soft: #6b6276;
+  --gold-hi: #f6d77a;
+  --gold-dk: #9e7420;
+  --crimson-hi: #d23a5a;
+  --crimson-dk: #7e0f2a;
+  --wood: #7a4e2e;
+  --wood-dk: #4a2e1e;
+  --lantern: #f7c35c;
+  --night: #0e0b26;
+
+  /* one "art pixel" for frames and bevels */
+  --px: 4px;
+  --radius: 0;
+  --font-ui: var(--font-display), "Courier New", monospace;
+  --font-text: var(--font-body), "Courier New", monospace;
+
+  color-scheme: dark;
 }
 
-* {
+@media (max-width: 640px) {
+  :root {
+    --px: 3px;
+  }
+}
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 html,
 body {
   margin: 0;
   min-height: 100%;
-  background: var(--ink);
+}
+
+body {
+  min-height: 100dvh;
   color: var(--paper);
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-text);
+  font-size: 16px;
+  line-height: 1.45;
+  background-color: var(--ink);
+  /* ink night with a faint mosaic of diamonds and a lantern glow from above */
+  background-image:
+    radial-gradient(80% 50% at 50% -10%, rgba(247, 195, 92, 0.16), transparent 70%),
+    radial-gradient(60% 40% at 50% 110%, rgba(176, 21, 58, 0.14), transparent 70%),
+    linear-gradient(45deg, rgba(243, 233, 210, 0.025) 25%, transparent 25%, transparent 75%, rgba(243, 233, 210, 0.025) 75%),
+    linear-gradient(-45deg, rgba(243, 233, 210, 0.025) 25%, transparent 25%, transparent 75%, rgba(243, 233, 210, 0.025) 75%);
+  background-size: auto, auto, 28px 28px, 28px 28px;
+  overflow-x: hidden;
 }
 
-.page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 16px;
+h1,
+h2,
+h3 {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  line-height: 1.1;
 }
 
-.title {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
 }
 
-.title h1 {
-  margin: 0;
-  font-size: 28px;
-  letter-spacing: 1px;
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0.1em 0.35em 0.05em;
+  font: 600 0.75em/1.2 var(--font-ui);
+  text-align: center;
+  color: var(--ink);
+  background: var(--paper-2);
+  box-shadow: inset 0 -2px 0 var(--paper-edge), 0 0 0 2px var(--ink);
+  margin: 0 2px;
+  vertical-align: 0.1em;
 }
 
-.title span {
-  color: var(--gold);
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  font-size: 14px;
+::selection {
+  background: var(--gold);
+  color: var(--ink);
 }
 
-.game {
-  width: min(960px, 100%);
-  aspect-ratio: 16 / 9;
-  border: 2px solid var(--crimson);
-  border-radius: 6px;
+:focus-visible {
+  outline: 3px dashed var(--gold);
+  outline-offset: 3px;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.game canvas {
-  image-rendering: pixelated;
+[hidden] {
+  display: none !important;
 }
 
-.hint {
-  margin: 0;
-  font-size: 13px;
-  opacity: 0.75;
+/* Respect reduced motion everywhere: no bobbing, swaying, typing or sliding. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

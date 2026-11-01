@@ -1,0 +1,489 @@
+/* "Rewrite the Rules" and "Vow Shrine" panels. */
+
+/* ---- rules */
+
+.rules {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  grid-template-areas: "templates compose" "active active";
+  gap: 20px 26px;
+}
+
+.rules__templates { grid-area: templates; }
+.rules__compose { grid-area: compose; display: grid; gap: 16px; align-content: start; }
+.rules__active { grid-area: active; }
+
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(58vh, 620px);
+  overflow: auto;
+  padding: 6px 10px 8px 6px;
+  scrollbar-color: var(--paper-edge) transparent;
+}
+
+.template {
+  --px: 2px;
+  --f: var(--paper-edge);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "id text" "id tags";
+  gap: 2px 10px;
+  margin: var(--px);
+  padding: 8px 10px 6px;
+  background: var(--paper-hi);
+  cursor: pointer;
+  transition: transform 80ms steps(2);
+}
+
+.template:hover {
+  transform: translateX(2px);
+  --f: var(--ink-3);
+}
+
+.template input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.template:has(input:focus-visible) {
+  outline: 3px dashed var(--gold);
+  outline-offset: 4px;
+}
+
+.template.is-selected {
+  --f: var(--crimson);
+  --pxf-inner: inset 4px 0 0 0 var(--crimson);
+  background: #fff4d6;
+}
+
+.template__id {
+  grid-area: id;
+  align-self: start;
+  min-width: 2.6em;
+  padding: 3px 4px 2px;
+  font: 700 0.8rem/1 var(--font-ui);
+  text-align: center;
+  color: var(--paper-hi);
+  background: var(--ink-3);
+}
+
+.template.is-selected .template__id {
+  background: var(--crimson);
+}
+
+.template__text {
+  grid-area: text;
+  font-size: 0.93rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.template__tags {
+  grid-area: tags;
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -2px;
+}
+
+.rules__params .field:last-child {
+  margin-bottom: 0;
+}
+
+.rules__params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0 14px;
+}
+
+.rules__params > legend {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+/* the notice: a slip of paper pinned to the Rite board */
+.notice {
+  --px: 3px;
+  --f: var(--wood-dk);
+  --pxf-drop: 3px 6px 0 0 rgba(74, 46, 30, 0.35);
+  position: relative;
+  margin: 10px var(--px) var(--px);
+  padding: 24px 18px 12px;
+  background-color: var(--paper-hi);
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 25px, rgba(43, 108, 176, 0.13) 25px 26px),
+    linear-gradient(90deg, transparent 22px, rgba(176, 21, 58, 0.25) 22px 24px, transparent 24px);
+  transform: rotate(-0.6deg);
+}
+
+.notice__pin {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  background: radial-gradient(circle at 35% 35%, var(--crimson-hi) 0 25%, var(--crimson) 45%, var(--crimson-dk) 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ink), 2px 3px 0 rgba(14, 11, 38, 0.35);
+}
+
+.notice__text {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 26px;
+}
+
+.notice__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.78rem;
+  color: var(--ink-3);
+}
+
+.notice__stamp {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  font-size: 1.4rem;
+  animation: stamp-in 0.36s steps(4, end) both;
+}
+
+@keyframes stamp-in {
+  from { transform: rotate(-18deg) scale(2.2); opacity: 0; }
+  to { transform: rotate(-8deg) scale(1); opacity: 0.9; }
+}
+
+.notice.is-sealed {
+  animation: board-thud 0.36s steps(3, end);
+}
+
+@keyframes board-thud {
+  50% { transform: rotate(-0.6deg) translateY(2px); }
+}
+
+.cost {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.cost > svg {
+  flex: none;
+  margin-top: 4px;
+}
+
+.cost p {
+  margin: 0;
+}
+
+.cost__line {
+  font: 700 1.3rem/1.1 var(--font-ui);
+}
+
+.cost__why,
+.cost__purse {
+  font-size: 0.82rem;
+  color: var(--ink-3);
+}
+
+.cost__purse.is-short {
+  color: var(--crimson);
+  font-weight: 700;
+}
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.verdict .kessa {
+  flex: none;
+}
+
+.verdict__bubble {
+  --px: 3px;
+  --f: var(--ink-3);
+  position: relative;
+  flex: 1;
+  margin: var(--px);
+  padding: 8px 12px;
+  background: var(--paper-hi);
+}
+
+.verdict__bubble::before {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: 50%;
+  width: 10px;
+  height: 12px;
+  margin-top: -6px;
+  background: var(--f);
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.verdict__bubble p {
+  margin: 2px 0 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.verdict__who {
+  font: 600 0.72rem/1.2 var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.verdict--ok .verdict__bubble { --f: #2f7a55; }
+.verdict--ok .verdict__who b { color: #2f7a55; }
+.verdict--cruel .verdict__bubble { --f: var(--dread); background: #f1ebfb; }
+.verdict--cruel .verdict__who b { color: var(--dread); }
+.verdict--no .verdict__bubble { --f: var(--crimson); background: #fbe7e4; }
+.verdict--no .verdict__who b { color: var(--crimson); }
+
+.btn--seal {
+  width: calc(100% - var(--px) * 2);
+  font-size: 1.15rem;
+  min-height: 52px;
+}
+
+.rules__fineprint {
+  margin: 0;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.rule-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rule-list__item {
+  --px: 2px;
+  --f: var(--paper-edge);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "no text" "no by";
+  gap: 2px 10px;
+  margin: var(--px);
+  padding: 8px 10px;
+  background: var(--paper-hi);
+}
+
+.rule-list__no {
+  grid-area: no;
+  align-self: start;
+  font: 700 0.85rem/1 var(--font-ui);
+  color: var(--crimson);
+}
+
+.rule-list__text {
+  grid-area: text;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.rule-list__by {
+  grid-area: by;
+  font-size: 0.78rem;
+  color: var(--ink-3);
+}
+
+.rule-list__item--draft {
+  --f: var(--crimson);
+  background:
+    repeating-linear-gradient(135deg, transparent 0 8px, rgba(176, 21, 58, 0.06) 8px 10px),
+    var(--paper-hi);
+}
+
+/* ---- vows */
+
+.vows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 290px);
+  gap: 22px;
+  align-items: start;
+}
+
+.vow-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 18px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vow {
+  position: relative;
+}
+
+/* an unrolled scroll: darker curled bands top and bottom */
+.vow__scroll {
+  --px: 3px;
+  --f: var(--wood-dk);
+  --pxf-drop: 0 6px 0 0 rgba(74, 46, 30, 0.3);
+  height: calc(100% - var(--px) * 2);
+  margin: var(--px);
+  padding: 20px 14px 22px;
+  background:
+    linear-gradient(180deg, var(--paper-3), var(--paper-hi) 9px, transparent 10px) top / 100% 12px no-repeat,
+    linear-gradient(0deg, var(--paper-3), var(--paper-hi) 9px, transparent 10px) bottom / 100% 12px no-repeat,
+    var(--paper);
+}
+
+.vow__id {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 6px;
+  font: 700 0.72rem/1 var(--font-ui);
+  color: var(--paper-hi);
+  background: var(--wood);
+}
+
+.vow__oath {
+  margin: 0 0 8px;
+  font-size: 1.04rem;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.vow__power {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+}
+
+.vow__label {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 5px;
+  font: 700 0.68rem/1.4 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--gold);
+}
+
+.vow__terms {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 2px dashed rgba(122, 78, 46, 0.35);
+}
+
+.vow__terms dt {
+  font: 600 0.64rem/1.2 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.vow__terms dd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0;
+  font: 700 0.85rem/1.2 var(--font-ui);
+}
+
+.vow__kept {
+  color: #2f7a55;
+}
+
+.vow__seal {
+  position: absolute;
+  right: 12px;
+  top: -10px;
+  filter: drop-shadow(0 3px 0 rgba(14, 11, 38, 0.35));
+}
+
+.vows__law {
+  position: sticky;
+  top: 0;
+  padding: 14px 14px 12px;
+  background: var(--paper-2);
+  box-shadow: 0 0 0 2px var(--paper-edge);
+}
+
+.vows__law ul {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.vows__law li::before {
+  content: "◆ ";
+  color: var(--crimson);
+}
+
+/* ---- narrow */
+
+@media (max-width: 860px) {
+  .rules {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "templates" "compose" "active";
+  }
+
+  .template-list {
+    max-height: 38vh;
+  }
+
+  .vows {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vows__law {
+    position: static;
+  }
+}
+
+@media (max-width: 480px) {
+  .rule-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vow-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modal__body {
+    padding-inline: 14px;
+  }
+
+  .modal__head {
+    padding-inline: 14px;
+    gap: 8px;
+  }
+
+  .modal__seal {
+    display: none;
+  }
+
+  .modal__subtitle {
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+}
