@@ -1,10 +1,10 @@
 /**
  * Fast-forward: simulate N in-game days and print how the economy moved.
  *
- *   pnpm sim                      -> 7 days, seed 42
- *   pnpm sim --days 3 --seed 7
- *   pnpm sim --events             -> also print every notable event
- *   pnpm sim --json               -> machine-readable daily summaries
+ *   npm run sim                        -> 7 days, seed 42
+ *   npm run sim -- --days 3 --seed 7
+ *   npm run sim -- --events           -> also print every notable event
+ *   npm run sim -- --json             -> machine-readable daily summaries
  */
 import { createWorld, createRng, step, summarize, TICKS_PER_DAY, type WorldSummary } from "@grudgebound/shared";
 

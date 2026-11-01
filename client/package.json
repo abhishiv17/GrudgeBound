@@ -2,19 +2,21 @@
   "name": "@grudgebound/client",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@grudgebound/shared": "workspace:*",
-    "phaser": "^3.90.0"
+    "@grudgebound/shared": "*",
+    "next": "^16.4.3",
+    "phaser": "^3.90.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "typescript": "^7.0.2",
-    "vite": "^8.3.5"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
   }
 }

@@ -1,5 +1,5 @@
 /**
- * pnpm agent:demo
+ * npm run agent:demo
  * Runs two in-game days, then asks each AI rival what it wants to do next and asks
  * the Talisman Broker to explain a price. Uses NEAR AI Cloud if .env has a key,
  * otherwise the scripted fallback.

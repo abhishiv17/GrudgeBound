@@ -20,20 +20,21 @@ Full design: [`docs/Grudgebound_Plan.pdf`](docs/Grudgebound_Plan.pdf). Art direc
 
 ## Try it
 
-Requirements: Node 20+ and pnpm (`npm i -g pnpm`).
+Requirements: Node 20+ and npm.
 
 ```sh
-pnpm install
+npm install
 ```
 
 | Do this | You'll see |
 |---|---|
-| `pnpm sim` | A 7-day fast-forward of the town printed in ~0.1 s: Grudge per Ward, merchant Ember and prices, the points table, and every rule added by AI rivals and simulated players. |
-| `pnpm sim -- --days 3 --seed 7 --events` | A different town (seed 7) with every notable event listed. Same seed always gives the same result. |
-| `pnpm server` then open `http://localhost:8787/state` | The live world as JSON, advancing one in-game hour per real minute (`TICK_MS=3000 pnpm server` for faster). |
-| `pnpm dev` then open `http://localhost:5173` | Lantern Ward. Walk with arrow keys / WASD. Walk through tall grass: a curse appears, chosen from the Ward's live Grudge. Kessa announces new rules and bankruptcies at the bottom. Works without the server too (the town then runs in the browser). |
-| `pnpm agent:demo` | Each AI rival decides its next move and the Talisman Broker explains a price. Uses NEAR AI Cloud if `.env` has a key, otherwise the scripted fallback. |
-| `pnpm test` | Unit tests for the type triangle, Grudge, pricing, rules, the Arbiter and engine determinism. |
+| `npm run sim` | A 7-day fast-forward of the town printed in ~0.1 s: Grudge per Ward, merchant Ember and prices, the points table, and every rule added by AI rivals and simulated players. |
+| `npm run sim -- --days 3 --seed 7 --events` | A different town (seed 7) with every notable event listed. Same seed always gives the same result. |
+| `npm run server` then open `http://localhost:8787/state` | The live world as JSON, advancing one in-game hour per real minute (set `TICK_MS=3000` for faster ticks). |
+| `npm run dev` then open `http://localhost:3000` | Lantern Ward. Walk with arrow keys / WASD. Walk through tall grass: a curse appears, chosen from the Ward's live Grudge. Kessa announces new rules and bankruptcies at the bottom. Works without the server too (the town then runs in the browser). |
+| `npm run agent:demo` | Each AI rival decides its next move and the Talisman Broker explains a price. Uses NEAR AI Cloud if `.env` has a key, otherwise the scripted fallback. |
+| `npm test` | Unit tests for the type triangle, Grudge, pricing, rules, the Arbiter and engine determinism. |
+| `npm run build` | Production build of the Next.js client. |
 
 ## What works today
 
@@ -42,10 +43,10 @@ pnpm install
 | Shared game data: 12 curses, type triangle, 12 rule templates, 6 vow templates | Done |
 | `shared/src/pricing.ts`: every price formula in one file, with plain-English reasons | Done |
 | Tick engine: Grudge, spawns, merchants, bankruptcies, AI rival policies, rules with costs and effects | First version, being tuned |
-| Fast-forward simulator (`pnpm sim`) | Done (text output; Observatory charts planned) |
+| Fast-forward simulator (`npm run sim`) | Done (text output; Observatory charts planned) |
 | Game server with `/state` and `/events` | Skeleton |
 | Agent runtime: observe, legal options, LLM choice, guardrail, scripted fallback | Done; not yet acting through NEAR wallets |
-| Game client: walkable Ward, tall-grass encounters, Grudge HUD, Kessa banner | Placeholder art |
+| Game client (Next.js + Phaser): walkable Ward, tall-grass encounters, Grudge HUD, Kessa banner | Placeholder art |
 | Battles and binding | Planned (Days 3-6) |
 | Contracts: `items` (NEP-245 shape) and `rite` (points, rules, vows) | Written, **not yet compiled or deployed** |
 | Email login, relayer (meta transactions), testnet deploy | Planned (Days 5-6) |
@@ -71,7 +72,7 @@ shared/      game data + formulas + tick engine (used by everything below)
 sim/         fast-forward simulator (CLI)
 server/      game server (real-time ticks, HTTP API)
 agents/      AI agents: runtime, NEAR AI client, merchant tooltips
-client/      Phaser 3 game (Vite + TypeScript)
+client/      Next.js app hosting the Phaser 3 game (app/ pages, components/, game/ scenes)
 contracts/   Rust contracts: items (NEP-245), rite (points, rules, vows)
 docs/        plan PDF, hackathon rules, art direction and concept art
 ```
@@ -83,7 +84,7 @@ Copy `.env.example` to `.env`. Only needed for real AI agents (NEAR AI Cloud) an
 
 ## Disclosures (hackathon rule Q-005)
 
-- **Libraries:** Phaser 3, Vite, TypeScript, tsx, Vitest, near-sdk (Rust).
+- **Libraries:** Next.js, React, Phaser 3, TypeScript, tsx, near-sdk (Rust). Tests use Node's built-in test runner.
 - **AI-generated code:** the initial skeleton was generated with Claude Code (Anthropic) and reviewed by the team.
 - **AI-generated art:** concept art in `docs/art/concepts/` was made with AI image tools. In-game art: to be listed here.
 - **Inspiration:** classic creature-collecting RPGs and Japanese curse folklore. All names, creatures, characters and art are original.

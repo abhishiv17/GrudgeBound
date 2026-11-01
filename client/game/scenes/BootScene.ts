@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import { TILE, TILE_COUNT, drawTiles } from "../tiles";
 
 /** Builds placeholder textures in code so the game runs with zero asset files. */

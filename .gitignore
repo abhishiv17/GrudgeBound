@@ -1,7 +1,6 @@
 # dependencies and builds
 node_modules/
 dist/
-.vite/
 coverage/
 
 # Rust / NEAR contracts
@@ -28,3 +27,9 @@ submission*.json
 .DS_Store
 Thumbs.db
 *.log
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo

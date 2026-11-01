@@ -82,7 +82,7 @@ export interface World {
 }
 
 // ---------------------------------------------------------------------------
-// Tunables (AI & Economy seat: tune these with `pnpm sim`)
+// Tunables (AI & Economy seat: tune these with `npm run sim`)
 // ---------------------------------------------------------------------------
 
 export const TUNING = {

@@ -5,27 +5,29 @@
   "description": "Grudgebound: The Rite - a creature-binding game where greed creates monsters and players rewrite the rules. Built at NEAR HACKATHON.",
   "license": "MIT",
   "type": "module",
+  "workspaces": [
+    "shared",
+    "sim",
+    "server",
+    "agents",
+    "client"
+  ],
   "scripts": {
-    "dev": "pnpm --filter @grudgebound/client dev",
-    "server": "pnpm --filter @grudgebound/server start",
-    "server:watch": "pnpm --filter @grudgebound/server dev",
-    "sim": "pnpm --filter @grudgebound/sim start",
-    "agent:demo": "pnpm --filter @grudgebound/agents demo",
-    "test": "vitest run",
-    "typecheck": "pnpm -r typecheck"
+    "dev": "npm run dev -w @grudgebound/client",
+    "build": "npm run build -w @grudgebound/client",
+    "server": "tsx server/src/index.ts",
+    "server:watch": "tsx watch server/src/index.ts",
+    "sim": "tsx sim/src/index.ts",
+    "agent:demo": "tsx --env-file-if-exists=.env agents/src/demo.ts",
+    "test": "tsx --test shared/src/shared.test.ts",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
     "node": ">=20"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "typescript": "^7.0.2"
   }
 }

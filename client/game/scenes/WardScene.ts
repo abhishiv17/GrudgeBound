@@ -1,4 +1,4 @@
-import Phaser from "phaser";
+import * as Phaser from "phaser";
 import {
   EMOTION_INFO, EMOTIONS, cursesWhere, rollSpawnEmotion, rollSpawnOmen, createRng,
   type CurseSpecies, type GameEvent, type WorldSummary,
@@ -59,10 +59,16 @@ export class WardScene extends Phaser.Scene {
     this.buildBanner();
     this.buildDialog();
 
+    let destroyed = false;
+    this.events.once(Phaser.Scenes.Events.DESTROY, () => {
+      destroyed = true;
+      this.feed?.stop();
+    });
     void startWorldFeed(
-      (s) => this.updateHud(s),
-      (e) => this.onWorldEvent(e),
+      (s) => { if (!destroyed) this.updateHud(s); },
+      (e) => { if (!destroyed) this.onWorldEvent(e); },
     ).then((f) => {
+      if (destroyed) return f.stop();
       this.feed = f;
       this.showBanner(f.mode === "server"
         ? "Kessa: \"Welcome to the Rite. Connected to the town.\""
