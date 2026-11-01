@@ -1,208 +1,397 @@
 import * as Phaser from "phaser";
-import {
-  EMOTION_INFO, EMOTIONS, cursesWhere, rollSpawnEmotion, rollSpawnOmen, createRng,
-  type CurseSpecies, type GameEvent, type WorldSummary,
-} from "@grudgebound/shared";
-import { SOLID, T, TILE, buildLanternWard } from "../tiles";
-import { startWorldFeed, type WorldFeed } from "../worldFeed";
+import { cursesWhere, rollSpawnEmotion, rollSpawnOmen, createRng } from "@grudgebound/shared";
+import { SOLID, T, TILE, buildLanternWard, buildOverLayer } from "../tiles";
+import { PLAYER_FRAMES_PER_ROW, PLAYER_ROW } from "../sprites";
+import { worldStore } from "../../lib/worldStore";
+import { isBlocking, touchInput, uiStore } from "../../lib/uiStore";
 
-const SPEED = 140;
+const SPEED = 110;
+/** Integer zoom keeps every pixel the same size. */
+const ZOOM = 2;
 const ENCOUNTER_CHANCE_PER_TILE = 0.12;
-const FONT = { fontFamily: "monospace", fontSize: "15px", color: "#F3E9D2" };
-const PANEL = 0x1a1726;
+const BOARD = { x: 21 * TILE + TILE / 2, y: 10 * TILE + TILE / 2 };
+const NIGHT_COLOR = Phaser.Display.Color.ValueToColor(0x0e0b26);
+const DUSK_COLOR = Phaser.Display.Color.ValueToColor(0x5a2a48);
+const MAX_DARK = 0.62;
 
-/** Lantern Ward: walk around, step into tall grass, meet curses. Battles arrive Days 3-6. */
+type Facing = keyof typeof PLAYER_ROW;
+
+interface Light {
+  x: number;
+  y: number;
+  r: number;
+  seed: number;
+  glow?: Phaser.GameObjects.Image;
+}
+
+/** How dark the Ward is at a given in-game hour (0 = day, MAX_DARK = deep night). */
+function darknessFor(hour: number): number {
+  if (hour >= 21 || hour < 5) return MAX_DARK;
+  if (hour >= 19) return 0.28 + (hour - 19) * 0.17;
+  if (hour >= 17) return (hour - 17) * 0.12;
+  if (hour < 7) return MAX_DARK - (hour - 4) * 0.2;
+  return 0;
+}
+
+/**
+ * Lantern Ward: walk the night market, step into tall grass, meet curses.
+ * The HUD, Kessa's banner and the encounter dialog are React overlays (components/hud);
+ * this scene shares the world feed with them through lib/worldStore and lib/uiStore.
+ */
 export class WardScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
+  private shadow!: Phaser.GameObjects.Image;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private layer!: Phaser.Tilemaps.TilemapLayer;
-  private hudText!: Phaser.GameObjects.Text;
-  private grudgeBar!: Phaser.GameObjects.Graphics;
-  private banner!: Phaser.GameObjects.Container;
-  private bannerText!: Phaser.GameObjects.Text;
-  private dialog!: Phaser.GameObjects.Container;
-  private dialogText!: Phaser.GameObjects.Text;
-  private dialogCurse!: Phaser.GameObjects.Graphics;
-  private inDialog = false;
+  private facing: Facing = "down";
   private grassDistance = 0;
-  private feed?: WorldFeed;
   private rng = createRng(Date.now() >>> 0);
+  private reduceMotion = false;
+  private blocked = false;
+  private cleanups: (() => void)[] = [];
+
+  // lighting
+  private lamps: Light[] = [];
+  private nightRt!: Phaser.GameObjects.RenderTexture;
+  private brush!: Phaser.GameObjects.Image;
+  private vignette!: Phaser.GameObjects.Image;
+  private fx = { x: 0, y: 0, w: 0, h: 0 };
+  private dark = MAX_DARK;
+  private darkTarget = MAX_DARK;
+  private leafFx?: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor() {
     super("ward");
   }
 
   create() {
+    this.reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    this.lamps = [];
+    this.cleanups = [];
+    this.blocked = false;
+
+    // --- map
     const data = buildLanternWard();
     const map = this.make.tilemap({ data, tileWidth: TILE, tileHeight: TILE });
     const tileset = map.addTilesetImage("tiles", "tiles", TILE, TILE, 0, 0)!;
-    this.layer = map.createLayer(0, tileset, 0, 0)!;
+    this.layer = map.createLayer(0, tileset, 0, 0)!.setDepth(0);
     this.layer.setCollision(SOLID);
+    const overMap = this.make.tilemap({ data: buildOverLayer(data), tileWidth: TILE, tileHeight: TILE });
+    const overTiles = overMap.addTilesetImage("tiles", "tiles", TILE, TILE, 0, 0)!;
+    overMap.createLayer(0, overTiles, 0, 0)!.setDepth(4);
 
-    this.player = this.physics.add.sprite(21.5 * TILE, 13.5 * TILE, "player");
-    this.player.setSize(16, 12).setOffset(4, 18);
+    // --- player
+    this.player = this.physics.add.sprite(21.5 * TILE, 13.5 * TILE, "player", PLAYER_ROW.down * PLAYER_FRAMES_PER_ROW);
+    this.player.setSize(14, 10).setOffset(9, 21).setDepth(3);
+    this.shadow = this.add.image(this.player.x, this.player.y + 14, "shadow").setDepth(2);
     this.physics.add.collider(this.player, this.layer);
     this.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.player.setCollideWorldBounds(true);
+    this.createAnimations();
 
-    this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-    this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+    const cam = this.cameras.main;
+    cam.setZoom(ZOOM).setRoundPixels(true);
+    cam.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    cam.startFollow(this.player, true, 0.15, 0.15);
 
+    // --- dressing, lights, ambience
+    this.placeProps();
+    this.buildLanternStrings();
+    this.buildLighting();
+    this.buildAmbience();
+    this.animateWater();
+
+    // --- input
     const kb = this.input.keyboard!;
     this.cursors = kb.createCursorKeys();
     this.wasd = kb.addKeys("W,A,S,D") as Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
-    kb.on("keydown-SPACE", () => this.closeDialog());
-    kb.on("keydown-ENTER", () => this.closeDialog());
-
-    this.buildHud();
-    this.buildBanner();
-    this.buildDialog();
-
-    let destroyed = false;
-    this.events.once(Phaser.Scenes.Events.DESTROY, () => {
-      destroyed = true;
-      this.feed?.stop();
+    kb.on("keydown-E", () => {
+      if (!this.blocked && uiStore.getSnapshot().nearBoard) uiStore.openPanel("rules");
     });
-    void startWorldFeed(
-      (s) => { if (!destroyed) this.updateHud(s); },
-      (e) => { if (!destroyed) this.onWorldEvent(e); },
-    ).then((f) => {
-      if (destroyed) return f.stop();
-      this.feed = f;
-      this.showBanner(f.mode === "server"
-        ? "Kessa: \"Welcome to the Rite. Connected to the town.\""
-        : "Kessa: \"Welcome to the Rite.\" (offline: the town runs in your browser)");
+
+    // --- shared state
+    this.cleanups.push(worldStore.subscribe(() => this.onWorld()));
+    this.cleanups.push(uiStore.subscribe(() => this.syncInputCapture()));
+    const onFocus = () => this.syncInputCapture();
+    document.addEventListener("focusin", onFocus);
+    document.addEventListener("focusout", onFocus);
+    this.cleanups.push(() => {
+      document.removeEventListener("focusin", onFocus);
+      document.removeEventListener("focusout", onFocus);
     });
+    this.onWorld();
+    this.syncInputCapture();
+
+    const cleanup = () => {
+      for (const c of this.cleanups) c();
+      this.cleanups = [];
+      uiStore.setNearBoard(false);
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+    this.events.once(Phaser.Scenes.Events.DESTROY, cleanup);
   }
 
-  update() {
+  update(time: number, delta: number) {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    if (this.inDialog) {
+
+    // ease the night in and out
+    this.dark += (this.darkTarget - this.dark) * Math.min(1, delta / 900);
+    this.vignette.setAlpha(0.3 + this.dark * 0.7);
+    for (const l of this.lamps) {
+      if (!l.glow) continue;
+      const flicker = this.reduceMotion ? 1 : 1 + Math.sin(time * 0.005 + l.seed) * 0.08;
+      l.glow.setAlpha(Math.min(1, this.dark * 1.4) * flicker);
+    }
+
+    if (this.blocked) {
       body.setVelocity(0, 0);
+      this.idle();
+      this.shadow.setPosition(this.player.x, this.player.y + 14);
       return;
     }
-    const left = this.cursors.left.isDown || this.wasd.A.isDown;
-    const right = this.cursors.right.isDown || this.wasd.D.isDown;
-    const up = this.cursors.up.isDown || this.wasd.W.isDown;
-    const down = this.cursors.down.isDown || this.wasd.S.isDown;
+
+    const left = this.cursors.left.isDown || this.wasd.A.isDown || touchInput.left;
+    const right = this.cursors.right.isDown || this.wasd.D.isDown || touchInput.right;
+    const up = this.cursors.up.isDown || this.wasd.W.isDown || touchInput.up;
+    const down = this.cursors.down.isDown || this.wasd.S.isDown || touchInput.down;
     const vx = (right ? 1 : 0) - (left ? 1 : 0);
     const vy = (down ? 1 : 0) - (up ? 1 : 0);
     const len = Math.hypot(vx, vy) || 1;
     body.setVelocity((vx / len) * SPEED, (vy / len) * SPEED);
-    if (vx !== 0) this.player.setFlipX(vx < 0);
+
+    if (vx || vy) {
+      this.facing = vx ? "side" : vy < 0 ? "up" : "down";
+      if (vx) this.player.setFlipX(vx < 0);
+      this.player.anims.play(`walk-${this.facing}`, true);
+    } else {
+      this.idle();
+    }
+    this.shadow.setPosition(this.player.x, this.player.y + 14);
+
+    uiStore.setNearBoard(Phaser.Math.Distance.Between(this.player.x, this.player.y, BOARD.x, BOARD.y + TILE) < TILE * 1.6);
 
     // Curses lurk in tall grass: roll once per tile walked.
     const tile = this.layer.getTileAtWorldXY(this.player.x, this.player.y + 10);
     if (tile?.index === T.tallGrass && (vx || vy)) {
-      this.grassDistance += (SPEED * this.game.loop.delta) / 1000;
+      this.grassDistance += (SPEED * delta) / 1000;
       if (this.grassDistance >= TILE) {
         this.grassDistance = 0;
+        this.leafFx?.explode(5, this.player.x, this.player.y + 12);
         if (this.rng.chance(ENCOUNTER_CHANCE_PER_TILE)) this.encounter();
       }
     }
   }
 
+  private idle() {
+    this.player.anims.stop();
+    this.player.setFrame(PLAYER_ROW[this.facing] * PLAYER_FRAMES_PER_ROW);
+  }
+
+  private createAnimations() {
+    for (const facing of Object.keys(PLAYER_ROW) as Facing[]) {
+      const key = `walk-${facing}`;
+      if (this.anims.exists(key)) continue;
+      const row = PLAYER_ROW[facing] * PLAYER_FRAMES_PER_ROW;
+      this.anims.create({
+        key,
+        frames: [1, 0, 2, 0].map((f) => ({ key: "player", frame: row + f })),
+        frameRate: 8,
+        repeat: -1,
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------- shared state
+
+  private onWorld() {
+    const s = worldStore.getSnapshot().summary;
+    this.darkTarget = s ? darknessFor(s.hour) : MAX_DARK;
+  }
+
+  /** Freeze the player and give the keyboard back to the page while a panel or dialog is open. */
+  private syncInputCapture() {
+    const kb = this.input.keyboard;
+    if (!kb) return;
+    this.blocked = isBlocking(uiStore.getSnapshot());
+    const el = document.activeElement as HTMLElement | null;
+    const typing = !!el && el !== document.body && el.matches("button, input, select, textarea, a[href], [tabindex]:not(canvas)");
+    kb.enabled = !this.blocked;
+    if (this.blocked || typing) kb.disableGlobalCapture();
+    else kb.enableGlobalCapture();
+    if (this.blocked) kb.resetKeys();
+  }
+
   // ---------------------------------------------------------------- encounters
 
   private encounter() {
-    const ward = this.feed?.latest.wards.find((w) => w.id === "lantern");
+    const ward = worldStore.getSnapshot().summary?.wards.find((w) => w.id === "lantern");
     const grudge = ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 };
     const total = ward?.total ?? 5;
     const omen = rollSpawnOmen(total, this.rng);
     const emotion = rollSpawnEmotion(grudge, this.rng);
     const curse = this.rng.pick(cursesWhere(emotion, omen));
-    this.openDialog(curse);
+    if (!this.reduceMotion) {
+      this.cameras.main.shake(160, 0.003);
+      this.cameras.main.flash(180, 176, 21, 58);
+    }
+    uiStore.openEncounter(curse);
   }
 
-  private openDialog(c: CurseSpecies) {
-    this.inDialog = true;
-    const info = EMOTION_INFO[c.emotion];
-    this.dialogText.setText(
-      `A wild ${c.name} appears!\n` +
-      `${info.label} · ${c.omen[0]!.toUpperCase()}${c.omen.slice(1)}   (born from ${c.bornFrom})\n` +
-      `Signature move: ${c.signatureMove.name}, ${c.signatureMove.effect}.\n\n` +
-      `Battles and binding arrive on Days 3-6.  [SPACE] to continue`,
-    );
-    // placeholder curse portrait in its emotion color
-    const g = this.dialogCurse;
-    g.clear();
-    const color = Phaser.Display.Color.HexStringToColor(info.color).color;
-    const size = c.omen === "calamity" ? 34 : c.omen === "wail" ? 28 : 22;
-    g.fillStyle(0xf3e9d2, 1).fillRoundedRect(-44, -44, 88, 88, 6);
-    g.fillStyle(color, 1).fillCircle(0, 4, size);
-    g.fillStyle(0xf3e9d2, 1).fillCircle(-9, 0, 6).fillCircle(9, 0, 6);
-    g.fillStyle(0x1a1726, 1).fillCircle(-9, 1, 3).fillCircle(9, 1, 3);
-    this.dialog.setVisible(true);
-  }
+  // ---------------------------------------------------------------- dressing
 
-  private closeDialog() {
-    if (!this.inDialog) return;
-    this.inDialog = false;
-    this.dialog.setVisible(false);
-  }
+  private placeProps() {
+    // Kessa floats by the Rite board; click her to rewrite the rules.
+    const kessa = this.add.image(BOARD.x + 30, BOARD.y - 6, "kessa").setDepth(5);
+    kessa.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      if (!this.blocked) uiStore.openPanel("rules");
+    });
+    if (!this.reduceMotion) {
+      this.tweens.add({ targets: kessa, y: kessa.y - 4, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    }
+    this.lamps.push({ x: kessa.x, y: kessa.y, r: 40, seed: 3 });
 
-  // ---------------------------------------------------------------- HUD
+    // Torn receipts caught in the tall grass: something lives in there.
+    this.layer.forEachTile((t) => {
+      if (t.index !== T.tallGrass || ((t.x * 73 + t.y * 151) % 11) !== 0) return;
+      this.add.image(t.pixelX + 8 + ((t.x * 13) % 16), t.pixelY + 6 + ((t.y * 7) % 14), (t.x + t.y) % 2 ? "scrap-red" : "scrap")
+        .setAngle(((t.x * 37) % 50) - 25).setDepth(1);
+    });
 
-  private buildHud() {
-    const bg = this.add.graphics().setScrollFactor(0).setDepth(10);
-    bg.fillStyle(PANEL, 0.85).fillRoundedRect(10, 10, 300, 74, 6);
-    this.hudText = this.add.text(22, 18, "Lantern Ward", FONT).setScrollFactor(0).setDepth(11);
-    this.grudgeBar = this.add.graphics().setScrollFactor(0).setDepth(11);
-    this.add.text(this.scale.width - 12, 12, "Arrows / WASD to walk · tall grass hides curses", { ...FONT, fontSize: "12px" })
-      .setOrigin(1, 0).setScrollFactor(0).setDepth(11).setAlpha(0.8);
-  }
-
-  private updateHud(s: WorldSummary) {
-    const w = s.wards.find((x) => x.id === "lantern");
-    if (!w) return;
-    const hh = String(s.hour).padStart(2, "0");
-    this.hudText.setText(`Lantern Ward   Day ${s.day} ${hh}:00${s.night ? " (night)" : ""}\nGrudge ${Math.round(w.total)}/100   Rules in force: ${s.rules.length}`);
-    const g = this.grudgeBar;
-    g.clear();
-    const x0 = 22, y0 = 62, width = 276, height = 10;
-    g.fillStyle(0x3a3547, 1).fillRect(x0, y0, width, height);
-    let x = x0;
-    for (const e of EMOTIONS) {
-      const segment = (w.grudge[e] / 100) * width;
-      g.fillStyle(Phaser.Display.Color.HexStringToColor(EMOTION_INFO[e].color).color, 1).fillRect(x, y0, segment, height);
-      x += segment;
+    // Porters in straw hats loitering by the stalls.
+    const porters: [number, number][] = [[9.5, 13.6], [34.5, 13.2], [27.8, 16.4]];
+    for (const [tx, ty] of porters) {
+      const p = this.physics.add.staticImage(tx * TILE, ty * TILE, "porter").setDepth(3);
+      p.refreshBody();
+      this.physics.add.collider(this.player, p);
+      this.add.image(p.x, p.y + 8, "shadow").setDepth(2).setScale(0.8);
+      if (!this.reduceMotion) this.tweens.add({ targets: p, y: p.y - 1, duration: 900 + tx * 20, yoyo: true, repeat: -1, ease: "Stepped" });
     }
   }
 
-  // ---------------------------------------------------------------- Kessa's banner
+  /** Strings of paper lanterns and talisman flags zig-zagging over the market street. */
+  private buildLanternStrings() {
+    const north: Phaser.Math.Vector2[] = [];
+    const south: Phaser.Math.Vector2[] = [];
+    this.layer.forEachTile((t) => {
+      if (t.index !== T.lantern) return;
+      const head = new Phaser.Math.Vector2(t.pixelX + 16, t.pixelY + 4);
+      (t.y < 13 ? north : south).push(head);
+      this.lamps.push({ x: t.pixelX + 16, y: t.pixelY + 10, r: 76, seed: t.x * 7 + t.y });
+    });
+    north.sort((a, b) => a.x - b.x);
+    south.sort((a, b) => a.x - b.x);
 
-  private buildBanner() {
-    const width = 640;
-    const bg = this.add.graphics();
-    bg.fillStyle(0xf3e9d2, 0.96).fillRoundedRect(-width / 2, -22, width, 44, 8);
-    bg.lineStyle(2, 0xb0153a, 1).strokeRoundedRect(-width / 2, -22, width, 44, 8);
-    this.bannerText = this.add.text(0, 0, "", { ...FONT, color: "#1A1726", fontSize: "14px", align: "center", wordWrap: { width: width - 30 } }).setOrigin(0.5);
-    this.banner = this.add.container(this.scale.width / 2, this.scale.height - 40, [bg, this.bannerText])
-      .setScrollFactor(0).setDepth(20).setVisible(false);
+    const g = this.add.graphics().setDepth(5);
+    const string = (a: Phaser.Math.Vector2, b: Phaser.Math.Vector2, sag: number, items: number) => {
+      const mid = new Phaser.Math.Vector2((a.x + b.x) / 2, (a.y + b.y) / 2 + sag);
+      const curve = new Phaser.Curves.QuadraticBezier(a, mid, b);
+      g.lineStyle(1, 0x3a2a20, 1);
+      curve.draw(g, 24);
+      for (let i = 0; i < items; i++) {
+        const p = curve.getPoint((i + 0.5) / items);
+        const lantern = i % 2 === 0;
+        const item = this.add.image(Math.round(p.x), Math.round(p.y), lantern ? "mini-lantern" : "flag").setOrigin(0.5, 0).setDepth(5);
+        if (lantern) this.lamps.push({ x: p.x, y: p.y + 5, r: 26, seed: p.x });
+        if (!this.reduceMotion) {
+          item.setAngle(-5);
+          this.tweens.add({ targets: item, angle: 5, duration: 1300 + (i % 3) * 250, yoyo: true, repeat: -1, ease: "Sine.InOut", delay: i * 90 });
+        }
+      }
+    };
+    north.forEach((a, i) => {
+      const b = i % 2 === 0 ? south[i + 1] : south[i - 1];
+      if (b && Math.abs(a.x - b.x) < TILE * 6) string(a, b, 14, 7);
+      const next = north[i + 1];
+      if (next && next.x - a.x <= TILE * 4) string(a, next, 10, 5);
+    });
+    south.forEach((a, i) => {
+      const next = south[i + 1];
+      if (next && next.x - a.x <= TILE * 4) string(a, next, 10, 5);
+    });
+    // across the plaza, between the two banner posts
+    const left = new Phaser.Math.Vector2(18 * TILE + 16, 9 * TILE + 2);
+    const right = new Phaser.Math.Vector2(24 * TILE + 16, 9 * TILE + 2);
+    string(left, right, 18, 9);
   }
 
-  private showBanner(text: string) {
-    this.bannerText.setText(text);
-    this.banner.setVisible(true).setAlpha(1);
-    this.tweens.killTweensOf(this.banner);
-    this.tweens.add({ targets: this.banner, alpha: 0, delay: 4500, duration: 600, onComplete: () => this.banner.setVisible(false) });
+  private buildLighting() {
+    const W = this.scale.width, H = this.scale.height;
+    // Screen-fixed objects are still scaled by camera zoom around the centre, so size them to the zoomed view.
+    const w = W / ZOOM, h = H / ZOOM;
+    this.fx = { x: (W - w) / 2, y: (H - h) / 2, w, h };
+
+    for (const l of this.lamps) {
+      l.glow = this.add.image(l.x, l.y, "glow").setBlendMode(Phaser.BlendModes.ADD).setDepth(6).setScale((l.r * 1.6) / 64);
+    }
+
+    this.nightRt = this.add.renderTexture(this.fx.x, this.fx.y, w, h).setOrigin(0).setScrollFactor(0).setDepth(8);
+    this.brush = this.make.image({ key: "light", add: false });
+    this.vignette = this.add.image(this.fx.x, this.fx.y, "vignette").setOrigin(0).setDisplaySize(w, h).setScrollFactor(0).setDepth(9);
+
+    // Redraw after the camera has followed the player this frame, so lights never lag behind.
+    this.cameras.main.on(Phaser.Cameras.Scene2D.Events.FOLLOW_UPDATE, () => this.drawNight());
   }
 
-  private onWorldEvent(e: GameEvent) {
-    if (["rule-added", "rule-rejected", "bankruptcy", "calamity", "reopen"].includes(e.type)) this.showBanner(e.text);
+  private drawNight() {
+    const d = this.dark;
+    if (d < 0.02) {
+      this.nightRt.setVisible(false);
+      return;
+    }
+    const t = Phaser.Math.Clamp(d / MAX_DARK, 0, 1);
+    const c = Phaser.Display.Color.Interpolate.ColorWithColor(DUSK_COLOR, NIGHT_COLOR, 100, Math.round(t * 100));
+    // Fill opaque and fade the whole layer: a partly transparent fill renders far too faint in WebGL.
+    this.nightRt.setVisible(true).setAlpha(d).clear().fill(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
+    const view = this.cameras.main.worldView;
+    const now = this.time.now;
+    for (const l of this.lamps) {
+      const sx = l.x - view.x, sy = l.y - view.y;
+      if (sx < -l.r || sy < -l.r || sx > this.fx.w + l.r || sy > this.fx.h + l.r) continue;
+      const flicker = this.reduceMotion ? 1 : 1 + Math.sin(now * 0.004 + l.seed) * 0.05;
+      this.brush.setScale((l.r * 2 * flicker) / 128);
+      this.nightRt.erase(this.brush, sx, sy);
+    }
   }
 
-  // ---------------------------------------------------------------- dialog
+  /** Drifting paper scraps over the whole view, and leaves kicked up from tall grass. */
+  private buildAmbience() {
+    this.leafFx = this.add.particles(0, 0, "leaf", {
+      emitting: false,
+      lifespan: 450,
+      speed: { min: 20, max: 55 },
+      angle: { min: 200, max: 340 },
+      gravityY: 140,
+      alpha: { start: 1, end: 0 },
+    }).setDepth(4);
 
-  private buildDialog() {
-    const w = 760, h = 150;
-    const bg = this.add.graphics();
-    bg.fillStyle(PANEL, 0.95).fillRoundedRect(-w / 2, -h / 2, w, h, 8);
-    bg.lineStyle(2, 0xd9a532, 1).strokeRoundedRect(-w / 2, -h / 2, w, h, 8);
-    this.dialogCurse = this.add.graphics({ x: -w / 2 + 70, y: 0 });
-    this.dialogText = this.add.text(-w / 2 + 135, -h / 2 + 18, "", { ...FONT, lineSpacing: 6, wordWrap: { width: w - 160 } });
-    this.dialog = this.add.container(this.scale.width / 2, this.scale.height - 110, [bg, this.dialogCurse, this.dialogText])
-      .setScrollFactor(0).setDepth(30).setVisible(false);
+    const count = this.reduceMotion ? 0 : 1;
+    if (!count) return;
+    const { x, y, w, h } = this.fx;
+    const drift = {
+      x: { min: -20, max: w },
+      y: { min: -10, max: h },
+      lifespan: 9000,
+      speedX: { min: 6, max: 20 },
+      speedY: { min: 4, max: 12 },
+      rotate: { start: 0, end: 300 },
+      alpha: { start: 0.9, end: 0 },
+    };
+    this.add.particles(x, y, "scrap", { ...drift, frequency: 900 }).setScrollFactor(0).setDepth(7);
+    this.add.particles(x, y, "scrap-red", { ...drift, frequency: 2600 }).setScrollFactor(0).setDepth(7);
+  }
+
+  private animateWater() {
+    if (this.reduceMotion) return;
+    let flip = false;
+    this.time.addEvent({
+      delay: 650,
+      loop: true,
+      callback: () => {
+        flip = !flip;
+        if (flip) this.layer.replaceByIndex(T.water, T.water2);
+        else this.layer.replaceByIndex(T.water2, T.water);
+      },
+    });
   }
 }

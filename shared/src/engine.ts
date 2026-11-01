@@ -548,7 +548,8 @@ export interface WorldSummary {
   wards: { id: WardId; name: string; grudge: GrudgeMix; total: number; wild: number }[];
   merchants: { id: string; name: string; ward: WardId; ember: number; closed: boolean; prices: Record<string, number> }[];
   leaderboard: { id: string; name: string; kind: string; points: number; ember: number; talismans: number }[];
-  rules: { id: number; text: string; author: string; cost: number }[];
+  /** templateId and params let clients re-run arbiterCheck against the rules in force. */
+  rules: { id: number; text: string; author: string; cost: number; templateId: string; params: RuleParams }[];
   burnedEmber: number;
 }
 
@@ -574,7 +575,7 @@ export function summarize(world: World): WorldSummary {
     leaderboard: [...world.participants]
       .sort((a, b) => b.points - a.points)
       .map((p) => ({ id: p.id, name: p.name, kind: p.kind, points: p.points, ember: p.ember, talismans: p.talismans.length })),
-    rules: world.rules.map((r) => ({ id: r.id, text: renderRule(r.templateId, r.params), author: r.author, cost: r.cost })),
+    rules: world.rules.map((r) => ({ id: r.id, text: renderRule(r.templateId, r.params), author: r.author, cost: r.cost, templateId: r.templateId, params: { ...r.params } })),
     burnedEmber: world.burnedEmber,
   };
 }

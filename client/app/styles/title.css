@@ -1,0 +1,402 @@
+/* Title screen: Hollowmere at dusk from the hill, lanterns strung overhead, Kessa and the exorcist in front. */
+
+.title-screen {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #17122f 0%, #2c1b45 22%, #5b2547 42%, #a2413f 58%, #d9773f 70%, #ebb062 79%, #f3d9a4 86%);
+}
+
+/* ---- sky */
+
+.title-sky {
+  position: absolute;
+  inset: 0 0 40% 0;
+  z-index: -3;
+  background-image:
+    radial-gradient(2px 2px at 8% 12%, var(--paper) 50%, transparent 51%),
+    radial-gradient(2px 2px at 21% 28%, var(--paper) 50%, transparent 51%),
+    radial-gradient(2px 2px at 34% 8%, var(--gold-hi) 50%, transparent 51%),
+    radial-gradient(2px 2px at 47% 22%, var(--paper) 50%, transparent 51%),
+    radial-gradient(2px 2px at 63% 10%, var(--paper) 50%, transparent 51%),
+    radial-gradient(2px 2px at 71% 31%, var(--gold-hi) 50%, transparent 51%),
+    radial-gradient(2px 2px at 86% 18%, var(--paper) 50%, transparent 51%),
+    radial-gradient(2px 2px at 93% 6%, var(--paper) 50%, transparent 51%),
+    radial-gradient(1px 1px at 15% 40%, var(--paper) 50%, transparent 51%),
+    radial-gradient(1px 1px at 55% 38%, var(--paper) 50%, transparent 51%),
+    radial-gradient(1px 1px at 78% 44%, var(--paper) 50%, transparent 51%);
+  animation: twinkle 5s steps(2) infinite;
+}
+
+.title-sky__moon {
+  position: absolute;
+  top: 14%;
+  right: 12%;
+  width: 52px;
+  height: 52px;
+  background: var(--paper);
+  /* a pixel-stepped disc with a crescent shadow */
+  clip-path: polygon(30% 0, 70% 0, 70% 8%, 85% 8%, 85% 15%, 92% 15%, 92% 30%, 100% 30%, 100% 70%, 92% 70%, 92% 85%, 85% 85%, 85% 92%, 70% 92%, 70% 100%, 30% 100%, 30% 92%, 15% 92%, 15% 85%, 8% 85%, 8% 70%, 0 70%, 0 30%, 8% 30%, 8% 15%, 15% 15%, 15% 8%, 30% 8%);
+  box-shadow: inset -14px -6px 0 0 var(--paper-3);
+  filter: drop-shadow(0 0 18px rgba(243, 233, 210, 0.5));
+}
+
+@keyframes twinkle {
+  50% { opacity: 0.75; }
+}
+
+/* ---- lantern strings */
+
+.title-strings {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 11vh;
+  min-height: 70px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.title-strings__line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.title-strings__item {
+  position: absolute;
+  transform-origin: 50% 0;
+  animation: hang-sway 2.6s ease-in-out infinite;
+}
+
+.title-strings__item--lantern {
+  width: 16px;
+  height: 22px;
+  margin-left: -8px;
+  background: radial-gradient(circle at 50% 45%, #fff1c4 0 18%, var(--lantern) 40%, #e2672e 80%);
+  box-shadow: 0 0 0 2px var(--ink), 0 0 22px 8px rgba(247, 195, 92, 0.45);
+}
+
+.title-strings__item--lantern::before,
+.title-strings__item--lantern::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 3px;
+  background: var(--gold);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.title-strings__item--lantern::before { top: -4px; }
+.title-strings__item--lantern::after { bottom: -4px; }
+
+.title-strings__item--flag {
+  width: 14px;
+  height: 18px;
+  margin-left: -7px;
+  background:
+    linear-gradient(45deg, transparent 38%, var(--crimson) 38% 62%, transparent 62%) center 40% / 8px 8px no-repeat,
+    linear-gradient(-45deg, transparent 38%, var(--crimson) 38% 62%, transparent 62%) center 40% / 8px 8px no-repeat,
+    var(--paper-hi);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
+}
+
+@keyframes hang-sway {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+}
+
+/* ---- town silhouette */
+
+.title-town {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 52vh;
+  z-index: -2;
+}
+
+.title-town__far,
+.title-town__near {
+  position: absolute;
+  left: -2%;
+  right: -2%;
+}
+
+.title-town__far {
+  bottom: 15vh;
+  height: 24vh;
+  background:
+    radial-gradient(circle, rgba(247, 195, 92, 0.85) 0 1.5px, transparent 2.5px) 6px 10px / 26px 20px,
+    #4a2a4f;
+  clip-path: polygon(0 60%, 4% 60%, 4% 45%, 9% 45%, 9% 55%, 13% 55%, 13% 35%, 15% 30%, 17% 35%, 17% 52%, 23% 52%, 23% 40%, 28% 40%, 28% 58%, 33% 58%, 33% 30%, 36% 22%, 39% 30%, 39% 50%, 44% 50%, 44% 62%, 56% 62%, 56% 46%, 60% 46%, 60% 36%, 63% 28%, 66% 36%, 66% 54%, 71% 54%, 71% 42%, 77% 42%, 77% 56%, 82% 56%, 82% 32%, 85% 26%, 88% 32%, 88% 48%, 93% 48%, 93% 58%, 100% 58%, 100% 100%, 0 100%);
+}
+
+.title-town__near {
+  bottom: 13vh;
+  height: 17vh;
+  background:
+    radial-gradient(circle, rgba(247, 195, 92, 0.95) 0 2px, transparent 3px) 14px 18px / 38px 30px,
+    #2a1a33;
+  clip-path: polygon(0 50%, 3% 40%, 10% 40%, 13% 50%, 13% 62%, 20% 62%, 20% 34%, 22% 26%, 30% 26%, 32% 34%, 32% 58%, 38% 58%, 38% 44%, 45% 44%, 45% 70%, 55% 70%, 55% 42%, 58% 32%, 66% 32%, 69% 42%, 69% 60%, 76% 60%, 76% 38%, 84% 38%, 87% 48%, 87% 56%, 94% 56%, 94% 44%, 100% 44%, 100% 100%, 0 100%);
+}
+
+/* the Rite Spire: a tall notice tower with a lantern at the top */
+.title-town__spire {
+  position: absolute;
+  left: 50%;
+  bottom: 14vh;
+  width: 40px;
+  height: 36vh;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, #1f1328 0 50%, #2a1a33 50%);
+  clip-path: polygon(20% 12%, 50% 0, 80% 12%, 80% 18%, 70% 18%, 70% 100%, 30% 100%, 30% 18%, 20% 18%);
+}
+
+.title-town__spire span {
+  position: absolute;
+  top: 7%;
+  left: 50%;
+  width: 10px;
+  height: 12px;
+  margin-left: -5px;
+  background: #fff1c4;
+  box-shadow: 0 0 0 2px var(--lantern), 0 0 26px 12px rgba(247, 195, 92, 0.65);
+  animation: lantern-pulse 3s ease-in-out infinite;
+}
+
+.title-town__water {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14vh;
+  background:
+    linear-gradient(90deg, transparent calc(50% - 6px), rgba(247, 195, 92, 0.5) calc(50% - 6px) calc(50% + 6px), transparent calc(50% + 6px)) 0 0 / 100% 8px,
+    repeating-linear-gradient(180deg, transparent 0 6px, rgba(243, 233, 210, 0.12) 6px 8px),
+    linear-gradient(180deg, #2c4f6a, #16233a);
+  animation: water-shimmer 3s steps(3) infinite;
+}
+
+@keyframes water-shimmer {
+  50% { background-position: 0 4px, 0 3px, 0 0; }
+}
+
+/* ---- paper scraps drifting down */
+
+.title-scraps span {
+  position: absolute;
+  top: -4%;
+  width: 9px;
+  height: 7px;
+  background: var(--paper);
+  box-shadow: inset 0 -2px 0 var(--paper-3);
+  z-index: -1;
+  animation: scrap-fall 16s linear infinite;
+}
+
+.title-scraps span:nth-child(3n) {
+  width: 6px;
+  height: 10px;
+  background: linear-gradient(transparent 30%, var(--crimson) 30% 70%, transparent 70%) center / 40% 100% no-repeat, var(--paper-hi);
+}
+
+@keyframes scrap-fall {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to { transform: translate(18vw, 108vh) rotate(560deg); }
+}
+
+/* ---- content */
+
+.title-content {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: max(12vh, 84px) 16px max(24vh, 170px);
+  text-align: center;
+}
+
+.logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+}
+
+.logo__main {
+  --o: max(3px, 0.05em);
+  display: block;
+  font: 700 clamp(2.4rem, 10.5vw, 6.4rem)/0.95 var(--font-ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--paper-hi);
+  text-shadow:
+    0 calc(var(--o) * -1) 0 var(--ink), 0 var(--o) 0 var(--ink),
+    calc(var(--o) * -1) 0 0 var(--ink), var(--o) 0 0 var(--ink),
+    var(--o) var(--o) 0 var(--ink), calc(var(--o) * -1) var(--o) 0 var(--ink),
+    var(--o) calc(var(--o) * -1) 0 var(--ink), calc(var(--o) * -1) calc(var(--o) * -1) 0 var(--ink),
+    0 calc(var(--o) * 2.2) 0 var(--crimson), var(--o) calc(var(--o) * 2.2) 0 var(--crimson), calc(var(--o) * -1) calc(var(--o) * 2.2) 0 var(--crimson),
+    0 calc(var(--o) * 3.2) 0 var(--ink), var(--o) calc(var(--o) * 3.2) 0 var(--ink), calc(var(--o) * -1) calc(var(--o) * 3.2) 0 var(--ink),
+    0 0 40px rgba(247, 195, 92, 0.45);
+}
+
+.logo__sub {
+  position: relative;
+  display: inline-block;
+  padding: 0.45em 2.1em 0.4em;
+  font: 700 clamp(1rem, 3.2vw, 1.4rem)/1 var(--font-ui);
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--paper-hi);
+  background:
+    linear-gradient(var(--gold) 0 0) 0 4px / 100% 2px no-repeat,
+    linear-gradient(var(--gold) 0 0) 0 calc(100% - 4px) / 100% 2px no-repeat,
+    var(--crimson);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 50%, 100% 100%, 0 100%, 16px 50%);
+  filter: drop-shadow(0 4px 0 var(--ink));
+  text-indent: 0.4em;
+}
+
+.tagline {
+  margin: 4px 0 6px;
+  font-size: clamp(0.98rem, 2.6vw, 1.2rem);
+  font-weight: 700;
+  color: var(--paper-hi);
+  text-shadow: 0 2px 0 var(--ink), 0 0 12px rgba(14, 11, 38, 0.8);
+}
+
+.title-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: min(440px, 100%);
+}
+
+.title-menu .btn {
+  width: calc(100% - var(--px) * 2);
+}
+
+.title-help {
+  margin: 6px 4px 0;
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.title-help ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.title-help li::before {
+  content: "◆ ";
+  color: var(--crimson);
+}
+
+.title-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 8px 0 0;
+  font: 600 0.8rem/1.4 var(--font-ui);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.title-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.title-status__dot {
+  color: var(--crimson);
+  font-size: 0.6rem;
+}
+
+/* ---- foreground: a cobbled ledge with the exorcist and Kessa */
+
+.title-foreground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22vh;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.title-ledge {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(46vw, 520px);
+  height: 11vh;
+  min-height: 70px;
+  background:
+    linear-gradient(var(--stone-cap, #e6d6b2) 0 0) 0 0 / 100% 8px no-repeat,
+    linear-gradient(var(--ink) 0 0) 0 8px / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, #3a2a32 0 28px, #2a1c26 28px 30px),
+    #3a2a32;
+  clip-path: polygon(0 0, 88% 0, 92% 18%, 96% 18%, 100% 40%, 100% 100%, 0 100%);
+}
+
+.title-player {
+  position: absolute;
+  left: max(6vw, 24px);
+  bottom: calc(max(11vh, 70px) - 8px);
+  filter: drop-shadow(4px 4px 0 rgba(14, 11, 38, 0.5));
+}
+
+.title-kessa {
+  position: absolute;
+  left: calc(max(6vw, 24px) + 150px);
+  bottom: calc(max(11vh, 70px) + 50px);
+}
+
+.title-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  font: 600 0.75rem/1.2 var(--font-ui);
+  letter-spacing: 0.06em;
+  color: rgba(243, 233, 210, 0.8);
+  text-shadow: 0 2px 0 var(--ink);
+}
+
+@media (max-width: 720px) {
+  .title-content {
+    padding-top: max(10vh, 76px);
+    padding-bottom: 180px;
+  }
+  .title-ledge { width: 70vw; }
+  .title-player { left: 16px; transform: scale(0.75); transform-origin: 0 100%; }
+  .title-kessa { --kessa-scale: 3 !important; left: 120px; bottom: calc(max(11vh, 70px) + 30px); }
+  .title-kessa .kessa__body { width: 72px; height: auto; }
+  .title-footer { flex-direction: column; align-items: flex-end; text-align: right; }
+  .title-footer span:first-child { display: none; }
+  .title-town__spire { height: 30vh; }
+}
