@@ -1,0 +1,12 @@
+[package]
+name = "grudgebound-rite"
+version = "0.1.0"
+edition = "2021"
+description = "Grudgebound Rite: points, rules and vows, enforced on-chain"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { workspace = true }

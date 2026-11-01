@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["items", "rite"]
+
+[workspace.dependencies]
+# Check docs.near.org for the currently recommended near-sdk version before building.
+near-sdk = "5"
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

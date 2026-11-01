@@ -1,0 +1,30 @@
+# dependencies and builds
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Rust / NEAR contracts
+contracts/target/
+target/
+*.wasm
+neardev/
+
+# secrets: never commit keys
+.env
+.env.*
+!.env.example
+*.key
+*credentials*.json
+near-credentials/
+
+# submission payload contains personal data
+submission*.json
+
+# editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log

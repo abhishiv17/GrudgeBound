@@ -1,0 +1,12 @@
+[package]
+name = "grudgebound-items"
+version = "0.1.0"
+edition = "2021"
+description = "Grudgebound items: Ember coin and talismans in one multi-token contract (NEP-245, work in progress)"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = { workspace = true }
