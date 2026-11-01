@@ -7,7 +7,7 @@ import {
   defaultPlayerCurse, canUse, DEFAULT_PLAYER_CURSE, FLEE_MAX, FLEE_MIN, MIN_DAMAGE, STARTING_ITEMS,
   type PlayerAction,
 } from "@grudgebound/shared";
-import { describeEvent } from "./text";
+import { describeEvent } from "@grudgebound/shared";
 
 const attacks = (n: number): PlayerAction[] => Array.from({ length: n }, () => ({ kind: "attack" }));
 

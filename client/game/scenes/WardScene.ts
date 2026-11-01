@@ -1,5 +1,5 @@
 import * as Phaser from "phaser";
-import { POINTS_FOR_OMEN, curseById, cursesWhere, rollSpawnEmotion, rollSpawnOmen, createRng } from "@grudgebound/shared";
+import { POINTS_FOR_OMEN, curseById, rollEncounter, createRng } from "@grudgebound/shared";
 import { SOLID, T, TILE, buildLanternWard, buildOverLayer } from "../tiles";
 import { PLAYER_FRAMES_PER_ROW, PLAYER_ROW } from "../sprites";
 import { worldStore } from "../../lib/worldStore";
@@ -240,11 +240,7 @@ export class WardScene extends Phaser.Scene {
 
   private encounter() {
     const ward = worldStore.getSnapshot().summary?.wards.find((w) => w.id === "lantern");
-    const grudge = ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 };
-    const total = ward?.total ?? 5;
-    const omen = rollSpawnOmen(total, this.rng);
-    const emotion = rollSpawnEmotion(grudge, this.rng);
-    const curse = this.rng.pick(cursesWhere(emotion, omen));
+    const curse = rollEncounter(ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 }, this.rng);
     if (!this.reduceMotion) {
       this.cameras.main.shake(160, 0.003);
       this.cameras.main.flash(180, 176, 21, 58);

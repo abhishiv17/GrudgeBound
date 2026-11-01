@@ -8,6 +8,8 @@
  *   POST /battle         -> a player's finished battle { wild, omen, playerCurse, seed, actions, outcome, ward, by }.
  *                           The server replays it from seed + actions; only if the replay ends the same way
  *                           does the capture count: Grudge drains, the town log records it, points come back.
+ *   POST /battle/start   -> { ward, playerCurse?, by? }: the server picks the curse and the seed, and returns the battle view
+ *   POST /battle/turn    -> { battleId, action }: the server resolves the turn (see battles.ts; used by the Unreal client)
  *   GET /shop?merchant=broker -> that merchant's prices, each with a one-line reason in the merchant's voice
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
  *   POST /tick           -> advance one tick now (dev only)
@@ -22,6 +24,7 @@ import {
   type Omen, type PlayerAction, type WardId,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
+import { BattleSessions, MAX_TURNS } from "./battles";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -45,9 +48,9 @@ function send(res: ServerResponse, status: number, body: unknown) {
 }
 
 const MAX_BODY_BYTES = 16 * 1024;
-const MAX_TURNS = 200;
-/** Seeds already counted, so the same battle cannot be reported twice. */
+/** Seeds already counted, so the same battle cannot be reported twice (shared by both battle routes). */
 const seenBattles = new Set<string>();
+const battles = new BattleSessions(world, { seen: seenBattles });
 
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -134,6 +137,16 @@ createServer((req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS);
     return res.end();
+  }
+  if (req.method === "POST" && (url.pathname === "/battle/start" || url.pathname === "/battle/turn")) {
+    readJson(req).then(
+      (body) => {
+        const r = url.pathname === "/battle/start" ? battles.start(body) : battles.turn(body);
+        send(res, r.status, r.body);
+      },
+      (e: Error) => send(res, 400, { error: e.message }),
+    );
+    return;
   }
   if (req.method === "POST" && url.pathname === "/battle") {
     readJson(req).then(

@@ -33,6 +33,7 @@ npm install
 | `npm run server` then open `http://localhost:8787/state` | The live world as JSON, advancing one in-game hour per real minute (set `TICK_MS=3000` for faster ticks). |
 | `npm run dev` then open `http://localhost:3000` | Lantern Ward. Walk with arrow keys / WASD. Walk through tall grass: a curse appears, chosen from the Ward's live Grudge. Press **Fight!**: attack, ward, then **Seal** a weakened curse to bind it. Back in the Ward, Kessa announces the result, your points go up and the talisman appears in your case (**T**), where you can make it your partner. Works without the server too (the town then runs in the browser). |
 | With `npm run server` running, fight and bind a curse, then open `http://localhost:8787/events?since=-1` | The town log shows "A newcomer bound ... (+N points)": the server replayed your battle from its seed and actions before counting it. |
+| With `npm run server` running: `curl -X POST localhost:8787/battle/start -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"`, then `POST /battle/turn` with the `battleId` and `{"kind":"attack"}` | A battle run entirely by the server, turn by turn, with log lines; at the end the points and the seed to replay it. This is what the Unreal client uses (`docs/UNREAL_SETUP.md`). |
 | `http://localhost:8787/shop?merchant=broker` (server running) | The Talisman Broker's prices, each with a one-line reason. With a NEAR AI key in `.env`, the reason is written by the merchant agent; the number always comes from the formula. |
 | `npm run agent:demo` | Each AI rival decides its next move and the Talisman Broker explains a price. Uses NEAR AI Cloud if `.env` has a key, otherwise the scripted fallback. |
 | `npm test` | Unit tests for the type triangle, Grudge, pricing, rules, the Arbiter, engine determinism, battles and replay. |
@@ -47,7 +48,7 @@ npm install
 | `shared/src/pricing.ts`: every price formula in one file, with plain-English reasons | Done |
 | Tick engine: Grudge, spawns, merchants, bankruptcies, AI rival policies, rules with costs and effects | First version, being tuned |
 | Fast-forward simulator (`npm run sim`) | Done (text output; Observatory charts planned) |
-| Game server: `/state`, `/events`, `/shop` (merchant price reasons), `POST /battle` (replays a battle before counting it) | Working, in memory |
+| Game server: `/state`, `/events`, `/shop` (merchant price reasons), `POST /battle` (replays a battle before counting it), `/battle/start` + `/battle/turn` (server-run battles) | Working, in memory |
 | Agent runtime: observe, legal options, LLM choice, guardrail, scripted fallback | Done; not yet acting through NEAR wallets |
 | Game client (Next.js + Phaser): walkable Ward, tall-grass encounters, Grudge HUD, Kessa banner, Rules panel, Vow Shrine | Working; first art pass |
 | Battles and binding: encounter, turn-based battle, seal, talisman case, partner choice, points | Working; progress kept in the browser until sign-in |

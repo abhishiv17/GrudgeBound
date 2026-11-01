@@ -32,7 +32,7 @@ import {
   canUse, createBattle, fleeChance, resolveTurn, sealChance,
   type BattleEvent, type BattleState, type Outcome, type PlayerAction, type Side,
 } from "@grudgebound/shared";
-import { actionLabel, describeEvent, introLine, pct } from "../battle/text";
+import { actionLabel, describeEvent, introLine, pct } from "@grudgebound/shared";
 import { backdropTexture, BACKDROP_SCALE, PLAYER_SPOT, WILD_SPOT } from "../battle/backdrop";
 import { curseTexture } from "../battle/curseSprites";
 import { Frame, ensureGrain, iconTexture, kessaTexture } from "../battle/art";

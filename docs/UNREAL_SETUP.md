@@ -66,12 +66,46 @@ All JSON. Base URL `http://localhost:8787` (make it a setting so we can point it
 | `GET /state` | The whole town: Wards with Grudge per emotion, merchants, rules in force, points table |
 | `GET /events?since=<id>` | New log lines (bankruptcies, Calamities, rules, battles) for Kessa's banner; `since=-1` gives all |
 | `GET /shop?merchant=broker` | Shop items with price and a one-line reason |
-| `POST /battle` | Report a finished battle: `{ wild, omen, playerCurse, seed, actions, ward, by, outcome }`. The server replays it and answers `{ points }`, or 409 (already counted) / 422 (replay doesn't match) |
+| `POST /battle/start` | **Unreal uses this.** The player walked into tall grass. Body `{ ward, playerCurse?, by? }`. The server picks the curse from the Ward's Grudge and keeps the seed secret. Answer: `battleId`, `wild`, `matchup`, `view`, `lines` |
+| `POST /battle/turn` | **Unreal uses this.** Body `{ battleId, action }`. Answer: this turn's `events` and ready-made log `lines`, the new `view`, `outcome`. When the battle ends: `points`, `seed`, `actions` |
+| `POST /battle` | Web client only: reports a battle it fought itself; the server replays it |
 
-**Battles:** today the browser fights the battle itself and the server replays it. To keep one copy of the battle
-rules, the Unreal client will **not** get a C++ copy of the resolver. Instead the server will run the battle turn by turn
-(task P1-C5: `POST /battle/start` gives the curse and a server-made seed, `POST /battle/turn` takes your move and returns
-what happened). The Unreal battle screen only shows the result of each turn.
+**Battles are run by the server.** The Unreal client has no copy of the battle rules: it sends a move and draws what
+comes back. Code: `server/src/battles.ts` (tests in `battles.test.ts`).
+
+`action` is one of `{"kind":"attack"}`, `{"kind":"ward"}`, `{"kind":"seal"}`, `{"kind":"seal","gilded":true}`,
+`{"kind":"item","item":"salve"}`, `{"kind":"flee"}`. Grey out buttons using `view.canUse`; show `view.chances` on them.
+
+`view` (after start and after every turn):
+
+```json
+{
+  "turn": 0, "outcome": null,
+  "player": { "speciesId": "cinder-grin", "name": "Cinder Grin", "emotion": "rage", "omen": "whisper", "hp": 38, "maxHp": 38 },
+  "wild":   { "speciesId": "knucklebrat", "name": "Knucklebrat", "emotion": "rage", "omen": "whisper", "hp": 42, "maxHp": 42 },
+  "items": { "salve": 2, "gilded": 1 },
+  "chances": { "seal": 0, "gildedSeal": 0, "flee": 0.6 },
+  "canUse": { "attack": true, "ward": true, "seal": true, "gildedSeal": true, "salve": true, "flee": true }
+}
+```
+
+| Answer | Meaning |
+|---|---|
+| 200 | OK |
+| 400 | Bad body: unknown ward, curse or action |
+| 404 | No such battle: it ended, or nobody touched it for 15 minutes |
+| 409 | That move isn't available now (e.g. no salves left); the turn is not spent |
+| 503 | Too many battles open on the server; try again |
+
+`outcome` is `won` (exorcised), `bound` (sealed into a talisman), `fled` or `lost`. On `bound`, add a talisman for
+`view.wild.speciesId` to the Talisman Case. The server has already written the town log line and paid the points.
+
+Try it without Unreal:
+
+```sh
+curl -X POST localhost:8787/battle/start -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"
+curl -X POST localhost:8787/battle/turn  -H "Content-Type: application/json" -d "{\"battleId\":\"<id>\",\"action\":{\"kind\":\"attack\"}}"
+```
 
 In C++, use Unreal's `HTTP`, `Json` and `JsonUtilities` modules (add them to `Grudgebound.Build.cs`).
 
@@ -80,8 +114,9 @@ In C++, use Unreal's `HTTP`, `Json` and `JsonUtilities` modules (add them to `Gr
 1. **U1** Install, create the project, first commit of the empty project (on the lead's yes).
 2. **U2** Lantern Ward greybox: ground, houses as blocks, a tall-grass area, the player walks.
 3. **U3** `GrudgeboundApi` C++ class: `/health`, `/state`, `/events`. Show the Ward's Grudge in a simple UMG HUD.
-4. **U4** Walking through tall grass rolls an encounter (curse picked from the Ward's Grudge, as `WardScene` does).
-5. **U5** Battle screen on top of the server's turn API (P1-C5).
+4. **U4** Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away).
+   Slip away needs no call: the battle expires on its own.
+5. **U5** Battle screen on the server's battle calls (`/battle/start`, `/battle/turn`).
 6. **U6** Talisman Case and points in the HUD.
 7. Art pass after the loop works: the paper art set in `docs/art/` is the style guide.
 

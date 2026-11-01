@@ -109,11 +109,11 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P1-A1 | Must | NEAR AI Cloud key (claim credits, Q-000); agents choose through the LLM, fallback still works. Waiting for the key in `.env` | A | | 🟡 |
 | P1-A2 | Must | Merchant price tooltips ready for the shop screen: `GET /shop?merchant=broker` on the server | A | | ✅ |
 | P1-A3 | Should | Points for battles: bind or exorcise 5 / 20 / 80 by omen, times R1 bonus rules; fleeing or losing gives 0 (`capturePoints` in shared) | A | | ✅ |
-| P1-C5 | Must | Server runs battles turn by turn for the Unreal client: `POST /battle/start` (curse + server-made seed), `POST /battle/turn` (move in, result out). One copy of the battle rules, no C++ port, and no seed grinding | C | | ⬜ |
+| P1-C5 | Must | Server runs battles turn by turn for the Unreal client: `POST /battle/start` (server picks the curse and a secret seed), `POST /battle/turn` (move in; events, log lines and view out; points and seed at the end). `server/src/battles.ts`, 10 tests | C | | ✅ |
 | P1-U1 | Must | Install Unreal 5 + Visual Studio on the laptop; create `unreal/Grudgebound` (C++ Top Down template); write the engine version in `UNREAL_SETUP.md` | G | | ⬜ |
 | P1-U2 | Must | Lantern Ward greybox: ground, houses as blocks, tall grass, the player walks | G | | ⬜ |
 | P1-U3 | Must | `GrudgeboundApi` C++ class (`/health`, `/state`, `/events`); HUD shows the Ward's Grudge and Kessa's latest line | G | | ⬜ |
-| P1-U4 | Must | Walking through tall grass rolls an encounter from the Ward's Grudge (same odds as `WardScene`) | G | | ⬜ |
+| P1-U4 | Must | Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away) | G | | ⬜ |
 | P1-U5 | Must | Battle screen on the server's turn API (P1-C5): attack, ward, seal, flee; result back to the Ward | G | | ⬜ |
 | P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD | G | | ⬜ |
 
@@ -141,7 +141,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | ⬜ |
 | P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | ⬜ |
 | P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | ⬜ |
-| P2-C7 | Must | Server hands out the battle seed at the encounter (the client picks it today, so a cheater could retry seeds offline) | C | | ⬜ |
+| P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | ⬜ |
 | P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | ⬜ |
 | P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | ⬜ |
 
@@ -274,7 +274,8 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
-| 1 Nov | Phase 1 core loop: fight from the Ward, bind, Talisman Case, points and Ember in the HUD; server `POST /battle` replay check and `GET /shop`; contracts compile, 17 contract tests written | | not committed |
+| 1 Nov | Server-run battles (`/battle/start`, `/battle/turn`) for the Unreal client; encounter roll and battle log text moved to `shared/`; 40 tests | | |
+| 1 Nov | Phase 1 core loop: fight from the Ward, bind, Talisman Case, points and Ember in the HUD; server `POST /battle` replay check and `GET /shop`; contracts compile, 17 contract tests written; Unreal setup guide | | branch `phase-1/core-loop-and-unreal-setup` |
 | 1 Nov | Paper-and-ink design system, title screen, React HUD, Rules panel, Vow Shrine; Lantern Ward lighting | | #2 |
 | 1 Nov | Battle resolver with tests, BattleScene, battle art; rule template and params in the world summary | | #1 |
 | 1 Nov | Concept art replaced by three themed sets | | none |

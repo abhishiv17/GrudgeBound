@@ -6,8 +6,9 @@
  * type triangle and the base binding chance come from curses.ts / emotions.ts and are not changed here.
  * Shared so the game server can replay and check every battle the client reports.
  */
-import { bindChance, curseById, type CurseSpecies, type Omen } from "./curses";
+import { bindChance, curseById, cursesWhere, type CurseSpecies, type Omen } from "./curses";
 import { typeMultiplier, type Emotion } from "./emotions";
+import { rollSpawnEmotion, rollSpawnOmen, totalGrudge, type GrudgeMix } from "./grudge";
 import { createRng, type Rng } from "./rng";
 
 // ------------------------------------------------------------------ tuning constants
@@ -110,6 +111,16 @@ export function makeCombatant(species: CurseSpecies, omen: Omen = species.omen):
 
 export function defaultPlayerCurse(wildId: string): string {
   return wildId === DEFAULT_PLAYER_CURSE ? DEFAULT_PLAYER_CURSE_ALT : DEFAULT_PLAYER_CURSE;
+}
+
+/**
+ * The curse met in tall grass: omen from the Ward's total Grudge, emotion weighted by its mix.
+ * Used by the web client (offline) and by the server (POST /battle/start), so both roll alike.
+ */
+export function rollEncounter(grudge: GrudgeMix, rng: Rng): CurseSpecies {
+  const omen = rollSpawnOmen(totalGrudge(grudge), rng);
+  const emotion = rollSpawnEmotion(grudge, rng);
+  return rng.pick(cursesWhere(emotion, omen));
 }
 
 export interface BattleSetup {

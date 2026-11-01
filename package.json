@@ -19,7 +19,7 @@
     "server:watch": "tsx watch --env-file-if-exists=.env server/src/index.ts",
     "sim": "tsx sim/src/index.ts",
     "agent:demo": "tsx --env-file-if-exists=.env agents/src/demo.ts",
-    "test": "tsx --test shared/src/shared.test.ts client/game/battle/battle.test.ts",
+    "test": "tsx --test shared/src/shared.test.ts client/game/battle/battle.test.ts server/src/battles.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
