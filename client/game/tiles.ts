@@ -33,13 +33,14 @@ export const T = {
   fountainTR: 22,
   fountainBL: 23,
   fountainBR: 24,
+  mosaic: 25,
 } as const;
 
 export const SOLID: number[] = [
   T.water, T.water2, T.quay, T.wall, T.wallBanner, T.stall, T.stallR, T.lantern, T.board,
   T.crate, T.plant, T.bannerPost, T.fountainTL, T.fountainTR, T.fountainBL, T.fountainBR,
 ];
-export const TILE_COUNT = 25;
+export const TILE_COUNT = 26;
 
 /** Palette (style guide first, then supporting tones). */
 const C = {
@@ -59,8 +60,8 @@ const C = {
   grass: "#7C9A4C",
   grassLight: "#97B35E",
   grassDark: "#5E7B38",
-  tall: "#4A7232",
-  tallDark: "#33532A",
+  tall: "#507B36",
+  tallDark: "#3A5D2C",
   tallLight: "#8DB35E",
   water: "#2E97A3",
   waterLight: "#63C3C2",
@@ -152,11 +153,6 @@ function tallGrass(ctx: Ctx, x: number, onlyTips: boolean) {
       rect(ctx, bx, by + 12 - h - 1, 1, 2, C.tallLight);
     }
   }
-  if (!onlyTips) {
-    // a torn receipt caught in the grass: something lives in here
-    rect(ctx, x + 21, 6, 5, 4, C.paper);
-    rect(ctx, x + 22, 7, 3, 1, C.crimson);
-  }
 }
 
 function waterBase(ctx: Ctx, x: number, phase: number) {
@@ -228,8 +224,7 @@ function lanternPost(ctx: Ctx, x: number) {
 }
 
 function board(ctx: Ctx, x: number) {
-  rect(ctx, x, 0, TILE, TILE, C.stone);
-  plazaPattern(ctx, x);
+  flagstones(ctx, x, 5);
   rect(ctx, x + 3, 29, 26, 3, "rgba(26,23,38,0.3)");
   // legs and little roof
   rect(ctx, x + 5, 20, 3, 11, C.woodDark);
@@ -257,6 +252,19 @@ function pier(ctx: Ctx, x: number) {
   }
   rect(ctx, x + 3, 6, 1, 1, C.woodDark); rect(ctx, x + 11, 22, 1, 1, C.woodDark);
   rect(ctx, x + 19, 12, 1, 1, C.woodDark); rect(ctx, x + 27, 28, 1, 1, C.woodDark);
+}
+
+/** Large cream flagstones: the quiet plaza floor. */
+function flagstones(ctx: Ctx, x: number, seed = 0) {
+  rect(ctx, x, 0, TILE, TILE, C.stoneShade);
+  const slabs: [number, number, number, number][] = [[0, 0, 19, 15], [19, 0, 13, 15], [0, 15, 11, 17], [11, 15, 21, 17]];
+  slabs.forEach(([sx, sy, w, h], i) => {
+    const tone = hash(seed, i) < 0.3 ? "#E0CFA8" : C.stone;
+    rect(ctx, x + sx + 1, sy + 1, w - 1, h - 1, tone);
+    rect(ctx, x + sx + 1, sy + 1, w - 1, 1, C.stoneLight);
+    rect(ctx, x + sx + 1, sy + h - 1, w - 1, 1, C.stoneDark);
+  });
+  specks(ctx, x, 0, C.stoneDark, 5, seed + 7);
 }
 
 /** Cream mosaic floor with crimson and teal diamonds, like the plaza in the concept art. */
@@ -297,8 +305,7 @@ function crate(ctx: Ctx, x: number) {
 }
 
 function plant(ctx: Ctx, x: number) {
-  rect(ctx, x, 0, TILE, TILE, C.stone);
-  plazaPattern(ctx, x);
+  flagstones(ctx, x, 9);
   rect(ctx, x + 7, 28, 19, 3, "rgba(26,23,38,0.3)");
   // glazed pot
   rect(ctx, x + 9, 18, 15, 11, C.pot);
@@ -337,8 +344,7 @@ function rug(ctx: Ctx, x: number) {
 }
 
 function bannerPost(ctx: Ctx, x: number) {
-  rect(ctx, x, 0, TILE, TILE, C.stone);
-  plazaPattern(ctx, x);
+  flagstones(ctx, x, 11);
   rect(ctx, x + 9, 29, 15, 3, "rgba(26,23,38,0.3)");
   rect(ctx, x + 15, 0, 3, 31, C.woodDark);
   rect(ctx, x + 14, 0, 5, 2, C.gold);
@@ -379,8 +385,7 @@ function wall(ctx: Ctx, x: number, banner: boolean) {
 
 /** A 2x2 plaza fountain; `qx`/`qy` choose the quarter. */
 function fountain(ctx: Ctx, x: number, qx: number, qy: number) {
-  rect(ctx, x, 0, TILE, TILE, C.stone);
-  plazaPattern(ctx, x);
+  flagstones(ctx, x, 13 + qx + qy * 2);
   const cx = x + (qx === 0 ? 32 : 0); // fountain centre, in this tile's coordinates
   const cy = qy === 0 ? 34 : 2;
   ctx.save();
@@ -421,7 +426,7 @@ export function drawTiles(ctx: Ctx) {
   board(ctx, at(T.board));
   pier(ctx, at(T.pier));
   stall(ctx, at(T.stallR), "R", 2);
-  plazaPattern(ctx, at(T.plaza));
+  flagstones(ctx, at(T.plaza), 1);
   cobbles(ctx, at(T.path2), 29);
   grassBase(ctx, at(T.flowers), 13);
   {
@@ -444,6 +449,7 @@ export function drawTiles(ctx: Ctx) {
   fountain(ctx, at(T.fountainTR), 1, 0);
   fountain(ctx, at(T.fountainBL), 0, 1);
   fountain(ctx, at(T.fountainBR), 1, 1);
+  plazaPattern(ctx, at(T.mosaic));
 }
 
 /** Lantern Ward test map: a market street, a plaza with the Rite board, tall grass, and the harbor. */
@@ -471,6 +477,7 @@ export function buildLanternWard(cols = 44, rows = 30): number[][] {
 
   // plaza with the Rite board, a rug, a fountain, banners and potted plants
   fill(16, 9, 11, 9, T.plaza);
+  fill(19, 12, 5, 3, T.mosaic);
   put(21, 10, T.board);
   fill(20, 11, 3, 1, T.rug);
   put(17, 15, T.fountainTL); put(18, 15, T.fountainTR);

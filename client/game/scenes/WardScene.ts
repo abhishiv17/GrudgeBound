@@ -251,6 +251,13 @@ export class WardScene extends Phaser.Scene {
     }
     this.lamps.push({ x: kessa.x, y: kessa.y, r: 40, seed: 3 });
 
+    // Torn receipts caught in the tall grass: something lives in there.
+    this.layer.forEachTile((t) => {
+      if (t.index !== T.tallGrass || ((t.x * 73 + t.y * 151) % 11) !== 0) return;
+      this.add.image(t.pixelX + 8 + ((t.x * 13) % 16), t.pixelY + 6 + ((t.y * 7) % 14), (t.x + t.y) % 2 ? "scrap-red" : "scrap")
+        .setAngle(((t.x * 37) % 50) - 25).setDepth(1);
+    });
+
     // Porters in straw hats loitering by the stalls.
     const porters: [number, number][] = [[9.5, 13.6], [34.5, 13.2], [27.8, 16.4]];
     for (const [tx, ty] of porters) {
@@ -334,7 +341,8 @@ export class WardScene extends Phaser.Scene {
     }
     const t = Phaser.Math.Clamp(d / MAX_DARK, 0, 1);
     const c = Phaser.Display.Color.Interpolate.ColorWithColor(DUSK_COLOR, NIGHT_COLOR, 100, Math.round(t * 100));
-    this.nightRt.setVisible(true).clear().fill(Phaser.Display.Color.GetColor(c.r, c.g, c.b), d);
+    // Fill opaque and fade the whole layer: a partly transparent fill renders far too faint in WebGL.
+    this.nightRt.setVisible(true).setAlpha(d).clear().fill(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1);
     const view = this.cameras.main.worldView;
     const now = this.time.now;
     for (const l of this.lamps) {

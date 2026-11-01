@@ -290,3 +290,25 @@ export const CURSE_PORTRAIT: Record<"rage" | "sorrow" | "dread", PixelMap> = {
     ],
   },
 };
+
+/** A crimson wax seal with an embossed gold diamond and one drip. */
+export const SEAL: PixelMap = {
+  outline: true,
+  palette: { r: "#B0153A", R: "#7E0F2A", h: "#D9466A", g: "#D9A532" },
+  rows: [
+    "....rrrrr....",
+    "..rrRRRRRrr..",
+    ".rRRrrrrrRRr.",
+    ".rRrrrhrrrRr.",
+    "rRrrrhghrrrRr",
+    "rRrrhgrghrrRr",
+    "rRrhgrrrghrRr",
+    "rRrrhgrghrrRr",
+    "rRrrrhghrrrRr",
+    ".rRrrrhrrrRr.",
+    ".rRRrrrrrRRr.",
+    "..rrRRRRRrr..",
+    "....rrrrrr...",
+    ".........r...",
+  ],
+};
