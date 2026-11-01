@@ -5,8 +5,14 @@ export function pct(p: number): string {
   return `${Math.round(p * 100)}%`;
 }
 
+/** "Wild Hushmoth", but plain "The Shuttered" (names that already carry an article stay as they are). */
+export function wildName(name: string, capital = true): string {
+  if (name.startsWith("The ")) return name;
+  return `${capital ? "Wild" : "wild"} ${name}`;
+}
+
 export function introLine(state: BattleState): string {
-  return `A ${state.wild.omen} rises: wild ${state.wild.name}! Your ${state.player.name} stands ready.`;
+  return `A ${state.wild.omen} rises: ${wildName(state.wild.name, false)}! Your ${state.player.name} stands ready.`;
 }
 
 export function actionLabel(a: PlayerAction): string {
@@ -21,7 +27,7 @@ export function actionLabel(a: PlayerAction): string {
 
 /** One log line per event. `state` is the state after the turn (names do not change). */
 export function describeEvent(e: BattleEvent, state: BattleState): string {
-  const name = (side: "player" | "wild") => (side === "player" ? `Your ${state.player.name}` : `Wild ${state.wild.name}`);
+  const name = (side: "player" | "wild") => (side === "player" ? `Your ${state.player.name}` : wildName(state.wild.name));
   switch (e.kind) {
     case "attack": {
       const target = e.by === "player" ? state.wild.name : state.player.name;
@@ -33,7 +39,7 @@ export function describeEvent(e: BattleEvent, state: BattleState): string {
       return line;
     }
     case "ward":
-      return e.by === "player" ? `Your ${state.player.name} raises a paper ward.` : `Wild ${state.wild.name} curls up behind a ward.`;
+      return e.by === "player" ? `Your ${state.player.name} raises a paper ward.` : `${wildName(state.wild.name)} curls up behind a ward.`;
     case "heal":
       return `Ink salve mends ${state.player.name} for ${e.amount}.`;
     case "seal":

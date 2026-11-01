@@ -5,6 +5,7 @@
 import * as Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
 import { WardScene } from "./scenes/WardScene";
+import { BattleScene } from "./scenes/BattleScene";
 
 export function startGame(parent: HTMLElement): Phaser.Game {
   const game = new Phaser.Game({
@@ -17,7 +18,8 @@ export function startGame(parent: HTMLElement): Phaser.Game {
     roundPixels: true,
     physics: { default: "arcade", arcade: { debug: false } },
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-    scene: [BootScene, WardScene],
+    // ?scene=battle starts the battle screen on its own (for testing); otherwise it waits for WardScene to launch it.
+    scene: new URLSearchParams(window.location.search).get("scene") === "battle" ? [BattleScene] : [BootScene, WardScene, BattleScene],
   });
 
   // Dev only: inspect the game from the browser console, e.g. game.scene.getScene("ward").
