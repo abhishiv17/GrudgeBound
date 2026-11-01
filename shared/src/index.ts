@@ -9,3 +9,5 @@ export * from "./points";
 export * from "./rules";
 export * from "./vows";
 export * from "./engine";
+export * from "./battle";
+export * from "./battleText";

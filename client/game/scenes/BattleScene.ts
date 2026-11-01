@@ -1,7 +1,7 @@
 /**
  * BattleScene: the turn-based fight between your bound curse and a wild one.
  *
- * HOW WARDSCENE SHOULD CALL IT (to wire up later; WardScene is not changed yet):
+ * HOW WARDSCENE CALLS IT (see WardScene.maybeStartBattle / afterBattle):
  *
  *   // in WardScene.encounter(), instead of openDialog(curse):
  *   this.scene.pause();                                   // freeze walking + Ward input
@@ -31,8 +31,8 @@ import { CURSES, EMOTION_INFO, OMENS, createRng, curseById, type Omen, type Rng 
 import {
   canUse, createBattle, fleeChance, resolveTurn, sealChance,
   type BattleEvent, type BattleState, type Outcome, type PlayerAction, type Side,
-} from "../battle/resolve";
-import { actionLabel, describeEvent, introLine, pct } from "../battle/text";
+} from "@grudgebound/shared";
+import { actionLabel, describeEvent, introLine, pct } from "@grudgebound/shared";
 import { backdropTexture, BACKDROP_SCALE, PLAYER_SPOT, WILD_SPOT } from "../battle/backdrop";
 import { curseTexture } from "../battle/curseSprites";
 import { Frame, ensureGrain, iconTexture, kessaTexture } from "../battle/art";

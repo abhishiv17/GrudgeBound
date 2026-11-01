@@ -3,14 +3,14 @@
 import { MAX_ACTIVE_RULES, WARD_INFO } from "@grudgebound/shared";
 import GrudgeMeter from "./GrudgeMeter";
 import { CoinIcon, LanternIcon, MoonIcon, NoticeIcon, SunIcon } from "../ui/Icons";
-import { PLAYER_ID, useUi, useWorld } from "../../lib/hooks";
+import { usePlayer, useUi, useWorld } from "../../lib/hooks";
 
-/** Ward card: name, day and hour (with a night marker), Grudge, rules in force and the player's points. */
+/** Ward card: name, day and hour (with a night marker), Grudge, rules in force, and the player's points and Ember. */
 export default function WardStatus({ className }: { className?: string }) {
   const { summary } = useWorld();
   const { sealed } = useUi();
   const ward = summary?.wards.find((w) => w.id === "lantern");
-  const me = summary?.leaderboard.find((p) => p.id === PLAYER_ID);
+  const me = usePlayer();
   const night = summary?.night ?? true;
   const hour = summary ? `${String(summary.hour).padStart(2, "0")}:00` : "--:--";
 
@@ -39,7 +39,11 @@ export default function WardStatus({ className }: { className?: string }) {
         </div>
         <div>
           <dt><CoinIcon scale={1} /> Your points</dt>
-          <dd>{me?.points ?? 0}</dd>
+          <dd>{me.points}</dd>
+        </div>
+        <div>
+          <dt>Ember</dt>
+          <dd>{me.ember}</dd>
         </div>
       </dl>
     </section>

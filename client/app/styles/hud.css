@@ -531,6 +531,23 @@
   color: var(--ink-soft);
 }
 
+.encounter__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ---- during a battle the battle screen owns the whole frame */
+
+.stage--battle .stage__status,
+.stage--battle .stage__actions,
+.stage--battle .stage__pad,
+.stage--battle .stage__bottom,
+.stage--battle .prompt-chip {
+  display: none;
+}
+
 /* ---- touch D-pad */
 
 .touchpad {

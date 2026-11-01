@@ -1,14 +1,20 @@
 import * as Phaser from "phaser";
-import { cursesWhere, rollSpawnEmotion, rollSpawnOmen, createRng } from "@grudgebound/shared";
+import { POINTS_FOR_OMEN, curseById, rollEncounter, createRng } from "@grudgebound/shared";
 import { SOLID, T, TILE, buildLanternWard, buildOverLayer } from "../tiles";
 import { PLAYER_FRAMES_PER_ROW, PLAYER_ROW } from "../sprites";
 import { worldStore } from "../../lib/worldStore";
-import { isBlocking, touchInput, uiStore } from "../../lib/uiStore";
+import { isBlocking, touchInput, uiStore, type BattleRequest } from "../../lib/uiStore";
+import { captureVerb, playerStore } from "../../lib/playerStore";
+import { BATTLE_END, type BattleData, type BattleResult } from "./BattleScene";
 
 const SPEED = 110;
 /** Integer zoom keeps every pixel the same size. */
 const ZOOM = 2;
 const ENCOUNTER_CHANCE_PER_TILE = 0.12;
+/** Tiles of tall grass you can cross after a battle before the next curse may appear. */
+const GRACE_TILES = 3;
+/** How the town names you in its log until email login gives you a real name. */
+const PLAYER_NAME = "A newcomer";
 const BOARD = { x: 21 * TILE + TILE / 2, y: 10 * TILE + TILE / 2 };
 const NIGHT_COLOR = Phaser.Display.Color.ValueToColor(0x0e0b26);
 const DUSK_COLOR = Phaser.Display.Color.ValueToColor(0x5a2a48);
@@ -49,6 +55,8 @@ export class WardScene extends Phaser.Scene {
   private rng = createRng(Date.now() >>> 0);
   private reduceMotion = false;
   private blocked = false;
+  private fighting = false;
+  private graceTiles = 0;
   private cleanups: (() => void)[] = [];
 
   // lighting
@@ -70,6 +78,8 @@ export class WardScene extends Phaser.Scene {
     this.lamps = [];
     this.cleanups = [];
     this.blocked = false;
+    this.fighting = false;
+    this.graceTiles = 0;
 
     // --- map
     const data = buildLanternWard();
@@ -112,7 +122,10 @@ export class WardScene extends Phaser.Scene {
 
     // --- shared state
     this.cleanups.push(worldStore.subscribe(() => this.onWorld()));
-    this.cleanups.push(uiStore.subscribe(() => this.syncInputCapture()));
+    this.cleanups.push(uiStore.subscribe(() => {
+      this.syncInputCapture();
+      this.maybeStartBattle();
+    }));
     const onFocus = () => this.syncInputCapture();
     document.addEventListener("focusin", onFocus);
     document.addEventListener("focusout", onFocus);
@@ -178,7 +191,8 @@ export class WardScene extends Phaser.Scene {
       if (this.grassDistance >= TILE) {
         this.grassDistance = 0;
         this.leafFx?.explode(5, this.player.x, this.player.y + 12);
-        if (this.rng.chance(ENCOUNTER_CHANCE_PER_TILE)) this.encounter();
+        if (this.graceTiles > 0) this.graceTiles -= 1;
+        else if (this.rng.chance(ENCOUNTER_CHANCE_PER_TILE)) this.encounter();
       }
     }
   }
@@ -226,16 +240,62 @@ export class WardScene extends Phaser.Scene {
 
   private encounter() {
     const ward = worldStore.getSnapshot().summary?.wards.find((w) => w.id === "lantern");
-    const grudge = ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 };
-    const total = ward?.total ?? 5;
-    const omen = rollSpawnOmen(total, this.rng);
-    const emotion = rollSpawnEmotion(grudge, this.rng);
-    const curse = this.rng.pick(cursesWhere(emotion, omen));
+    const curse = rollEncounter(ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 }, this.rng);
     if (!this.reduceMotion) {
       this.cameras.main.shake(160, 0.003);
       this.cameras.main.flash(180, 176, 21, 58);
     }
     uiStore.openEncounter(curse);
+  }
+
+  /** The player pressed "Fight!": pause the Ward and run the battle on top of it. */
+  private maybeStartBattle() {
+    const req = uiStore.getSnapshot().battle;
+    if (!req || this.fighting) return;
+    this.fighting = true;
+    const partner = playerStore.partner();
+    const data: BattleData = { wild: req.wild, omen: req.omen, seed: req.seed, playerCurse: partner.speciesId };
+    this.game.events.once(BATTLE_END, (r: BattleResult) => void this.afterBattle(req, r));
+    this.scene.pause();
+    this.scene.launch("battle", data);
+  }
+
+  /** Back in the Ward: report the result to the town, then pay out points and talismans. */
+  private async afterBattle(req: BattleRequest, r: BattleResult) {
+    this.fighting = false;
+    this.grassDistance = 0;
+    this.graceTiles = GRACE_TILES;
+    uiStore.endBattle();
+    this.scene.resume();
+
+    const sp = curseById(r.wild);
+    const partnerName = curseById(r.playerCurse).name;
+    const summary = worldStore.getSnapshot().summary;
+    const day = summary?.day ?? 1;
+    const verb = captureVerb(r.outcome);
+    const report = { outcome: r.outcome, wild: r.wild, omen: req.omen, seed: r.seed, day, points: 0 };
+
+    if (!verb) {
+      playerStore.recordBattle(report);
+      worldStore.say("battle", r.outcome === "fled"
+        ? `You slipped away from ${sp.name}. It still haunts the tall grass.`
+        : `${sp.name} drove you off. I patched up your ${partnerName}; rest a moment and try again.`);
+      return;
+    }
+
+    const proof = { wild: r.wild, omen: req.omen, playerCurse: r.playerCurse, seed: r.seed, actions: r.actions };
+    const answer = await worldStore.reportCapture({ ward: "lantern", speciesId: r.wild, omen: req.omen, verb, by: PLAYER_NAME }, proof);
+    if (answer.points === null) {
+      playerStore.recordBattle({ ...report, outcome: "fled" });
+      worldStore.say("rule-rejected", `The Rite could not record that fight (${answer.error}). No points this time.`);
+      return;
+    }
+    const points = answer.points;
+    const bonus = points > POINTS_FOR_OMEN[req.omen] ? " A rule in force raised your reward." : "";
+    playerStore.recordBattle({ ...report, points });
+    worldStore.say(r.outcome === "bound" ? "bound" : "exorcised", r.outcome === "bound"
+      ? `${sp.name} is bound. Its talisman is in your case (T). +${points} points.${bonus}`
+      : `${sp.name} is exorcised and the Ward breathes easier. +${points} points.${bonus}`);
   }
 
   // ---------------------------------------------------------------- dressing

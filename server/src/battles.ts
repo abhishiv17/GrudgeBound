@@ -1,0 +1,247 @@
+/**
+ * Server-run battles (P1-C5), for clients that should not carry their own copy of the battle rules
+ * (the Unreal client). The server picks the curse from the Ward's Grudge, makes the seed, and resolves
+ * every turn with the shared resolver. The client only sends moves and shows what happened.
+ *
+ *   POST /battle/start  { ward, playerCurse?, by? }  -> the curse met, the battle view, the intro line
+ *   POST /battle/turn   { battleId, action }         -> this turn's events and log lines, the new view;
+ *                                                       when the battle ends: outcome, points, seed
+ *
+ * The seed stays secret until the battle ends: a client that knew it could simulate each move ahead
+ * and only Seal when the roll would succeed. At the end it is returned so anyone can replay the battle.
+ *
+ * Trust today: playerCurse is taken as sent. Phase 2 checks it against the player's talismans on chain.
+ */
+import { randomInt, randomUUID } from "node:crypto";
+import {
+  DEFAULT_PLAYER_CURSE, WARDS,
+  actionLabel, canUse, createBattle, createRng, curseById, describeEvent, fleeChance, introLine,
+  recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
+  type BattleEvent, type BattleState, type Combatant, type Omen, type Outcome, type PlayerAction,
+  type Rng, type WardId, type World,
+} from "@grudgebound/shared";
+
+/** A battle nobody has touched for this long is dropped (the player walked away). */
+export const BATTLE_IDLE_MS = 15 * 60_000;
+/** Open battles kept at once; more are refused until old ones expire. */
+export const MAX_OPEN_BATTLES = 500;
+export const MAX_TURNS = 200;
+
+export interface SideView {
+  speciesId: string;
+  name: string;
+  emotion: Combatant["emotion"];
+  omen: Omen;
+  hp: number;
+  maxHp: number;
+}
+
+/** Everything a battle screen needs to draw the current turn. */
+export interface BattleView {
+  turn: number;
+  outcome: Outcome | null;
+  player: SideView;
+  wild: SideView;
+  items: BattleState["items"];
+  /** Chances shown on the buttons, 0-1. */
+  chances: { seal: number; gildedSeal: number; flee: number };
+  canUse: { attack: boolean; ward: boolean; seal: boolean; gildedSeal: boolean; salve: boolean; flee: boolean };
+}
+
+export interface StartAnswer {
+  battleId: string;
+  ward: WardId;
+  wild: { id: string; name: string; emotion: Combatant["emotion"]; omen: Omen };
+  /** How your partner's grudge fares against this curse. */
+  matchup: "advantage" | "disadvantage" | "even";
+  view: BattleView;
+  lines: string[];
+}
+
+export interface TurnAnswer {
+  battleId: string;
+  action: string;
+  events: BattleEvent[];
+  lines: string[];
+  view: BattleView;
+  outcome: Outcome | null;
+  /** Only when the battle has ended. */
+  points?: number;
+  seed?: number;
+  actions?: PlayerAction[];
+}
+
+type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
+
+interface Session {
+  id: string;
+  ward: WardId;
+  by: string;
+  seed: number;
+  wildId: string;
+  omen: Omen;
+  playerCurse: string;
+  rng: Rng;
+  state: BattleState;
+  actions: PlayerAction[];
+  lastSeen: number;
+}
+
+export interface BattleSessionOptions {
+  now?: () => number;
+  newSeed?: () => number;
+  newId?: () => string;
+  /** Battles already counted ("seed:wild:playerCurse"), shared with POST /battle so nothing counts twice. */
+  seen?: Set<string>;
+}
+
+function side(c: Combatant): SideView {
+  return { speciesId: c.speciesId, name: c.name, emotion: c.emotion, omen: c.omen, hp: c.hp, maxHp: c.maxHp };
+}
+
+export function battleView(s: BattleState): BattleView {
+  return {
+    turn: s.turn,
+    outcome: s.outcome,
+    player: side(s.player),
+    wild: side(s.wild),
+    items: { ...s.items },
+    chances: { seal: sealChance(s.wild), gildedSeal: sealChance(s.wild, true), flee: fleeChance(s) },
+    canUse: {
+      attack: canUse(s, { kind: "attack" }),
+      ward: canUse(s, { kind: "ward" }),
+      seal: canUse(s, { kind: "seal" }),
+      gildedSeal: canUse(s, { kind: "seal", gilded: true }),
+      salve: canUse(s, { kind: "item", item: "salve" }),
+      flee: canUse(s, { kind: "flee" }),
+    },
+  };
+}
+
+/** Accepts only the exact action shapes the resolver knows. */
+export function parseAction(a: unknown): PlayerAction | null {
+  if (!a || typeof a !== "object") return null;
+  const x = a as Record<string, unknown>;
+  switch (x.kind) {
+    case "attack": return { kind: "attack" };
+    case "ward": return { kind: "ward" };
+    case "flee": return { kind: "flee" };
+    case "seal":
+      if (x.gilded !== undefined && typeof x.gilded !== "boolean") return null;
+      return x.gilded ? { kind: "seal", gilded: true } : { kind: "seal" };
+    case "item": return x.item === "salve" ? { kind: "item", item: "salve" } : null;
+    default: return null;
+  }
+}
+
+export class BattleSessions {
+  private readonly open = new Map<string, Session>();
+  private readonly now: () => number;
+  private readonly newSeed: () => number;
+  private readonly newId: () => string;
+  readonly seen: Set<string>;
+
+  constructor(private readonly world: World, opts: BattleSessionOptions = {}) {
+    this.now = opts.now ?? Date.now;
+    this.newSeed = opts.newSeed ?? (() => randomInt(0, 0x1_0000_0000));
+    this.newId = opts.newId ?? randomUUID;
+    this.seen = opts.seen ?? new Set();
+  }
+
+  get openCount(): number {
+    return this.open.size;
+  }
+
+  start(body: unknown): Answer<StartAnswer> {
+    const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const ward = b.ward;
+    if (typeof ward !== "string" || !(WARDS as readonly string[]).includes(ward)) return fail(400, "unknown ward");
+    const playerCurse = b.playerCurse === undefined ? DEFAULT_PLAYER_CURSE : b.playerCurse;
+    if (typeof playerCurse !== "string" || !isCurse(playerCurse)) return fail(400, "playerCurse must be a curse id");
+    const by = typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 40) : "A newcomer";
+
+    this.sweep();
+    if (this.open.size >= MAX_OPEN_BATTLES) return fail(503, "too many battles in progress, try again shortly");
+
+    const seed = this.newSeed();
+    // The encounter roll uses its own stream so the battle itself replays from createRng(seed) alone.
+    const wild = rollEncounter(this.world.wards[ward as WardId].grudge, createRng((seed ^ 0x9e3779b9) >>> 0));
+    const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse });
+    const s: Session = {
+      id: this.newId(), ward: ward as WardId, by, seed, wildId: wild.id, omen: wild.omen, playerCurse,
+      rng: createRng(seed), state, actions: [], lastSeen: this.now(),
+    };
+    this.open.set(s.id, s);
+    this.seen.add(`${seed}:${wild.id}:${playerCurse}`);
+
+    const m = typeMultiplier(state.player.emotion, state.wild.emotion);
+    return ok({
+      battleId: s.id,
+      ward: s.ward,
+      wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: wild.omen },
+      matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
+      view: battleView(state),
+      lines: [introLine(state)],
+    });
+  }
+
+  turn(body: unknown): Answer<TurnAnswer> {
+    const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    this.sweep();
+    const s = typeof b.battleId === "string" ? this.open.get(b.battleId) : undefined;
+    if (!s) return fail(404, "no battle with that id (it ended or expired)");
+    const action = parseAction(b.action);
+    if (!action) return fail(400, "unknown action");
+    if (!canUse(s.state, action)) return fail(409, `you can't ${actionLabel(action)} right now`);
+
+    const t = resolveTurn(s.state, action, s.rng);
+    s.state = t.state;
+    s.actions.push(action);
+    s.lastSeen = this.now();
+    const answer: TurnAnswer = {
+      battleId: s.id,
+      action: actionLabel(action),
+      events: t.events,
+      lines: t.events.map((e) => describeEvent(e, t.state)),
+      view: battleView(t.state),
+      outcome: t.state.outcome,
+    };
+
+    const outcome = t.state.outcome ?? (s.actions.length >= MAX_TURNS ? "fled" : null);
+    if (outcome) {
+      this.open.delete(s.id);
+      answer.outcome = outcome;
+      answer.points = outcome === "bound" || outcome === "won"
+        ? recordCapture(this.world, {
+            ward: s.ward, speciesId: s.wildId, omen: s.omen, verb: outcome === "bound" ? "bind" : "exorcise", by: s.by,
+          })
+        : 0;
+      answer.seed = s.seed;
+      answer.actions = s.actions;
+    }
+    return ok(answer);
+  }
+
+  /** Drops battles nobody has touched for BATTLE_IDLE_MS. */
+  private sweep() {
+    const cutoff = this.now() - BATTLE_IDLE_MS;
+    for (const [id, s] of this.open) if (s.lastSeen < cutoff) this.open.delete(id);
+  }
+}
+
+function isCurse(id: string): boolean {
+  try {
+    curseById(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ok<T>(body: T): Answer<T> {
+  return { status: 200, body };
+}
+
+function fail(status: number, error: string): { status: number; body: { error: string } } {
+  return { status, body: { error } };
+}

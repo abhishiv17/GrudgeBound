@@ -1,7 +1,7 @@
 //! The Rite: points, rules and vows, enforced on-chain (plan section 8.3).
 //!
-//! Status: Day 1 skeleton. Core bookkeeping works; marked TODOs remain.
-//! Not yet compiled on the team machine: install Rust + cargo-near first (see contracts/README.md).
+//! Status: Phase 1. Compiles to wasm; unit tests written; marked TODOs remain.
+//! Build and test steps: contracts/README.md.
 //!
 //! Trust model: the game server reports battle results (with seed + log hash for replay);
 //! the Arbiter account accepts or rejects proposed rules. Everything else (costs, refunds,
@@ -279,4 +279,149 @@ impl Rite {
 fn emit(event: &str, data: near_sdk::serde_json::Value) {
     let payload = json!({ "standard": "grudgebound-rite", "version": "0.1.0", "event": event, "data": [data] });
     env::log_str(&format!("EVENT_JSON:{}", payload));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::testing_env;
+
+    fn as_caller(who: AccountId) {
+        testing_env!(VMContextBuilder::new().predecessor_account_id(who).build());
+    }
+
+    /// accounts(0) = game server, accounts(1) = arbiter, accounts(2) = alice, accounts(3) = bob.
+    fn setup() -> Rite {
+        as_caller(accounts(0));
+        Rite::new(accounts(0), accounts(1))
+    }
+
+    fn give(c: &mut Rite, who: AccountId, points: i64, battle: &str) {
+        as_caller(accounts(0));
+        c.submit_battle(BattleResult {
+            battle_id: battle.into(),
+            seed: 7,
+            log_hash: "hash".into(),
+            changes: vec![PointsChange { account_id: who, delta: points }],
+        });
+    }
+
+    #[test]
+    fn battles_move_points_once() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 80, "b1");
+        assert_eq!(c.get_points(accounts(2)), 80);
+        give(&mut c, accounts(2), -100, "b2");
+        assert_eq!(c.get_points(accounts(2)), 0, "points never go below zero");
+    }
+
+    #[test]
+    #[should_panic(expected = "battle already recorded")]
+    fn a_battle_cannot_be_counted_twice() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 5, "b1");
+        give(&mut c, accounts(2), 5, "b1");
+    }
+
+    #[test]
+    #[should_panic(expected = "only the game server")]
+    fn players_cannot_report_battles() {
+        let mut c = setup();
+        as_caller(accounts(2));
+        c.submit_battle(BattleResult { battle_id: "x".into(), seed: 1, log_hash: "h".into(), changes: vec![] });
+    }
+
+    #[test]
+    fn propose_pays_now_and_rejection_refunds() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 120, "b1");
+        as_caller(accounts(2));
+        let id = c.propose_rule("R8".into(), "{\"ward\":\"lantern\"}".into());
+        assert_eq!(c.get_points(accounts(2)), 70, "cost 50 is taken at once");
+        as_caller(accounts(1));
+        c.resolve_rule(id, false, Some("contradicts R3".into()));
+        assert_eq!(c.get_points(accounts(2)), 120, "a rejected rule is refunded in full");
+        assert!(c.get_active_rules().is_empty());
+        assert_eq!(c.get_rules(None, None)[0].status, RuleStatus::Rejected);
+    }
+
+    #[test]
+    fn accepted_rules_raise_the_next_cost_and_repeal_costs_double() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 200, "b1");
+        give(&mut c, accounts(3), 200, "b2");
+        assert_eq!(c.rule_cost(), 50);
+        as_caller(accounts(2));
+        let id = c.propose_rule("R1".into(), "{}".into());
+        as_caller(accounts(1));
+        c.resolve_rule(id, true, None);
+        assert_eq!(c.get_active_rules().len(), 1);
+        assert_eq!(c.rule_cost(), 75, "50 + 25 per rule in force");
+        as_caller(accounts(3));
+        c.repeal_rule(id);
+        assert_eq!(c.get_points(accounts(3)), 100, "repeal costs 2 x 50");
+        assert!(c.get_active_rules().is_empty());
+        assert_eq!(c.rule_cost(), 50);
+    }
+
+    #[test]
+    #[should_panic(expected = "not enough points")]
+    fn cannot_propose_without_points() {
+        let mut c = setup();
+        as_caller(accounts(2));
+        c.propose_rule("R1".into(), "{}".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "only the Arbiter can resolve rules")]
+    fn only_the_arbiter_resolves() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 60, "b1");
+        as_caller(accounts(2));
+        let id = c.propose_rule("R1".into(), "{}".into());
+        c.resolve_rule(id, true, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "the Rite already holds the maximum number of rules")]
+    fn at_most_ten_rules_in_force() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 10_000, "b1");
+        for _ in 0..=MAX_ACTIVE_RULES {
+            as_caller(accounts(2));
+            let id = c.propose_rule("R1".into(), "{}".into());
+            as_caller(accounts(1));
+            c.resolve_rule(id, true, None);
+        }
+    }
+
+    #[test]
+    fn kept_vows_pay_back_twenty_percent_and_broken_vows_burn() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 100, "b1");
+        as_caller(accounts(2));
+        let kept = c.make_vow("V1".into(), "{}".into(), 50, 86_400_000);
+        let broken = c.make_vow("V2".into(), "{}".into(), 50, 86_400_000);
+        assert_eq!(c.get_points(accounts(2)), 0, "both stakes are locked");
+        as_caller(accounts(0));
+        c.settle_vow(kept, true);
+        c.settle_vow(broken, false);
+        assert_eq!(c.get_points(accounts(2)), 60, "50 back + 20%, the other stake burned");
+        let vows = c.get_vows(accounts(2));
+        assert_eq!(vows[0].status, VowStatus::Kept);
+        assert_eq!(vows[1].status, VowStatus::Broken);
+    }
+
+    #[test]
+    #[should_panic(expected = "vow already settled")]
+    fn a_vow_settles_once() {
+        let mut c = setup();
+        give(&mut c, accounts(2), 50, "b1");
+        as_caller(accounts(2));
+        let id = c.make_vow("V1".into(), "{}".into(), 50, 1000);
+        as_caller(accounts(0));
+        c.settle_vow(id, true);
+        c.settle_vow(id, true);
+    }
 }

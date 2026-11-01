@@ -1,5 +1,5 @@
 /** Battle log wording. Pure functions, so the log is part of the replayable result. */
-import type { BattleEvent, BattleState, Outcome, PlayerAction } from "./resolve";
+import type { BattleEvent, BattleState, Outcome, PlayerAction } from "./battle";
 
 export function pct(p: number): string {
   return `${Math.round(p * 100)}%`;

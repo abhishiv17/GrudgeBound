@@ -1,9 +1,9 @@
 "use client";
 
-import { NoticeIcon, SealIcon } from "../ui/Icons";
+import { CoinIcon, NoticeIcon, SealIcon } from "../ui/Icons";
 import { uiStore } from "../../lib/uiStore";
 
-/** The two panel buttons on the HUD. Shortcuts: R and V. */
+/** The panel buttons on the HUD. Shortcuts: R, V and T. */
 export default function HudActions({ className }: { className?: string }) {
   return (
     <nav className={`hud-actions ${className ?? ""}`} aria-label="Rite panels">
@@ -16,6 +16,11 @@ export default function HudActions({ className }: { className?: string }) {
         <SealIcon scale={2} />
         <span>Vow Shrine</span>
         <kbd aria-hidden>V</kbd>
+      </button>
+      <button type="button" className="btn btn--paper hud-actions__btn" onClick={() => uiStore.openPanel("talismans")} aria-keyshortcuts="T">
+        <CoinIcon scale={2} />
+        <span>Talismans</span>
+        <kbd aria-hidden>T</kbd>
       </button>
     </nav>
   );

@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
-import { EMOTION_INFO, WARD_INFO, type CurseSpecies } from "@grudgebound/shared";
+import { EMOTION_INFO, WARD_INFO, curseById, typeMultiplier, type CurseSpecies } from "@grudgebound/shared";
 import Panel from "../ui/Panel";
 import PixelSprite from "../ui/PixelSprite";
 import Stamp from "../ui/Stamp";
 import { EmotionIcon } from "../ui/Icons";
 import { CURSE_PORTRAIT } from "../../game/pixelArt";
 import { uiStore } from "../../lib/uiStore";
-import { useUi } from "../../lib/hooks";
+import { usePlayer, useUi } from "../../lib/hooks";
 
 const OMEN_SCALE = { whisper: 4, wail: 5, calamity: 6 } as const;
 const STAT_MAX = { hp: 160, attack: 24, guard: 22, speed: 13 } as const;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** "A wild curse appears!" on a parchment panel. Space, Enter or Esc continues. */
+/** "A wild curse appears!" on a parchment panel. Fight (Space / Enter) or slip away (Esc). */
 export default function EncounterDialog({ className }: { className?: string }) {
   const { encounter } = useUi();
   return encounter ? <Encounter curse={encounter} className={className} /> : null;
@@ -24,6 +24,11 @@ function Encounter({ curse, className }: { curse: CurseSpecies; className?: stri
   const titleId = useId();
   const button = useRef<HTMLButtonElement>(null);
   const info = EMOTION_INFO[curse.emotion];
+  const player = usePlayer();
+  const partnerTal = player.talismans.find((t) => t.id === player.partnerId) ?? player.talismans[0]!;
+  const partner = curseById(partnerTal.speciesId);
+  const edge = typeMultiplier(partner.emotion, curse.emotion);
+  const edgeLine = edge > 1 ? "has the upper hand" : edge < 1 ? "is at a disadvantage" : "is evenly matched";
 
   useEffect(() => {
     button.current?.focus();
@@ -74,10 +79,17 @@ function Encounter({ curse, className }: { curse: CurseSpecies; className?: stri
             ))}
           </dl>
           <div className="encounter__foot">
-            <p className="encounter__note">Battles and binding arrive on Days 3-6.</p>
-            <button ref={button} type="button" className="btn btn--primary" onClick={() => uiStore.closeEncounter()}>
-              Continue <kbd aria-hidden>Space</kbd>
-            </button>
+            <p className="encounter__note">
+              Your <b>{partner.name}</b> {edgeLine}. Weaken it, then Seal to bind it.
+            </p>
+            <div className="encounter__choices">
+              <button type="button" className="btn btn--paper" onClick={() => uiStore.closeEncounter()}>
+                Slip away <kbd aria-hidden>Esc</kbd>
+              </button>
+              <button ref={button} type="button" className="btn btn--primary" onClick={() => uiStore.startBattle()}>
+                Fight! <kbd aria-hidden>Space</kbd>
+              </button>
+            </div>
           </div>
         </div>
       </Panel>

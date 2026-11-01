@@ -36,3 +36,17 @@ next-env.d.ts
 
 # Internal plan document (shared with the team directly, not published)
 docs/*.pdf
+
+# Unreal Engine (unreal/<Project>/...): generated, never committed
+unreal/**/Binaries/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/DerivedDataCache/
+unreal/**/.vs/
+unreal/**/*.sln
+unreal/**/*.VC.db
+unreal/**/*.opensdf
+unreal/**/*.sdf
+# packaged builds go on GitHub Releases, not in the repo
+unreal/**/Packaged/
+*.zip

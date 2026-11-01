@@ -487,3 +487,129 @@
     line-height: 1.35;
   }
 }
+
+/* ------------------------------------------------------------------ talisman case */
+
+.case {
+  display: grid;
+  gap: 18px;
+}
+
+.case__purse {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, auto)) minmax(0, 1fr);
+  gap: 8px 22px;
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--paper-2);
+}
+
+.case__purse dt {
+  font: 600 0.64rem/1.2 var(--font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.case__purse dd {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0;
+  font: 700 1.05rem/1.2 var(--font-ui);
+}
+
+.case__purse .case__record {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.case__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.talisman {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  background: var(--paper-hi);
+  border: 3px solid var(--paper-3);
+}
+
+.talisman.is-partner {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-hi) inset;
+}
+
+.talisman__portrait {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  background: color-mix(in srgb, var(--emotion) 14%, var(--paper));
+}
+
+.talisman__partner {
+  --f: var(--gold-dk);
+  background: var(--gold-hi);
+}
+
+.talisman__name {
+  margin: 0 0 4px;
+  font: 700 1rem/1.2 var(--font-ui);
+}
+
+.talisman__tags {
+  margin: 0 0 4px -2px;
+}
+
+.talisman__line {
+  margin: 0 0 2px;
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+
+.talisman__btn {
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+
+.case__history ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.case__history li {
+  padding: 4px 0;
+  font-size: 0.88rem;
+  border-bottom: 1px dashed rgba(122, 78, 46, 0.3);
+}
+
+.case__day {
+  display: inline-block;
+  min-width: 52px;
+  font: 600 0.72rem/1 var(--font-ui);
+  color: var(--ink-soft);
+}
+
+.case__pts {
+  font-weight: 700;
+  color: #2f7a55;
+}
+
+@media (max-width: 640px) {
+  .case__purse {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .case__purse > div:last-child {
+    grid-column: 1 / -1;
+  }
+}

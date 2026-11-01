@@ -9,8 +9,8 @@
  * The delay keeps React Strict Mode's mount/unmount/mount (and the title -> game switch)
  * from restarting the offline town from day 1.
  */
-import type { GameEvent, WorldSummary } from "@grudgebound/shared";
-import { startWorldFeed, type WorldFeed } from "../game/worldFeed";
+import type { CaptureReport, GameEvent, WorldSummary } from "@grudgebound/shared";
+import { startWorldFeed, type BattleProof, type ReportAnswer, type WorldFeed } from "../game/worldFeed";
 
 export type FeedStatus = "connecting" | "server" | "offline";
 
@@ -107,5 +107,14 @@ export const worldStore = {
   },
   getServerSnapshot(): WorldSnapshot {
     return INITIAL;
+  },
+  /** Kessa reads a line out in the banner (e.g. the result of your battle). */
+  say(kind: string, text: string) {
+    announce(kind, text);
+  },
+  /** Report a binding or exorcism to the town (server or offline engine). */
+  async reportCapture(capture: CaptureReport, proof: BattleProof): Promise<ReportAnswer> {
+    if (!feed) return { points: null, error: "the town is not running" };
+    return feed.report(capture, proof);
   },
 };

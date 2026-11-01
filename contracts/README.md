@@ -7,21 +7,44 @@ Two Rust contracts for NEAR (testnet during the hackathon).
 | `items/` | `items.grudgebound.testnet` | Ember coin + every talisman in one multi-token contract (NEP-245 shape; compliance is WIP) |
 | `rite/` | `rite.grudgebound.testnet` | Points, rules (propose / resolve / repeal), vows (stake / settle), battle results |
 
-**Status (Day 1):** skeletons with the core bookkeeping written. They have **not been compiled yet**:
-the first job for the Chain & Server seat is to install the toolchain, build them and fix what the compiler says.
+**Status (1 Nov):** both contracts **compile to wasm** (`items` 324 KB, `rite` 374 KB, Rust 1.99, near-sdk 5.30).
+Unit tests are written for both (7 for `items`, 10 for `rite`) using near-sdk's mocked blockchain.
 
-## Setup (Chain & Server seat)
+## Build (any OS)
 
-Use **WSL2 (Ubuntu)** on Windows; Rust contract builds are much smoother there.
+```sh
+rustup target add wasm32-unknown-unknown
+cd contracts
+cargo build --target wasm32-unknown-unknown --release
+# -> target/wasm32-unknown-unknown/release/grudgebound_items.wasm and grudgebound_rite.wasm
+```
 
-Get the exact, current commands from **https://docs.near.org (Smart Contracts > Quickstart)**.
-At the time of writing the steps are roughly:
+On Windows without admin rights, the GNU toolchain works for this build:
+`rustup-init -y --default-host x86_64-pc-windows-gnu -t wasm32-unknown-unknown`, then add `%USERPROFILE%\.cargo\bin` to PATH.
 
-1. Install Rust with `rustup`, then add the WebAssembly target (`rustup target add wasm32-unknown-unknown`).
-   Use the Rust version the NEAR docs recommend.
-2. Install `cargo-near` (build tool) and NEAR CLI.
-3. Create the testnet accounts (`grudgebound.testnet` plus `items.` and `rite.` sub-accounts).
-4. Build each contract from its folder with `cargo near build`, then deploy and call `new(...)`.
+## Test
+
+```sh
+cd contracts
+cargo test
+```
+
+- **Linux, macOS, WSL2 or Windows with the MSVC toolchain:** runs as is.
+- **Windows with the GNU toolchain:** the tests' dependencies need GNU `dlltool` + `as`, which that toolchain does not ship,
+  so run them in Docker instead (Docker Desktop must be running):
+  ```sh
+  docker run --rm -v "%cd%":/c -w /c rust:1 sh -c "cargo test"
+  ```
+
+## Deploy (Phase 2)
+
+Get the exact, current commands from **https://docs.near.org (Smart Contracts > Quickstart)**. Roughly:
+
+1. Install `cargo-near` (build tool) and NEAR CLI. Build with `cargo near build`: it applies the wasm settings
+   the NEAR runtime accepts. Check which Rust version the NEAR docs recommend; very new compilers can emit
+   wasm features the runtime rejects.
+2. Create the testnet accounts (`grudgebound.testnet` plus `items.` and `rite.` sub-accounts).
+3. Deploy each contract and call `new(...)`.
 
 Never commit keys. NEAR CLI stores credentials outside the repo; `.gitignore` also blocks common key files.
 
@@ -31,4 +54,4 @@ Never commit keys. NEAR CLI stores credentials outside the repo; `.gitignore` al
 - `rite`: apply money rules (R1, R4, R5) to battle results here instead of trusting the server's numbers.
 - `rite`: let vows be settled as kept by anyone after they end; require evidence for breaches.
 - `items`: finish NEP-245 (approvals, `mt_batch_transfer`, `mt_transfer_call` + resolve, metadata views).
-- Both: unit tests with `near-sdk`'s `unit-testing` feature, and a testnet deploy script.
+- Both: a testnet deploy script; integration tests on testnet (near-workspaces' sandbox has no Windows build).

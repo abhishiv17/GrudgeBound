@@ -6,8 +6,8 @@ import {
   createBattle, resolveTurn, replayBattle, rollDamage, sealChance, fleeChance, makeCombatant,
   defaultPlayerCurse, canUse, DEFAULT_PLAYER_CURSE, FLEE_MAX, FLEE_MIN, MIN_DAMAGE, STARTING_ITEMS,
   type PlayerAction,
-} from "./resolve";
-import { describeEvent } from "./text";
+} from "@grudgebound/shared";
+import { describeEvent } from "@grudgebound/shared";
 
 const attacks = (n: number): PlayerAction[] => Array.from({ length: n }, () => ({ kind: "attack" }));
 
