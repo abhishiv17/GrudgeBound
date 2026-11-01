@@ -3,12 +3,12 @@
  * from the seeded Rng passed in, so a battle can be replayed exactly from { seed, actions }.
  *
  * Balance numbers are deliberately simple and live in the constants below. Species stats, the
- * type triangle and the base binding chance come from @grudgebound/shared and are not changed here.
+ * type triangle and the base binding chance come from curses.ts / emotions.ts and are not changed here.
+ * Shared so the game server can replay and check every battle the client reports.
  */
-import {
-  bindChance, createRng, curseById, typeMultiplier,
-  type CurseSpecies, type Emotion, type Omen, type Rng,
-} from "@grudgebound/shared";
+import { bindChance, curseById, type CurseSpecies, type Omen } from "./curses";
+import { typeMultiplier, type Emotion } from "./emotions";
+import { createRng, type Rng } from "./rng";
 
 // ------------------------------------------------------------------ tuning constants
 

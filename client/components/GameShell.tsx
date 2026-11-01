@@ -9,6 +9,7 @@ import EncounterDialog from "./hud/EncounterDialog";
 import TouchPad from "./hud/TouchPad";
 import RulesPanel from "./panels/RulesPanel";
 import VowShrine from "./panels/VowShrine";
+import TalismanCase from "./panels/TalismanCase";
 import { isBlocking, uiStore } from "../lib/uiStore";
 import { useUi, useWorld } from "../lib/hooks";
 
@@ -17,7 +18,7 @@ export default function GameShell({ onExit }: { onExit: () => void }) {
   const { status } = useWorld();
   const ui = useUi();
 
-  // Panel shortcuts: R and V (ignored while typing or while something else is open).
+  // Panel shortcuts: R, V and T (ignored while typing or while something else is open).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || isBlocking()) return;
@@ -26,6 +27,7 @@ export default function GameShell({ onExit }: { onExit: () => void }) {
       const k = e.key.toLowerCase();
       if (k === "r") uiStore.openPanel("rules");
       if (k === "v") uiStore.openPanel("vows");
+      if (k === "t") uiStore.openPanel("talismans");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -50,7 +52,7 @@ export default function GameShell({ onExit }: { onExit: () => void }) {
         </span>
       </header>
 
-      <div className="stage">
+      <div className={`stage ${ui.battle ? "stage--battle" : ""}`}>
         <div className="stage__frame">
           <GameCanvas />
         </div>
@@ -73,11 +75,13 @@ export default function GameShell({ onExit }: { onExit: () => void }) {
         <span>Tall grass hides curses</span>
         <span><kbd>R</kbd> rules</span>
         <span><kbd>V</kbd> vows</span>
+        <span><kbd>T</kbd> talismans</span>
         <span><kbd>Esc</kbd> close</span>
       </footer>
 
       <RulesPanel />
       <VowShrine />
+      <TalismanCase />
     </div>
   );
 }

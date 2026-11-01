@@ -7,6 +7,8 @@ import {
   quoteSellPrice, quoteBuyPrice, type MarketItem,
   pvpTake, ruleCost, arbiterCheck, renderRule, isCruel, type Rule,
   simulate, summarize,
+  capturePoints, ruleMultiplier, curfewForbids, recordCapture, createWorld, totalGrudge as total,
+  createBattle, resolveTurn, replayBattle, type PlayerAction,
 } from "./index";
 
 describe("type triangle", () => {
@@ -104,5 +106,54 @@ describe("engine", () => {
     const s = summarize(simulate(42, 24 * 7));
     assert.equal(s.day, 8);
     assert.ok(s.leaderboard[0]!.points > 0);
+  });
+});
+
+describe("player captures", () => {
+  const bonus = { templateId: "R1", params: { action: "bind", ward: "lantern", multiplier: "2" } };
+  const curfew = { templateId: "R2", params: { action: "exorcise", ward: "lantern", time: "night" } };
+
+  it("pays the plan's points per omen, doubled by a matching R1 rule only", () => {
+    assert.equal(capturePoints([], "bind", "lantern", "whisper"), 5);
+    assert.equal(capturePoints([], "exorcise", "lantern", "calamity"), 80);
+    assert.equal(capturePoints([bonus], "bind", "lantern", "wail"), 40);
+    assert.equal(capturePoints([bonus], "exorcise", "lantern", "wail"), 20);
+    assert.equal(capturePoints([bonus], "bind", "ash", "wail"), 20);
+    assert.equal(ruleMultiplier([bonus, bonus], "bind", "lantern"), 4);
+  });
+
+  it("applies curfews only at the named time", () => {
+    const night = 23, noon = 12;
+    assert.equal(curfewForbids([curfew], "exorcise", "lantern", night), true);
+    assert.equal(curfewForbids([curfew], "exorcise", "lantern", noon), false);
+    assert.equal(curfewForbids([curfew], "bind", "lantern", night), false);
+  });
+
+  it("drains the Ward's Grudge, logs the capture and returns its points", () => {
+    const world = createWorld(1);
+    world.wards.lantern.grudge = { rage: 0, sorrow: 30, dread: 0 };
+    const before = total(world.wards.lantern.grudge);
+    const events = world.events.length;
+    const pts = recordCapture(world, { ward: "lantern", speciesId: "weepwick", omen: "whisper", verb: "bind", by: "Tester" });
+    assert.equal(pts, 5);
+    assert.ok(total(world.wards.lantern.grudge) < before);
+    assert.equal(world.events.length, events + 1);
+    assert.match(world.events.at(-1)!.text, /Tester bound Weepwick in Lantern Ward \(\+5 points\)/);
+  });
+
+  it("a reported battle replays to the same outcome from its seed and actions", () => {
+    const setup = { wild: "weepwick", playerCurse: "cinder-grin" };
+    const rng = createRng(77);
+    let state = createBattle(setup);
+    const actions: PlayerAction[] = [];
+    while (!state.outcome && actions.length < 50) {
+      const a: PlayerAction = state.wild.hp / state.wild.maxHp < 0.4 ? { kind: "seal" } : { kind: "attack" };
+      actions.push(a);
+      state = resolveTurn(state, a, rng).state;
+    }
+    const replay = replayBattle(setup, 77, actions);
+    assert.equal(replay.at(-1)!.state.outcome, state.outcome);
+    const otherSeed = replayBattle(setup, 78, actions);
+    assert.notDeepEqual(otherSeed.map((t) => t.events), replay.map((t) => t.events));
   });
 });

@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { uiStore, type UiState } from "./uiStore";
 import { worldStore, type WorldSnapshot } from "./worldStore";
+import { playerStore, type PlayerState } from "./playerStore";
 
 /** The shared world snapshot (starts the feed on first use). */
 export function useWorld(): WorldSnapshot {
@@ -11,6 +12,11 @@ export function useWorld(): WorldSnapshot {
 
 export function useUi(): UiState {
   return useSyncExternalStore(uiStore.subscribe, uiStore.getSnapshot, uiStore.getSnapshot);
+}
+
+/** The player's own points, Ember and talismans. */
+export function usePlayer(): PlayerState {
+  return useSyncExternalStore(playerStore.subscribe, playerStore.getSnapshot, playerStore.getServerSnapshot);
 }
 
 export function useReducedMotion(): boolean {
@@ -25,5 +31,5 @@ export function useReducedMotion(): boolean {
   return reduced;
 }
 
-/** Stand-in for the signed-in player until email login lands: the engine's "Player 1". */
+/** Stand-in id for the signed-in player until email login lands (used as the author of local rule drafts). */
 export const PLAYER_ID = "player-1";

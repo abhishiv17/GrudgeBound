@@ -1,9 +1,9 @@
 //! Grudgebound items: the Ember coin and every talisman in one multi-token contract.
 //!
-//! Status: Day 1 skeleton. It follows the shape of NEP-245 (multi token) but is NOT yet
+//! Status: Phase 1. Compiles to wasm; unit tests written. It follows the shape of NEP-245 (multi token) but is NOT yet
 //! fully compliant: approvals, mt_batch_transfer, mt_transfer_call and resolve are TODO.
 //! Read the spec before finishing it: https://github.com/near/NEPs (neps/nep-0245.md).
-//! Not yet compiled on the team machine: install Rust + cargo-near first (see contracts/README.md).
+//! Build and test steps: contracts/README.md.
 
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
@@ -183,4 +183,108 @@ fn emit(event: &str, data: near_sdk::serde_json::Value) {
 
 fn emit_mint(owner: &AccountId, token_id: &str, amount: u128) {
     emit("mt_mint", json!({ "owner_id": owner, "token_ids": [token_id], "amounts": [amount.to_string()] }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, NearToken};
+
+    fn as_caller(who: AccountId, yocto: u128) {
+        let ctx = VMContextBuilder::new()
+            .predecessor_account_id(who)
+            .attached_deposit(NearToken::from_yoctonear(yocto))
+            .build();
+        testing_env!(ctx);
+    }
+
+    fn meta(species: &str) -> TalismanMeta {
+        TalismanMeta { species: species.into(), emotion: "sorrow".into(), omen: "whisper".into(), level: 1, wins: 0 }
+    }
+
+    /// accounts(0) = minter (game server), accounts(1) = alice, accounts(2) = bob.
+    fn setup() -> Items {
+        as_caller(accounts(0), 0);
+        Items::new(accounts(0))
+    }
+
+    #[test]
+    fn minter_mints_ember_and_talismans() {
+        let mut c = setup();
+        c.mint_ember(accounts(1), U128(100));
+        let id = c.mint_talisman(accounts(1), meta("weepwick"));
+        assert_eq!(id, "tal-1");
+        assert_eq!(c.mint_talisman(accounts(2), meta("hushmoth")), "tal-2");
+        assert_eq!(c.mt_balance_of(accounts(1), EMBER.into()).0, 100);
+        assert_eq!(c.mt_balance_of(accounts(1), id.clone()).0, 1);
+        assert_eq!(c.ember_supply().0, 100);
+        let view = c.talisman(id).unwrap();
+        assert_eq!(view.owner, accounts(1));
+        assert_eq!(view.meta.species, "weepwick");
+    }
+
+    #[test]
+    #[should_panic(expected = "only the minter")]
+    fn others_cannot_mint() {
+        let mut c = setup();
+        as_caller(accounts(1), 0);
+        c.mint_talisman(accounts(1), meta("weepwick"));
+    }
+
+    #[test]
+    fn transfer_moves_the_talisman_and_its_purse() {
+        let mut c = setup();
+        let id = c.mint_talisman(accounts(1), meta("weepwick"));
+        c.credit_purse(id.clone(), U128(30));
+        as_caller(accounts(1), 1);
+        c.mt_transfer(accounts(2), id.clone(), U128(1), None);
+        assert_eq!(c.mt_balance_of(accounts(1), id.clone()).0, 0);
+        assert_eq!(c.mt_balance_of(accounts(2), id.clone()).0, 1);
+        let view = c.talisman(id.clone()).unwrap();
+        assert_eq!(view.owner, accounts(2));
+        assert_eq!(view.purse.0, 30, "the purse travels with the talisman");
+        // the new owner can empty the purse into their Ember
+        as_caller(accounts(2), 0);
+        assert_eq!(c.withdraw_purse(id.clone()).0, 30);
+        assert_eq!(c.mt_balance_of(accounts(2), EMBER.into()).0, 30);
+        assert_eq!(c.talisman(id).unwrap().purse.0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "only the owner")]
+    fn only_the_owner_withdraws_a_purse() {
+        let mut c = setup();
+        let id = c.mint_talisman(accounts(1), meta("weepwick"));
+        c.credit_purse(id.clone(), U128(30));
+        as_caller(accounts(2), 0);
+        c.withdraw_purse(id);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient balance")]
+    fn cannot_transfer_what_you_do_not_hold() {
+        let mut c = setup();
+        let id = c.mint_talisman(accounts(1), meta("weepwick"));
+        as_caller(accounts(2), 1);
+        c.mt_transfer(accounts(3), id, U128(1), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+    fn transfer_needs_one_yocto() {
+        let mut c = setup();
+        let id = c.mint_talisman(accounts(1), meta("weepwick"));
+        as_caller(accounts(1), 0);
+        c.mt_transfer(accounts(2), id, U128(1), None);
+    }
+
+    #[test]
+    fn wins_are_recorded() {
+        let mut c = setup();
+        let id = c.mint_talisman(accounts(1), meta("weepwick"));
+        c.record_win(id.clone());
+        c.record_win(id.clone());
+        assert_eq!(c.talisman(id).unwrap().meta.wins, 2);
+    }
 }

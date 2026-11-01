@@ -12,6 +12,9 @@ const LABEL: Record<string, string> = {
   bankruptcy: "Bankruptcy",
   calamity: "Calamity",
   reopen: "Shop reopened",
+  bound: "Bound",
+  exorcised: "Exorcised",
+  battle: "After the fight",
 };
 
 const HOLD_MS = 5200;

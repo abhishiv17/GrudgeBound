@@ -169,17 +169,34 @@ function activeRules(world: World, templateId: string): Rule[] {
   return world.rules.filter((r) => r.templateId === templateId);
 }
 
-/** Is `action` forbidden in `ward` right now by a curfew (R2)? */
-function forbidden(world: World, action: string, ward: WardId): boolean {
-  return activeRules(world, "R2").some(
-    (r) => r.params.action === action && r.params.ward === ward && (r.params.time === "night") === isNight(world.tick),
+/** The parts of a rule the helpers below need: works on World rules and on WorldSummary rules alike. */
+export type RuleLike = Pick<Rule, "templateId" | "params">;
+
+/** Is `action` forbidden in `ward` at `tick` by a curfew (R2) in `rules`? */
+export function curfewForbids(rules: readonly RuleLike[], action: string, ward: WardId, tick: number): boolean {
+  return rules.some(
+    (r) => r.templateId === "R2" && r.params.action === action && r.params.ward === ward && (r.params.time === "night") === isNight(tick),
   );
 }
 
-function pointsMultiplier(world: World, action: string, ward: WardId): number {
-  return activeRules(world, "R1")
-    .filter((r) => r.params.action === action && r.params.ward === ward)
+/** Points multiplier from bonus rules (R1: "[action] in [Ward] gives x[m] points") in `rules`. */
+export function ruleMultiplier(rules: readonly RuleLike[], action: string, ward: WardId): number {
+  return rules
+    .filter((r) => r.templateId === "R1" && r.params.action === action && r.params.ward === ward)
     .reduce((m, r) => m * Number(r.params.multiplier), 1);
+}
+
+/** Points for binding or exorcising a curse of `omen` in `ward`, with the rules in force applied. */
+export function capturePoints(rules: readonly RuleLike[], verb: CaptureVerb, ward: WardId, omen: Omen): number {
+  return Math.round(POINTS_FOR_OMEN[omen] * ruleMultiplier(rules, verb, ward));
+}
+
+function forbidden(world: World, action: string, ward: WardId): boolean {
+  return curfewForbids(world.rules, action, ward, world.tick);
+}
+
+function pointsMultiplier(world: World, action: string, ward: WardId): number {
+  return ruleMultiplier(world.rules, action, ward);
 }
 
 /** Every action the rules allow this participant to take now. Agents may only choose from this list. */
@@ -275,6 +292,41 @@ function log(world: World, e: Omit<GameEvent, "tick" | "day" | "hour">) {
   if (world.events.length > TUNING.maxEvents) world.events.splice(0, world.events.length - TUNING.maxEvents);
 }
 
+/** A curse leaves the Ward: its emotion drains from the Grudge (over-hunting one emotion feeds it back). */
+function drainCapture(world: World, wardId: WardId, sp: CurseSpecies) {
+  const ward = world.wards[wardId];
+  ward.grudge = removeGrudge(ward.grudge, GRUDGE_SINKS.exorcise[sp.omen], sp.emotion);
+  ward.bindingsToday[sp.emotion] += 1;
+  if (ward.bindingsToday[sp.emotion] > DAILY_HUNT_QUOTA) ward.grudge = addGrudge(ward.grudge, sp.emotion, 1);
+}
+
+export type CaptureVerb = "bind" | "exorcise";
+
+export interface CaptureReport {
+  ward: WardId;
+  speciesId: string;
+  omen: Omen;
+  verb: CaptureVerb;
+  /** Display name of whoever fought it. */
+  by: string;
+}
+
+/**
+ * A battle outside the tick loop (a real player's fight) ended in a binding or an exorcism:
+ * drain the Ward's Grudge like any hunt and tell the town. Returns the points it earned under the rules in force.
+ * The caller decides who gets the points (the client's player store now, the Rite contract later).
+ */
+export function recordCapture(world: World, c: CaptureReport): number {
+  const sp = curseById(c.speciesId);
+  const points = capturePoints(world.rules, c.verb, c.ward, c.omen);
+  drainCapture(world, c.ward, sp);
+  log(world, {
+    type: c.verb, ward: c.ward, actor: c.by,
+    text: `${c.by} ${c.verb === "bind" ? "bound" : "exorcised"} ${sp.name} in ${wardName(c.ward)} (+${points} points).`,
+  });
+  return points;
+}
+
 function wardName(id: WardId) {
   return WARD_INFO[id].name;
 }
@@ -348,9 +400,7 @@ function act(world: World, me: Participant, action: ParticipantAction, rng: Rng)
       const pts = Math.round(POINTS_FOR_OMEN[sp.omen] * pointsMultiplier(world, verb, me.ward));
       me.points += pts;
       if (bound) me.talismans.push(sp.id);
-      ward.grudge = removeGrudge(ward.grudge, GRUDGE_SINKS.exorcise[sp.omen], sp.emotion);
-      ward.bindingsToday[sp.emotion] += 1;
-      if (ward.bindingsToday[sp.emotion] > DAILY_HUNT_QUOTA) ward.grudge = addGrudge(ward.grudge, sp.emotion, 1);
+      drainCapture(world, me.ward, sp);
       if (sp.omen !== "whisper") {
         log(world, { type: verb, ward: me.ward, actor: me.id, text: `${me.name} ${bound ? "bound" : "exorcised"} ${sp.name} (+${pts} points).` });
       }

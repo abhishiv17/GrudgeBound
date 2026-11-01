@@ -13,7 +13,7 @@ import PixelSprite from "../ui/PixelSprite";
 import { CoinIcon } from "../ui/Icons";
 import { SEAL } from "../../game/pixelArt";
 import { uiStore, type LocalRule } from "../../lib/uiStore";
-import { PLAYER_ID, useUi, useWorld } from "../../lib/hooks";
+import { PLAYER_ID, usePlayer, useUi, useWorld } from "../../lib/hooks";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -84,7 +84,7 @@ function RulesForm() {
   const preview = renderRule(templateId, params);
   const cost = ruleCost(active.length);
   const verdict = arbiterCheck(templateId, params, active);
-  const myPoints = summary?.leaderboard.find((p) => p.id === PLAYER_ID)?.points ?? 0;
+  const myPoints = usePlayer().points;
   const names = new Map((summary?.leaderboard ?? []).map((p) => [p.id, p.name]));
 
   const pick = (id: string) => {
