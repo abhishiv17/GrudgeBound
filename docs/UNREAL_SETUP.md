@@ -93,6 +93,10 @@ Then press **Play** in Unreal. Click to walk; walk through the dark-green tall g
 Back in the Ward the points and the talisman show up (press **T**). The HUD says *Server offline* if the server isn't running.
 For faster world ticks while testing: `TICK_MS=3000 npm run server` (PowerShell: `$env:TICK_MS=3000; npm run server`).
 
+**Before the engine is installed:** `unreal/tools/greybox-preview.html` is a browser preview of the same greybox
+(same blocks, colours, camera angle and screens, drawn with three.js, not Unreal). With `npm run server` running,
+double-click it: click to walk, tall grass, battles and the Talisman Case all use the real server.
+
 The plugin's screens are plain paper-and-ink panels. For the art pass, turn off *Create Default Ui* in the settings
 and build Blueprint widgets on the same subsystem events.
 
