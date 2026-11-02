@@ -1,7 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { capturePoints, createWorld, replayBattle, DEFAULT_PLAYER_CURSE } from "@grudgebound/shared";
-import { BattleSessions, BATTLE_IDLE_MS, MAX_OPEN_BATTLES, parseAction, type StartAnswer, type TurnAnswer } from "./battles";
+import { BattleSessions, BATTLE_IDLE_MS, MAX_OPEN_BATTLES, curseCatalog, parseAction, type StartAnswer, type TurnAnswer } from "./battles";
 
 function setup(seed = 1234) {
   let clock = 1_000_000;
@@ -130,5 +130,18 @@ describe("server-run battles (P1-C5)", () => {
     assert.deepEqual(parseAction({ kind: "seal" }), { kind: "seal" });
     assert.equal(parseAction({ kind: "seal", gilded: "yes" }), null);
     assert.equal(parseAction("attack"), null);
+  });
+});
+
+describe("curse catalog (GET /curses)", () => {
+  test("lists every curse with its name and looks, but not its stats", () => {
+    const list = curseCatalog();
+    assert.equal(list.length, 12);
+    const starter = list.find((c) => c.id === DEFAULT_PLAYER_CURSE);
+    assert.ok(starter);
+    assert.equal(starter.name, "Cinder Grin");
+    assert.equal(starter.emotion, "rage");
+    assert.equal(new Set(list.map((c) => c.id)).size, list.length);
+    for (const c of list) assert.equal("stats" in c, false);
   });
 });

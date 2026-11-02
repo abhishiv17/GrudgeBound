@@ -1,0 +1,222 @@
+// Data the game server sends, as Blueprint-readable structs.
+// Field meanings: docs/UNREAL_SETUP.md section 5, and server/src/battles.ts.
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GbTypes.generated.h"
+
+/** A move sent to POST /battle/turn. */
+UENUM(BlueprintType)
+enum class EGbAction : uint8
+{
+	Attack,
+	Ward,
+	Seal,
+	GildedSeal,
+	Salve,
+	Flee,
+};
+
+/** How a battle ended. None while it is still going. */
+UENUM(BlueprintType)
+enum class EGbOutcome : uint8
+{
+	None,
+	/** Exorcised: points, no talisman. */
+	Won,
+	/** Sealed into a talisman: points and a talisman. */
+	Bound,
+	Fled,
+	Lost,
+};
+
+USTRUCT(BlueprintType)
+struct FGbGrudge
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float Rage = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float Sorrow = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float Dread = 0.f;
+};
+
+USTRUCT(BlueprintType)
+struct FGbWardSummary
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbGrudge Grudge;
+	/** Rage + Sorrow + Dread, out of 100. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float Total = 0.f;
+	/** Curses roaming the Ward right now. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Wild = 0;
+};
+
+USTRUCT(BlueprintType)
+struct FGbMerchantSummary
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Ward;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Ember = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bClosed = false;
+	/** Item id -> sell price in Ember. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TMap<FString, int32> Prices;
+};
+
+USTRUCT(BlueprintType)
+struct FGbLeaderEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	/** "player" or "agent". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Kind;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Ember = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Talismans = 0;
+};
+
+USTRUCT(BlueprintType)
+struct FGbRule
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Id = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Author;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Cost = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString TemplateId;
+};
+
+/** GET /state: the whole town. */
+USTRUCT(BlueprintType)
+struct FGbWorldState
+{
+	GENERATED_BODY()
+
+	/** False until the first answer from the server arrives. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bValid = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Tick = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Day = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Hour = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bNight = true;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbWardSummary> Wards;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbMerchantSummary> Merchants;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbLeaderEntry> Leaderboard;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbRule> Rules;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 BurnedEmber = 0;
+};
+
+/** One line of the town log (GET /events). */
+USTRUCT(BlueprintType)
+struct FGbTownEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Tick = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Day = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Hour = 0;
+	/** e.g. "bankruptcy", "calamity", "rule", "capture". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Type;
+	/** Empty when the event is town-wide. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Ward;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Actor;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+};
+
+/** GET /curses: a curse's name and looks (stats stay on the server). */
+USTRUCT(BlueprintType)
+struct FGbCurseInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	/** "rage", "sorrow" or "dread". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Emotion;
+	/** "whisper", "wail" or "calamity". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Omen;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Home;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString BornFrom;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString MoveName;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString MoveEffect;
+};
+
+/** One side of a battle. */
+USTRUCT(BlueprintType)
+struct FGbSide
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString SpeciesId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Emotion;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Omen;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Hp = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 MaxHp = 1;
+};
+
+/** Everything the battle screen draws; sent after start and after every turn. */
+USTRUCT(BlueprintType)
+struct FGbBattleView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Turn = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") EGbOutcome Outcome = EGbOutcome::None;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbSide Player;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbSide Wild;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Salves = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 GildedSeals = 0;
+	/** 0-1, shown on the buttons. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float SealChance = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float GildedSealChance = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float FleeChance = 0.f;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCanAttack = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCanWard = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCanSeal = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCanGildedSeal = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCanSalve = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCanFlee = false;
+};
+
+/** POST /battle/start answer: the curse met in the tall grass. */
+USTRUCT(BlueprintType)
+struct FGbBattleStart
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString BattleId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Ward;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbCurseInfo Wild;
+	/** "advantage", "disadvantage" or "even": how your partner fares against this curse. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Matchup;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbBattleView View;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Lines;
+};
+
+/** POST /battle/turn answer. */
+USTRUCT(BlueprintType)
+struct FGbBattleTurn
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString BattleId;
+	/** The move as the server words it, e.g. "attack". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Action;
+	/** Ready-made log lines for this turn. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Lines;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbBattleView View;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") EGbOutcome Outcome = EGbOutcome::None;
+	/** True on the last turn; Points and Seed are only set then. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bEnded = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = 0;
+	/** Seed of the battle, revealed at the end so anyone can replay it. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int64 Seed = -1;
+};

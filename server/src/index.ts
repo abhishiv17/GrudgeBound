@@ -10,6 +10,7 @@
  *                           does the capture count: Grudge drains, the town log records it, points come back.
  *   POST /battle/start   -> { ward, playerCurse?, by? }: the server picks the curse and the seed, and returns the battle view
  *   POST /battle/turn    -> { battleId, action }: the server resolves the turn (see battles.ts; used by the Unreal client)
+ *   GET /curses          -> every curse's id, name, emotion, omen, home Ward and signature move (no stats)
  *   GET /shop?merchant=broker -> that merchant's prices, each with a one-line reason in the merchant's voice
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
  *   POST /tick           -> advance one tick now (dev only)
@@ -24,7 +25,7 @@ import {
   type Omen, type PlayerAction, type WardId,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
-import { BattleSessions, MAX_TURNS } from "./battles";
+import { BattleSessions, MAX_TURNS, curseCatalog } from "./battles";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -167,6 +168,7 @@ createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, tick: world.tick });
+  if (req.method === "GET" && url.pathname === "/curses") return send(res, 200, curseCatalog());
   if (req.method === "GET" && url.pathname === "/state") return send(res, 200, summarize(world));
   if (req.method === "GET" && url.pathname === "/events") {
     const since = Number(url.searchParams.get("since") ?? -1);

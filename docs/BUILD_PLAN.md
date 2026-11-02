@@ -110,12 +110,13 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P1-A2 | Must | Merchant price tooltips ready for the shop screen: `GET /shop?merchant=broker` on the server | A | | ✅ |
 | P1-A3 | Should | Points for battles: bind or exorcise 5 / 20 / 80 by omen, times R1 bonus rules; fleeing or losing gives 0 (`capturePoints` in shared) | A | | ✅ |
 | P1-C5 | Must | Server runs battles turn by turn for the Unreal client: `POST /battle/start` (server picks the curse and a secret seed), `POST /battle/turn` (move in; events, log lines and view out; points and seed at the end). `server/src/battles.ts`, 10 tests | C | | ✅ |
-| P1-U1 | Must | Install Unreal 5 + Visual Studio on the laptop; create `unreal/Grudgebound` (C++ Top Down template); write the engine version in `UNREAL_SETUP.md` | G | | ⬜ |
-| P1-U2 | Must | Lantern Ward greybox: ground, houses as blocks, tall grass, the player walks | G | | ⬜ |
-| P1-U3 | Must | `GrudgeboundApi` C++ class (`/health`, `/state`, `/events`); HUD shows the Ward's Grudge and Kessa's latest line | G | | ⬜ |
-| P1-U4 | Must | Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away) | G | | ⬜ |
-| P1-U5 | Must | Battle screen on the server's turn API (P1-C5): attack, ward, seal, flee; result back to the Ward | G | | ⬜ |
-| P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD | G | | ⬜ |
+| P1-U1 | Must | Install Unreal 5 + Visual Studio on the laptop; create `unreal/Grudgebound` (C++ Top Down template); write the engine version in `UNREAL_SETUP.md`. Version pinned: **UE 5.8 + VS Community 2026**; VS and the Epic launcher installed on the build laptop; UE itself waits for the owner's Epic sign-in | G | | 🟡 |
+| P1-U2 | Must | Lantern Ward greybox: ground, houses as blocks, tall grass, the player walks. Code written: `AGbWardGreybox` (plugin `unreal/Plugins/GrudgeboundClient`); not built in Unreal yet | G | | 🟡 |
+| P1-U3 | Must | `GrudgeboundApi` C++ class (`/health`, `/state`, `/events`); HUD shows the Ward's Grudge and Kessa's latest line. Code written: `UGbApiSubsystem`, `UGbHudWidget`; not built yet | G | | 🟡 |
+| P1-U4 | Must | Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away). Code written: `UGbTallGrassComponent`, `UGbEncounterWidget`; not built yet | G | | 🟡 |
+| P1-U5 | Must | Battle screen on the server's turn API (P1-C5): attack, ward, seal, flee; result back to the Ward. Code written: `UGbBattleWidget`, `AGbUiDirector`; not built yet | G | | 🟡 |
+| P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD. Code written: `UGbPlayerSubsystem` (SaveGame), `UGbTalismanCaseWidget` (T); not built yet | G | | 🟡 |
+| P1-C6 | Should | `GET /curses`: names and looks of every curse for the Unreal Talisman Case (no stats), 1 test | C | | ✅ |
 
 ---
 
@@ -239,7 +240,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 - [ ] Who takes which seat?
 - [ ] Which email-login option? (decided after the P3-C1 spike)
 - [ ] Where do we host the server (the Unreal build runs on the judge's PC and needs a reachable server URL)?
-- [ ] Which Unreal 5.x version do we pin?
+- [x] Which Unreal 5.x version do we pin? **5.8** (newest hotfix), with Visual Studio Community 2026.
 - [ ] Tracks besides `games`?
 - [ ] Daily check-in time?
 
@@ -257,6 +258,8 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2 Nov | Unreal client code lives in a plugin (`unreal/Plugins/GrudgeboundClient`) with its UI built in C++ | Written before the engine was installed, without touching template files; works with no widget assets; Blueprint widgets can replace the screens in the art pass |
+| 2 Nov | Pin Unreal Engine 5.8 and Visual Studio Community 2026; Lumen, Nanite and virtual shadow maps off | Newest 5.x, out since June with hotfixes; VS 2026 is Epic's pick for 5.8; the build laptop's GPU has 4 GB |
 | 2 Nov | Game client moves to Unreal Engine 5 (built on a teammate's RTX 3050 laptop); server, shared, agents and contracts unchanged; web client kept as fallback until the Unreal loop works | Team choice for a richer game; the fallback protects the NEAR deadline |
 | 2 Nov | Server runs battles turn by turn for the Unreal client (P1-C5) instead of a C++ copy of the resolver | One copy of the battle rules; the server makes the seed |
 | 1 Nov | Battle resolver moved to `shared/` | The server replays every reported battle with the same code the client fights with |
@@ -274,6 +277,7 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
+| 2 Nov | Unreal client plugin (API subsystem, Lantern Ward greybox, tall grass, HUD, encounter, battle screen, Talisman Case), `GET /curses`, `setup-project.ps1`, UE 5.8 + VS 2026 pinned; 41 tests | | branch `client/P1-U1-unreal-client` |
 | 1 Nov | Server-run battles (`/battle/start`, `/battle/turn`) for the Unreal client; encounter roll and battle log text moved to `shared/`; 40 tests | | |
 | 1 Nov | Phase 1 core loop: fight from the Ward, bind, Talisman Case, points and Ember in the HUD; server `POST /battle` replay check and `GET /shop`; contracts compile, 17 contract tests written; Unreal setup guide | | branch `phase-1/core-loop-and-unreal-setup` |
 | 1 Nov | Paper-and-ink design system, title screen, React HUD, Rules panel, Vow Shrine; Lantern Ward lighting | | #2 |

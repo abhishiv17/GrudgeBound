@@ -14,7 +14,7 @@
  */
 import { randomInt, randomUUID } from "node:crypto";
 import {
-  DEFAULT_PLAYER_CURSE, WARDS,
+  CURSES, DEFAULT_PLAYER_CURSE, WARDS,
   actionLabel, canUse, createBattle, createRng, curseById, describeEvent, fleeChance, introLine,
   recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
   type BattleEvent, type BattleState, type Combatant, type Omen, type Outcome, type PlayerAction,
@@ -227,6 +227,27 @@ export class BattleSessions {
     const cutoff = this.now() - BATTLE_IDLE_MS;
     for (const [id, s] of this.open) if (s.lastSeen < cutoff) this.open.delete(id);
   }
+}
+
+export interface CurseEntry {
+  id: string;
+  name: string;
+  emotion: Combatant["emotion"];
+  omen: Omen;
+  home: WardId;
+  bornFrom: string;
+  signatureMove: { name: string; effect: string };
+}
+
+/**
+ * GET /curses: names and looks of every curse, for clients without a copy of the game data
+ * (the Unreal Talisman Case shows names from it). Stats stay on the server with the battle rules.
+ */
+export function curseCatalog(): CurseEntry[] {
+  return CURSES.map((c) => ({
+    id: c.id, name: c.name, emotion: c.emotion, omen: c.omen, home: c.home, bornFrom: c.bornFrom,
+    signatureMove: { ...c.signatureMove },
+  }));
 }
 
 function isCurse(id: string): boolean {
