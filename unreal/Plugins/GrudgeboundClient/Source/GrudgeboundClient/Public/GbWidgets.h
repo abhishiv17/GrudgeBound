@@ -36,7 +36,7 @@ protected:
 	UGbPlayerSubsystem* Player() const;
 
 	UTextBlock* MakeText(const FString& Text, int32 Size, const FLinearColor& Color, bool bBold = false);
-	UBorder* MakePanel(const FLinearColor& Background, const FMargin& Padding);
+	UBorder* MakePanel(const FLinearColor& Background, const FMargin& Inner);
 	UButton* MakeButton(const FString& Label, UTextBlock*& OutLabel, const FLinearColor& Tint);
 	UProgressBar* MakeBar(const FLinearColor& Fill);
 	/** Wraps a widget in a size box of the given size (0 = leave that axis free). */

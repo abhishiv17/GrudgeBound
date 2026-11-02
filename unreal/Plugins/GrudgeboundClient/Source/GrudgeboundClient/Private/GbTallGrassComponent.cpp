@@ -22,7 +22,7 @@ UGbTallGrassComponent::UGbTallGrassComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickInterval = 0.05f;
-	SetBoxExtent(FVector(300.f, 200.f, 100.f));
+	InitBoxExtent(FVector(300.f, 200.f, 100.f)); // Set* would build physics data, which a constructor must not
 	SetCollisionProfileName(UCollisionProfile::NoCollision_ProfileName);
 	SetGenerateOverlapEvents(false);
 	SetCanEverAffectNavigation(false);

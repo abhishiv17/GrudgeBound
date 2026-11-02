@@ -125,11 +125,11 @@ UTextBlock* UGbWidgetBase::MakeText(const FString& Text, int32 Size, const FLine
 	return T;
 }
 
-UBorder* UGbWidgetBase::MakePanel(const FLinearColor& Background, const FMargin& Padding)
+UBorder* UGbWidgetBase::MakePanel(const FLinearColor& Background, const FMargin& Inner)
 {
 	UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
 	B->SetBrushColor(Background);
-	B->SetPadding(Padding);
+	B->SetPadding(Inner);
 	return B;
 }
 

@@ -75,7 +75,12 @@ Everything is in `Source/GrudgeboundClient/`:
 
 **Make the Lantern Ward level (once):**
 
-1. *File > New Level > Basic*, save it as `Content/Maps/LanternWard`.
+Quick way: close the editor and run `unreal/tools/make-level.ps1`. It runs `make-lantern-ward.py` headless and saves
+`/Game/Grudgebound/LanternWard` (Basic level + greybox + nav volume). Then set it in *Maps & Modes* (step 5).
+The project's `.uproject` needs the `PythonScriptPlugin` and `EditorScriptingUtilities` plugins enabled for this.
+By hand:
+
+1. *File > New Level > Basic*, save it as `Content/Grudgebound/LanternWard`.
 2. Delete the floor the Basic level comes with. *Place Actors* panel: search **Gb Ward Greybox**, drag it in,
    then set its location to `0, 0, 0` in *Details*.
 3. Add a **Nav Mesh Bounds Volume**, location `0, 0, 0`, scale `16, 23, 4` (it must cover the 44 x 30 m map).
@@ -179,7 +184,7 @@ Judges can't build Unreal projects themselves, so each milestone also gets a pac
 
 | Thing | Version | Set by |
 |---|---|---|
-| Unreal Engine | **5.8** (newest hotfix; 5.8.4 on 2 Nov). Write the exact `5.8.x` here once installed | 2 Nov, build laptop |
+| Unreal Engine | **5.8.4** (Epic launcher; Windows target only, ~11.5 GB download) | 3 Nov, build laptop |
 | Visual Studio | **Community 2026** (18.x), workloads in section 2 | 2 Nov, build laptop |
 
 A packaged build can point at a hosted server without rebuilding: `Grudgebound.exe -GbServer=https://<host>`.

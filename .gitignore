@@ -44,6 +44,7 @@ unreal/**/Saved/
 unreal/**/DerivedDataCache/
 unreal/**/.vs/
 unreal/**/*.sln
+unreal/**/*.slnx
 unreal/**/*.VC.db
 unreal/**/*.opensdf
 unreal/**/*.sdf
