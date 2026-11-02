@@ -277,7 +277,7 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
-| 2 Nov | Unreal client plugin (API subsystem, Lantern Ward greybox, tall grass, HUD, encounter, battle screen, Talisman Case), `GET /curses`, `setup-project.ps1`, UE 5.8 + VS 2026 pinned; 41 tests | | branch `client/P1-U1-unreal-client` |
+| 2 Nov | Unreal client plugin (API subsystem, Lantern Ward greybox, tall grass, HUD, encounter, battle screen, Talisman Case), `GET /curses`, Unreal contract test, `setup-project.ps1`, UE 5.8 + VS 2026 pinned; 44 tests | | branch `client/P1-U1-unreal-client` |
 | 1 Nov | Server-run battles (`/battle/start`, `/battle/turn`) for the Unreal client; encounter roll and battle log text moved to `shared/`; 40 tests | | |
 | 1 Nov | Phase 1 core loop: fight from the Ward, bind, Talisman Case, points and Ember in the HUD; server `POST /battle` replay check and `GET /shop`; contracts compile, 17 contract tests written; Unreal setup guide | | branch `phase-1/core-loop-and-unreal-setup` |
 | 1 Nov | Paper-and-ink design system, title screen, React HUD, Rules panel, Vow Shrine; Lantern Ward lighting | | #2 |
