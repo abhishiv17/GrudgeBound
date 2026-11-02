@@ -15,6 +15,9 @@
 
 class UInstancedStaticMeshComponent;
 class UGbTallGrassComponent;
+class ADirectionalLight;
+class ASkyLight;
+class APostProcessVolume;
 
 UCLASS(ClassGroup = (Grudgebound))
 class GRUDGEBOUNDCLIENT_API AGbWardGreybox : public AActor
@@ -33,6 +36,10 @@ public:
 	/** On Play, put the player on the cross street in front of the Rite board (where the web client starts). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grudgebound")
 	bool bMovePlayerToStart = true;
+
+	/** On Play, move the level's sun with the server's clock (hour of day, night) and grade the picture blue at night. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grudgebound")
+	bool bFollowServerClock = true;
 
 	/** Grass blades per square metre (visual only; lower it if the editor is slow). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grudgebound", meta = (ClampMin = "0", ClampMax = "12"))
@@ -54,6 +61,18 @@ private:
 	/** Local position of a tile-space point (column, row) at height Z. */
 	static FVector TileToLocal(float Col, float Row, float Z = 0.f);
 	void MovePlayerToStart();
+	/** Day/night: eases the sun, sky light and night grade toward the server's hour (runs on a 0.1 s timer). */
+	void UpdateLighting();
+
+	UPROPERTY(Transient) TObjectPtr<ADirectionalLight> Sun;
+	UPROPERTY(Transient) TObjectPtr<ASkyLight> SkyLight;
+	UPROPERTY(Transient) TObjectPtr<APostProcessVolume> NightGrade;
+	FTimerHandle LightingTimer;
+	FRotator SunBaseRotation = FRotator::ZeroRotator;
+	float SunBaseIntensity = 0.f;
+	float SkyBaseIntensity = 0.f;
+	float NightBlend = 0.f;
+	float SunPitch = -45.f;
 
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Ground;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Streets;

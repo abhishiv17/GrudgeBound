@@ -1,0 +1,4 @@
+[env]
+# aws-lc-sys (pulled in by the test dependencies) needs the NASM assembler on Windows;
+# this uses the objects it ships instead. Other platforms ignore it.
+AWS_LC_SYS_PREBUILT_NASM = "1"

@@ -29,9 +29,11 @@ cd contracts
 cargo test
 ```
 
-- **Linux, macOS, WSL2 or Windows with the MSVC toolchain:** runs as is.
+- **Linux, macOS, WSL2 or Windows with the MSVC toolchain:** runs as is. All 17 pass (3 Nov, Windows 11, Rust 1.99.1 MSVC,
+  Visual Studio 2026 C++ tools). `.cargo/config.toml` sets `AWS_LC_SYS_PREBUILT_NASM=1`, so no NASM install is needed.
+  MSVC install: `rustup-init -y --default-host x86_64-pc-windows-msvc -t wasm32-unknown-unknown` (needs the VS C++ workload).
 - **Windows with the GNU toolchain:** the tests' dependencies need GNU `dlltool` + `as`, which that toolchain does not ship,
-  so run them in Docker instead (Docker Desktop must be running):
+  so use the MSVC toolchain above, or Docker (Docker Desktop must be running):
   ```sh
   docker run --rm -v "%cd%":/c -w /c rust:1 sh -c "cargo test"
   ```

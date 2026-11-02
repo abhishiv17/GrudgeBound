@@ -171,7 +171,7 @@ void UGbHudWidget::BuildTree()
 	// --- Ward card, top left
 	UBorder* Card = MakePanel(PaperPanel(), FMargin(14.f, 10.f));
 	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Card->SetContent(Sized(Col, 300.f, 0.f));
+	Card->SetContent(Sized(Col, 360.f, 0.f));
 
 	WardTitle = MakeText(TEXT("Lantern Ward"), 18, C::Ink, true);
 	AddRow(Col, WardTitle);
@@ -193,6 +193,7 @@ void UGbHudWidget::BuildTree()
 	EmotionRow(TEXT("Dread 0"), C::Dread, DreadText, DreadBar);
 
 	Stats = MakeText(TEXT(""), 14, C::Ink, true);
+	Stats->SetAutoWrapText(false);
 	AddRow(Col, Stats, 8.f);
 	PartnerText = MakeText(TEXT(""), 13, C::Ink);
 	AddRow(Col, PartnerText);
@@ -285,7 +286,7 @@ void UGbHudWidget::Refresh()
 
 	if (P)
 	{
-		Stats->SetText(FText::FromString(FString::Printf(TEXT("Points %d    Ember %d    Rules %d / 10"),
+		Stats->SetText(FText::FromString(FString::Printf(TEXT("Points %d   Ember %d   Rules %d/10"),
 			P->GetPoints(), P->GetEmber(), S.Rules.Num())));
 		const FGbTalisman Partner = P->GetPartner();
 		const FGbCurseInfo Curse = A->GetCurse(Partner.SpeciesId);
@@ -294,7 +295,7 @@ void UGbHudWidget::Refresh()
 	}
 
 	ServerText->SetText(FText::FromString(A->IsServerOnline()
-		? FString::Printf(TEXT("Server online  (%s, tick %d)"), *A->GetServerUrl(), S.Tick)
+		? FString::Printf(TEXT("Server online  -  tick %d"), S.Tick)
 		: FString::Printf(TEXT("Server offline: run  npm run server  (%s)"), *A->GetServerUrl())));
 	ServerText->SetColorAndOpacity(FSlateColor(A->IsServerOnline() ? C::Leaf : C::Crimson));
 

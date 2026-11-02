@@ -28,7 +28,7 @@ export interface WorldSnapshot {
 }
 
 /** Event types Kessa reads out. */
-const ANNOUNCED = new Set(["rule-added", "rule-rejected", "bankruptcy", "calamity", "reopen"]);
+const ANNOUNCED = new Set(["rule-added", "rule-rejected", "bankruptcy", "calamity", "reopen", "scam"]);
 const MAX_ANNOUNCEMENTS = 30;
 const STOP_DELAY_MS = 1500;
 

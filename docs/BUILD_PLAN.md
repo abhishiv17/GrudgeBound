@@ -100,12 +100,12 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 |---|---|---|---|---|---|
 | P1-C1 | Must | Install Rust and the wasm target; write the steps in `contracts/README.md`. Done natively (Windows GNU toolchain, no admin, no WSL). cargo-near moves to Phase 2 | C | | ✅ |
 | P1-C2 | Must | Compile `items` and `rite` to wasm (324 KB and 374 KB) | C | | ✅ |
-| P1-C3 | Must | Contract unit tests: mint, transfer, purse, points, propose/resolve/repeal rule, vow keep/break. 17 written; **not run yet**: Windows GNU toolchain can't build the test deps, so run in Docker, WSL2 or Linux (`contracts/README.md`) | C | | 🟡 |
+| P1-C3 | Must | Contract unit tests: mint, transfer, purse, points, propose/resolve/repeal rule, vow keep/break. **17/17 pass** on Windows with the MSVC Rust toolchain (`contracts/README.md`) | C | | ✅ |
 | P1-C4 | Should | Server: `POST /battle` replays the battle from seed + actions, refuses repeats and fakes, then drains Grudge and returns points | C | | ✅ |
 | P1-G1 | Must | Encounter dialog (Fight / Slip away) starts `BattleScene`; the result returns to `WardScene` | G | | ✅ |
 | P1-G2 | Must | Bind result becomes a talisman card in the Talisman Case (T); pick your partner there; exorcise gives points | G | | ✅ |
 | P1-G3 | Must | Your points and Ember shown in the HUD and used by the Rules panel (`client/lib/playerStore.ts`) | G | | ✅ |
-| P1-G4 | Should | Kessa banner and Grudge meter react to bankruptcies and scams from the feed (bankruptcies, Calamities and battle results announced; scams not yet) | G | | 🟡 |
+| P1-G4 | Should | Kessa banner and Grudge meter react to bankruptcies and scams from the feed (bankruptcies, Calamities, scams and battle results announced) | G | | ✅ |
 | P1-A1 | Must | NEAR AI Cloud key (claim credits, Q-000); agents choose through the LLM, fallback still works. Waiting for the key in `.env` | A | | 🟡 |
 | P1-A2 | Must | Merchant price tooltips ready for the shop screen: `GET /shop?merchant=broker` on the server | A | | ✅ |
 | P1-A3 | Should | Points for battles: bind or exorcise 5 / 20 / 80 by omen, times R1 bonus rules; fleeing or losing gives 0 (`capturePoints` in shared) | A | | ✅ |

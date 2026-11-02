@@ -1,8 +1,16 @@
 #include "GbWardGreybox.h"
 
+#include "GbApiSubsystem.h"
 #include "GbGreyboxMaterials.h"
 #include "GbTallGrassComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/LightComponent.h"
+#include "Components/SkyLightComponent.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/GameInstance.h"
+#include "Engine/PostProcessVolume.h"
+#include "Engine/SkyLight.h"
+#include "EngineUtils.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -228,6 +236,72 @@ void AGbWardGreybox::BeginPlay()
 	{
 		// Next tick: the player's pawn may not be possessed yet when the level begins play.
 		GetWorldTimerManager().SetTimerForNextTick(this, &AGbWardGreybox::MovePlayerToStart);
+	}
+
+	if (bFollowServerClock)
+	{
+		for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) { Sun = *It; break; }
+		for (TActorIterator<ASkyLight> It(GetWorld()); It; ++It) { SkyLight = *It; break; }
+		if (Sun && Sun->GetLightComponent())
+		{
+			// The Basic level's sun is Stationary; it has to be Movable to turn during play.
+			Sun->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+			SunBaseRotation = Sun->GetActorRotation();
+			SunPitch = SunBaseRotation.Pitch;
+			SunBaseIntensity = Sun->GetLightComponent()->Intensity;
+		}
+		if (SkyLight && SkyLight->GetLightComponent())
+		{
+			SkyBaseIntensity = SkyLight->GetLightComponent()->Intensity;
+		}
+		// Night grade: applied after auto exposure, so the night stays dark even when exposure adapts.
+		FActorSpawnParameters Params;
+		Params.ObjectFlags |= RF_Transient;
+		NightGrade = GetWorld()->SpawnActor<APostProcessVolume>(Params);
+		if (NightGrade)
+		{
+			NightGrade->bUnbound = true;
+			NightGrade->Priority = 10.f;
+			NightGrade->Settings.bOverride_ColorGain = true;
+			NightGrade->Settings.bOverride_AutoExposureBias = true;
+		}
+		GetWorldTimerManager().SetTimer(LightingTimer, this, &AGbWardGreybox::UpdateLighting, 0.1f, true);
+	}
+}
+
+void AGbWardGreybox::UpdateLighting()
+{
+	const UGameInstance* GI = GetGameInstance();
+	const UGbApiSubsystem* Api = GI ? GI->GetSubsystem<UGbApiSubsystem>() : nullptr;
+	if (!Api) return;
+	const FGbWorldState State = Api->GetWorldState();
+	if (!State.bValid) return;
+
+	constexpr float Step = 0.1f;
+	// Sun height above the horizon: low at 06:00 and 18:00, highest at noon. At night a fixed "moon".
+	const float DayT = FMath::Clamp((State.Hour - 6.f) / 12.f, 0.f, 1.f);
+	const float Elevation = State.bNight ? 40.f : 12.f + 53.f * FMath::Sin(PI * DayT);
+	NightBlend = FMath::FInterpConstantTo(NightBlend, State.bNight ? 1.f : 0.f, Step, 0.5f); // 2 s fade
+	SunPitch = FMath::FInterpTo(SunPitch, -Elevation, Step, 1.5f);
+
+	if (Sun && Sun->GetLightComponent())
+	{
+		ULightComponent* L = Sun->GetLightComponent();
+		Sun->SetActorRotation(FRotator(SunPitch, SunBaseRotation.Yaw, SunBaseRotation.Roll));
+		// Warm near the horizon, white at noon, pale blue moonlight at night.
+		const float High = FMath::Clamp((Elevation - 12.f) / 40.f, 0.f, 1.f);
+		const FLinearColor DayColor = FMath::Lerp(FLinearColor(1.f, 0.62f, 0.38f), FLinearColor(1.f, 0.97f, 0.92f), High);
+		L->SetLightColor(FMath::Lerp(DayColor, FLinearColor(0.55f, 0.66f, 1.f), NightBlend));
+		L->SetIntensity(SunBaseIntensity * FMath::Lerp(1.f, 0.25f, NightBlend));
+	}
+	if (SkyLight && SkyLight->GetLightComponent())
+	{
+		SkyLight->GetLightComponent()->SetIntensity(SkyBaseIntensity * FMath::Lerp(1.f, 0.45f, NightBlend));
+	}
+	if (NightGrade)
+	{
+		NightGrade->Settings.ColorGain = FMath::Lerp(FVector4(1.f, 1.f, 1.f, 1.f), FVector4(0.5f, 0.6f, 0.95f, 0.8f), NightBlend);
+		NightGrade->Settings.AutoExposureBias = FMath::Lerp(0.f, -0.8f, NightBlend);
 	}
 }
 
