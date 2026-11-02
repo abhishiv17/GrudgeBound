@@ -254,8 +254,41 @@ renderer.domElement.addEventListener("pointerdown", (ev) => {
   if (uiOpen || ev.button !== 0) return;
   ray.setFromCamera(new THREE.Vector2((ev.clientX / innerWidth) * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1), camera);
   const hit = new THREE.Vector3();
-  if (ray.ray.intersectPlane(groundPlane, hit)) { target = hit; marker.position.set(hit.x, 0.03, hit.z); marker.visible = true; }
+  if (ray.ray.intersectPlane(groundPlane, hit)) {
+    path = findPath(player.position, hit);
+    target = path.length ? path.shift() : null;
+    marker.position.set(hit.x, 0.03, hit.z); marker.visible = !!target;
+  }
 });
+
+// Grid A* around solid tiles, standing in for the nav mesh the Top Down template walks on.
+let path = [];
+function findPath(from, to) {
+  const cell = (p) => [Math.floor(p.x + COLS / 2), Math.floor(p.z + ROWS / 2)];
+  const [sc, sr] = cell(from), [gc, gr] = cell(to);
+  const free = (c, r) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c];
+  if (!free(gc, gr)) return [];
+  const key = (c, r) => r * COLS + c, open = [[sc, sr]], came = new Map(), g = new Map([[key(sc, sr), 0]]);
+  const h = (c, r) => Math.hypot(c - gc, r - gr);
+  while (open.length) {
+    open.sort((a, b) => (g.get(key(...a)) + h(...a)) - (g.get(key(...b)) + h(...b)));
+    const [c, r] = open.shift();
+    if (c === gc && r === gr) {
+      const out = [new THREE.Vector3(to.x, 0, to.z)];
+      let k = key(c, r);
+      while (came.has(k)) { k = came.get(k); const pc = k % COLS, pr = Math.floor(k / COLS); out.unshift(new THREE.Vector3(pc - COLS / 2 + 0.5, 0, pr - ROWS / 2 + 0.5)); }
+      out.shift(); // the start cell
+      return out;
+    }
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const nc = c + dc, nr = r + dr;
+      if (!free(nc, nr) || (dc && dr && (!free(c + dc, r) || !free(c, r + dr)))) continue; // no corner cutting
+      const ng = g.get(key(c, r)) + Math.hypot(dc, dr), nk = key(nc, nr);
+      if (ng < (g.has(nk) ? g.get(nk) : Infinity)) { g.set(nk, ng); came.set(nk, key(c, r)); if (!open.some(([a, b]) => a === nc && b === nr)) open.push([nc, nr]); }
+    }
+  }
+  return [];
+}
 addEventListener("keydown", (ev) => {
   if (ev.key === "t" || ev.key === "T") { toggleCase(); return; }
   keys.add(ev.key.toLowerCase());
@@ -277,10 +310,14 @@ function move(dt) {
   if (keys.has("s") || keys.has("arrowdown")) dir.z += 1;
   if (keys.has("a") || keys.has("arrowleft")) dir.x -= 1;
   if (keys.has("d") || keys.has("arrowright")) dir.x += 1;
-  if (dir.lengthSq()) target = null, marker.visible = false;
+  if (dir.lengthSq()) { target = null; path = []; marker.visible = false; }
   else if (target) {
     dir.set(target.x - player.position.x, 0, target.z - player.position.z);
-    if (dir.length() < 0.15) { target = null; marker.visible = false; return; }
+    if (dir.length() < 0.15) {
+      target = path.length ? path.shift() : null;
+      if (!target) marker.visible = false;
+      return;
+    }
   } else return;
   dir.normalize().multiplyScalar(SPEED * dt);
   const nx = player.position.x + dir.x, nz = player.position.z + dir.z;
