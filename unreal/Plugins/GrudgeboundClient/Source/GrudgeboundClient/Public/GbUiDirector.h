@@ -44,6 +44,8 @@ private:
 	UPROPERTY() TObjectPtr<UGbTalismanCaseWidget> TalismanCase;
 
 	EScreen Current = EScreen::Ward;
+	/** False until the first dialog opens. */
+	bool bInputTouched = false;
 	FGbBattleStart PendingBattle;
 };
 

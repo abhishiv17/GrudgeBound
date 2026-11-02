@@ -94,6 +94,10 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	TalismanCase->SetVisibility(Screen == EScreen::TalismanCase ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Hud->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
+	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
+	if (!bInputTouched && Screen == EScreen::Ward) return;
+	bInputTouched = true;
+
 	PC->SetShowMouseCursor(true);
 	if (Screen == EScreen::Ward)
 	{
