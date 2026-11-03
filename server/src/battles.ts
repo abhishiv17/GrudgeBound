@@ -3,7 +3,8 @@
  * (the Unreal client). The server picks the curse from the Ward's Grudge, makes the seed, and resolves
  * every turn with the shared resolver. The client only sends moves and shows what happened.
  *
- *   POST /battle/start  { ward, playerCurse?, by? }  -> the curse met, the battle view, the intro line
+ *   POST /battle/start  { ward, playerCurse?, by?, account? } -> the curse met, the battle view, the intro line
+ *                       (account: the NEAR account that gets the talisman and points, see chain.ts)
  *   POST /battle/turn   { battleId, action }         -> this turn's events and log lines, the new view;
  *                                                       when the battle ends: outcome, points, seed
  *
@@ -20,6 +21,7 @@ import {
   type BattleEvent, type BattleState, type Combatant, type Omen, type Outcome, type PlayerAction,
   type Rng, type WardId, type World,
 } from "@grudgebound/shared";
+import { isAccountId } from "./chain";
 
 /** A battle nobody has touched for this long is dropped (the player walked away). */
 export const BATTLE_IDLE_MS = 15 * 60_000;
@@ -69,6 +71,8 @@ export interface TurnAnswer {
   points?: number;
   seed?: number;
   actions?: PlayerAction[];
+  /** Only when the battle has ended: the NEAR account named at /battle/start, if any. */
+  account?: string;
 }
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
@@ -77,6 +81,7 @@ interface Session {
   id: string;
   ward: WardId;
   by: string;
+  account?: string;
   seed: number;
   wildId: string;
   omen: Omen;
@@ -159,6 +164,8 @@ export class BattleSessions {
     const playerCurse = b.playerCurse === undefined ? DEFAULT_PLAYER_CURSE : b.playerCurse;
     if (typeof playerCurse !== "string" || !isCurse(playerCurse)) return fail(400, "playerCurse must be a curse id");
     const by = typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 40) : "A newcomer";
+    if (b.account !== undefined && !isAccountId(b.account)) return fail(400, "account must be a NEAR account id");
+    const account = b.account as string | undefined;
 
     this.sweep();
     if (this.open.size >= MAX_OPEN_BATTLES) return fail(503, "too many battles in progress, try again shortly");
@@ -168,7 +175,7 @@ export class BattleSessions {
     const wild = rollEncounter(this.world.wards[ward as WardId].grudge, createRng((seed ^ 0x9e3779b9) >>> 0));
     const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse });
     const s: Session = {
-      id: this.newId(), ward: ward as WardId, by, seed, wildId: wild.id, omen: wild.omen, playerCurse,
+      id: this.newId(), ward: ward as WardId, by, account, seed, wildId: wild.id, omen: wild.omen, playerCurse,
       rng: createRng(seed), state, actions: [], lastSeen: this.now(),
     };
     this.open.set(s.id, s);
@@ -218,6 +225,7 @@ export class BattleSessions {
         : 0;
       answer.seed = s.seed;
       answer.actions = s.actions;
+      if (s.account) answer.account = s.account;
     }
     return ok(answer);
   }

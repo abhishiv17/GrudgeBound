@@ -10,13 +10,14 @@
  *                           does the capture count: Grudge drains, the town log records it, points come back.
  *   POST /battle/start   -> { ward, playerCurse?, by? }: the server picks the curse and the seed, and returns the battle view
  *   POST /battle/turn    -> { battleId, action }: the server resolves the turn (see battles.ts; used by the Unreal client)
+ *   GET /chain?battle=ID -> that battle's on-chain receipt (talisman id, tx links); without ?battle: the contracts in use
+ *                           Both battle routes answer with `chain` when a binding or exorcism is written to NEAR (chain.ts)
  *   GET /curses          -> every curse's id, name, emotion, omen, home Ward and signature move (no stats)
  *   GET /shop?merchant=broker -> that merchant's prices, each with a one-line reason in the merchant's voice
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
  *   POST /tick           -> advance one tick now (dev only)
  *
- * Next (Phase 2-3): player sessions, binding -> mint on testnet, relayer for meta transactions,
- * reading active rules from the Rite contract.
+ * Next (Phase 2-3): player sessions, relayer for meta transactions, reading active rules from the Rite contract.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
@@ -25,7 +26,8 @@ import {
   type Omen, type PlayerAction, type WardId,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
-import { BattleSessions, MAX_TURNS, curseCatalog } from "./battles";
+import { BattleSessions, MAX_TURNS, curseCatalog, type TurnAnswer } from "./battles";
+import { ChainWriter, chainConfigFromEnv, isAccountId, type BattleRecord } from "./chain";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -75,6 +77,25 @@ function readJson(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+const chainCfg = chainConfigFromEnv();
+const chain = chainCfg ? new ChainWriter(chainCfg) : null;
+
+/** After a battle route answers 200 with a binding or exorcism: write it on chain and add the receipt. */
+async function withChain<T extends object>(body: T, record: BattleRecord | null): Promise<T> {
+  if (!chain || !record || record.points <= 0) return body;
+  return { ...body, chain: await chain.record(record) };
+}
+
+function recordFromTurn(t: TurnAnswer): BattleRecord | null {
+  if ((t.outcome !== "bound" && t.outcome !== "won") || t.seed === undefined || !t.actions || !chain) return null;
+  const w = t.view.wild;
+  return {
+    battleId: t.battleId, account: t.account ?? chain.cfg.guestAccount, outcome: t.outcome, points: t.points ?? 0,
+    seed: t.seed, actions: t.actions, wild: { speciesId: w.speciesId, emotion: w.emotion, omen: w.omen },
+    playerCurse: t.view.player.speciesId,
+  };
+}
+
 const llm = llmConfigFromEnv();
 /** Tooltips per merchant, recomputed once per tick so the LLM is not called on every request. */
 const shopCache = new Map<string, { tick: number; body: unknown }>();
@@ -97,7 +118,7 @@ async function shop(merchantId: string): Promise<{ status: number; body: unknown
 const ACTION_KINDS = new Set(["attack", "ward", "seal", "item", "flee"]);
 
 /** Checks a reported battle by replaying it. Returns the points it earned, or an error message. */
-function checkBattle(body: unknown): { points: number } | { error: string; status: number } {
+function checkBattle(body: unknown): { points: number; record: BattleRecord | null } | { error: string; status: number } {
   const b = body as Record<string, unknown>;
   if (!b || typeof b !== "object") return { error: "expected a JSON object", status: 400 };
   const { wild, omen, playerCurse, seed, actions, outcome, ward, by } = b;
@@ -111,6 +132,7 @@ function checkBattle(body: unknown): { points: number } | { error: string; statu
   if (!(actions.every((a) => a && typeof a === "object" && ACTION_KINDS.has((a as { kind: string }).kind)))) return { error: "unknown action", status: 400 };
   if (outcome !== "bound" && outcome !== "won") return { error: "only bindings and exorcisms are reported", status: 400 };
   const name = typeof by === "string" && by.trim() ? by.trim().slice(0, 40) : "A newcomer";
+  if (b.account !== undefined && !isAccountId(b.account)) return { error: "account must be a NEAR account id", status: 400 };
 
   const key = `${seed}:${wild}:${playerCurse}`;
   if (seenBattles.has(key)) return { error: "this battle was already recorded", status: 409 };
@@ -130,7 +152,11 @@ function checkBattle(body: unknown): { points: number } | { error: string; statu
   const points = recordCapture(world, {
     ward: ward as WardId, speciesId: wild, omen: omen as Omen, verb: outcome === "bound" ? "bind" : "exorcise", by: name,
   });
-  return { points };
+  const record: BattleRecord | null = chain ? {
+    battleId: `web-${key}`, account: (b.account as string | undefined) ?? chain.cfg.guestAccount, outcome, points, seed,
+    actions: actions as PlayerAction[], wild: { speciesId: wild, emotion: curseById(wild).emotion, omen: omen as Omen }, playerCurse,
+  } : null;
+  return { points, record };
 }
 
 createServer((req, res) => {
@@ -142,8 +168,14 @@ createServer((req, res) => {
   if (req.method === "POST" && (url.pathname === "/battle/start" || url.pathname === "/battle/turn")) {
     readJson(req).then(
       (body) => {
-        const r = url.pathname === "/battle/start" ? battles.start(body) : battles.turn(body);
-        send(res, r.status, r.body);
+        if (url.pathname === "/battle/start") {
+          const r = battles.start(body);
+          return send(res, r.status, r.body);
+        }
+        const r = battles.turn(body);
+        if (r.status !== 200) return send(res, r.status, r.body);
+        const t = r.body as TurnAnswer;
+        return withChain(t, recordFromTurn(t)).then((b) => send(res, 200, b));
       },
       (e: Error) => send(res, 400, { error: e.message }),
     );
@@ -153,8 +185,8 @@ createServer((req, res) => {
     readJson(req).then(
       (body) => {
         const r = checkBattle(body);
-        if ("error" in r) send(res, r.status, { points: null, error: r.error });
-        else send(res, 200, r);
+        if ("error" in r) return send(res, r.status, { points: null, error: r.error });
+        return withChain({ points: r.points }, r.record).then((b) => send(res, 200, b));
       },
       (e: Error) => send(res, 400, { points: null, error: e.message }),
     );
@@ -166,6 +198,16 @@ createServer((req, res) => {
       (e: Error) => send(res, 500, { error: e.message }),
     );
     return;
+  }
+  if (req.method === "GET" && url.pathname === "/chain") {
+    const id = url.searchParams.get("battle");
+    if (!chain || !chainCfg) return send(res, 200, { enabled: false });
+    if (!id) {
+      const { network, gameAccount, itemsContract, riteContract, guestAccount } = chainCfg;
+      return send(res, 200, { enabled: true, network, gameAccount, itemsContract, riteContract, guestAccount });
+    }
+    const receipt = chain.receipt(id);
+    return receipt ? send(res, 200, receipt) : send(res, 404, { error: "no chain receipt for that battle" });
   }
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, tick: world.tick });
   if (req.method === "GET" && url.pathname === "/curses") return send(res, 200, curseCatalog());
@@ -181,5 +223,8 @@ createServer((req, res) => {
   send(res, 404, { error: "not found" });
 }).listen(PORT, () => {
   console.log(`Grudgebound server on http://localhost:${PORT}  (seed ${SEED}, 1 tick every ${TICK_MS} ms)`);
+  console.log(chainCfg
+    ? `Chain: ${chainCfg.network} via ${chainCfg.gameAccount} (items ${chainCfg.itemsContract}, rite ${chainCfg.riteContract}; key from ${chainCfg.keySource})`
+    : "Chain: off (no NEAR_* accounts or key; battles stay off-chain)");
   console.log(llm ? `Merchant tooltips: NEAR AI Cloud (${llm.model})` : "Merchant tooltips: formula reasons (no NEAR_AI_* settings in .env)");
 });

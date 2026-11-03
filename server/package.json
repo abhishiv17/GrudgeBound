@@ -9,8 +9,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@grudgebound/agents": "*",
     "@grudgebound/shared": "*",
-    "@grudgebound/agents": "*"
+    "near-api-js": "^7.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
