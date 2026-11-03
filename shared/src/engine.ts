@@ -57,6 +57,8 @@ export interface Participant {
   ember: number;
   /** Species ids of bound curses (talismans). */
   talismans: string[];
+  /** Day of this participant's last rejected proposal: one public challenge a day, no spam. */
+  rejectedDay?: number;
 }
 
 export interface GameEvent {
@@ -87,9 +89,15 @@ export interface World {
 // Tunables (AI & Economy seat: tune these with `npm run sim`)
 // ---------------------------------------------------------------------------
 
+/**
+ * The world seed the demo runs on (P2-A1). Over 7 days: the Fence goes bankrupt (day 3), a Calamity rises in
+ * the same Ward (day 4), and a mercenary challenges a PvP ban, which Kessa rejects (day 5): see npm run sim:seeds.
+ */
+export const DEMO_SEED = 2;
+
 export const TUNING = {
   /** Background emotion from ordinary town life, per tick, toward each Ward's leaning. */
-  ambientGrudgePerTick: 0.35,
+  ambientGrudgePerTick: 0.4,
   spawnChancePerTick: 0.6,
   maxWildPerWard: 8,
   /** Chance a participant acts in a given tick. */
@@ -262,10 +270,20 @@ export function desiredRule(world: World, me: Participant, rng: Rng): { template
     case "schemer": return rng.chance(0.5)
       ? { templateId: "R3", params: { ward: me.ward, amount: 5, payee: "author" } }
       : { templateId: "R7", params: { percent: 8, payee: "author" } };
-    case "zealot": return { templateId: "R8", params: { ward: me.ward } };
-    case "mercenary": return rng.chance(0.5)
-      ? { templateId: "R1", params: { action: "pvp", ward: me.ward, multiplier: "2" } }
-      : { templateId: "R5", params: { target: "the points leader", amount: 20 } };
+    case "zealot": {
+      // The rule war: where someone pays for PvP, the zealot moves to ban it.
+      const rewarded = world.rules.filter((r) => r.templateId === "R1" && r.params.action === "pvp");
+      if (rewarded.length && rng.chance(0.6)) return { templateId: "R8", params: { ward: String(rng.pick(rewarded).params.ward) } };
+      return { templateId: "R8", params: { ward: me.ward } };
+    }
+    case "mercenary": {
+      // ...and where PvP is banned, the mercenary demands double points for it.
+      const banned = world.rules.filter((r) => r.templateId === "R8");
+      if (banned.length && rng.chance(0.6)) return { templateId: "R1", params: { action: "pvp", ward: String(rng.pick(banned).params.ward), multiplier: "2" } };
+      return rng.chance(0.5)
+        ? { templateId: "R1", params: { action: "pvp", ward: me.ward, multiplier: "2" } }
+        : { templateId: "R5", params: { target: "the points leader", amount: 20 } };
+    }
     case "gambler": return { templateId: "R1", params: { action: "bind", ward: rng.pick(WARDS), multiplier: "2" } };
     case "player": return rng.chance(0.5)
       ? { templateId: "R8", params: { ward: "lantern" } }
@@ -276,8 +294,13 @@ export function desiredRule(world: World, me: Participant, rng: Rng): { template
 export const scriptedPolicy: Policy = (world, me, options, rng) => {
   if (me.points >= ruleCost(world.rules.length) && rng.chance(TUNING.proposeChance)) {
     const want = desiredRule(world, me, rng);
-    // Agents only propose rules the Arbiter would accept (no spam of duplicates).
-    if (want && arbiterCheck(want.templateId, want.params, world.rules).accepted) return { type: "proposeRule", ...want };
+    const verdict = want ? arbiterCheck(want.templateId, want.params, world.rules) : null;
+    if (want && verdict?.accepted) return { type: "proposeRule", ...want };
+    // A rule that contradicts one in force is a public challenge (Kessa rejects it, at no cost): at most one a day
+    // per participant. Duplicates and rules over the cap are never proposed.
+    if (want && verdict && !verdict.accepted && verdict.reason.startsWith("Contradicts") && me.rejectedDay !== dayOf(world.tick)) {
+      return { type: "proposeRule", ...want };
+    }
   }
   const w = WEIGHTS[me.personality];
   return rng.weighted(options, (o) => {
@@ -540,6 +563,7 @@ export function proposeRule(world: World, me: Participant, templateId: string, p
   const verdict = arbiterCheck(templateId, params, world.rules);
   const text = renderRule(templateId, params);
   if (!verdict.accepted) {
+    me.rejectedDay = dayOf(world.tick);
     log(world, { type: "rule-rejected", actor: me.id, text: `Kessa rejects ${me.name}'s rule "${text}": ${verdict.reason}` });
     return false;
   }

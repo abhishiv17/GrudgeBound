@@ -26,7 +26,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   createWorld, createRng, step, summarize, log,
-  DEFAULT_REAL_MS_PER_TICK,
+  DEFAULT_REAL_MS_PER_TICK, DEMO_SEED,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
 import { BattleSessions, curseCatalog, type TurnAnswer } from "./battles";
@@ -39,7 +39,7 @@ import { Shop } from "./shop";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
-const SEED = Number(process.env.WORLD_SEED ?? 42);
+const SEED = Number(process.env.WORLD_SEED ?? DEMO_SEED);
 const DEV = process.env.NODE_ENV !== "production";
 
 const world = createWorld(SEED);

@@ -10,7 +10,7 @@
  * in the offline town.
  */
 import {
-  createWorld, createRng, recordCapture, step, summarize,
+  createWorld, createRng, recordCapture, step, summarize, DEMO_SEED,
   type CaptureReport, type GameEvent, type Omen, type PlayerAction, type WorldSummary,
 } from "@grudgebound/shared";
 import { postReply, type RemoteStart, type RemoteTurn, type Reply } from "./battleClient";
@@ -76,7 +76,7 @@ export async function startWorldFeed(onUpdate: (s: WorldSummary) => void, onEven
     };
     return feed;
   } catch {
-    const seed = 42;
+    const seed = DEMO_SEED;
     const world = createWorld(seed);
     const rng = createRng(seed);
     let cursor = 0;
