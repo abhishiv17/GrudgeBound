@@ -90,7 +90,7 @@ Everything until the feature freeze must show up in this video. If a task doesn'
 - [x] `items` and `rite` compile to wasm.
 - [x] `npm test` (30 tests), `npm run typecheck` and `npm run build` pass. (Not committed yet: commit at the milestone.)
 
-**Left before G1:** run the contract unit tests (P1-C3) and add the NEAR AI key (P1-A1).
+**Left before G1:** check the Talisman Case (T) in Unreal (P1-U6).
 
 **Unreal client (from 2 Nov).** The web loop above is done and stays as the fallback demo. The same loop is now rebuilt in
 Unreal Engine 5 on a teammate's RTX 3050 laptop; steps in [`UNREAL_SETUP.md`](UNREAL_SETUP.md). Target: U1-U4 by 4 Nov,
@@ -106,7 +106,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P1-G2 | Must | Bind result becomes a talisman card in the Talisman Case (T); pick your partner there; exorcise gives points | G | | ✅ |
 | P1-G3 | Must | Your points and Ember shown in the HUD and used by the Rules panel (`client/lib/playerStore.ts`) | G | | ✅ |
 | P1-G4 | Should | Kessa banner and Grudge meter react to bankruptcies and scams from the feed (bankruptcies, Calamities, scams and battle results announced) | G | | ✅ |
-| P1-A1 | Must | NEAR AI Cloud key (claim credits, Q-000); agents choose through the LLM, fallback still works. Waiting for the key in `.env` | A | | 🟡 |
+| P1-A1 | Must | NEAR AI Cloud key (claim credits, Q-000); agents choose through the LLM, fallback still works. Done: `anthropic/claude-haiku-5-5` on `cloud-api.near.ai/v1`, 6/6 calls through the LLM in `npm run agent:demo` | A | | ✅ |
 | P1-A2 | Must | Merchant price tooltips ready for the shop screen: `GET /shop?merchant=broker` on the server | A | | ✅ |
 | P1-A3 | Should | Points for battles: bind or exorcise 5 / 20 / 80 by omen, times R1 bonus rules; fleeing or losing gives 0 (`capturePoints` in shared) | A | | ✅ |
 | P1-C5 | Must | Server runs battles turn by turn for the Unreal client: `POST /battle/start` (server picks the curse and a secret seed), `POST /battle/turn` (move in; events, log lines and view out; points and seed at the end). `server/src/battles.ts`, 10 tests | C | | ✅ |
@@ -224,8 +224,8 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 | Risk | Fallback | Decide by | Status |
 |---|---|---|---|
-| Contracts have never compiled; Rust on Windows is slow to set up | Build in WSL. If `rite` doesn't compile by 4 Nov: items, points and rules on chain; vows on the server, logged as events | 4 Nov | open |
-| NEAR AI Cloud credits run out or are slow | Scripted fallback exists; limit calls per tick; claim the $10 NEAR Builders credits | 2 Nov | open |
+| Contracts have never compiled; Rust on Windows is slow to set up | Build in WSL. If `rite` doesn't compile by 4 Nov: items, points and rules on chain; vows on the server, logged as events | 4 Nov | closed (17/17 tests pass on Windows, 3 Nov) |
+| NEAR AI Cloud credits run out or are slow | Scripted fallback exists; limit calls per tick; Haiku 5.5 is ~$0.0003 a call (~1–2 s) | 2 Nov | mitigated |
 | Calamities are rare, so the demo may show none | Tune Grudge gain; pick a demo seed that reaches one | 6 Nov | open |
 | Email login takes longer than planned | Guest sign-in via server-made sub-accounts, still no wallet popup | 8 Nov | open |
 | Too many Wards for 14 days | Lantern only, Tide second, the rest locked | 9 Nov | open |

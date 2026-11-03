@@ -1,6 +1,8 @@
 /**
  * Minimal client for an OpenAI-compatible chat completions API (NEAR AI Cloud).
  * Configure in .env: NEAR_AI_API_KEY, NEAR_AI_BASE_URL, NEAR_AI_MODEL.
+ * maxTokens includes the model's hidden reasoning, so keep it well above the reply length.
+ * Set NEAR_AI_DEBUG=1 to log why a call fell back to the scripted policy.
  * Check https://docs.near.ai for the current base URL and model names.
  */
 export interface ChatMessage {
@@ -23,7 +25,7 @@ export function llmConfigFromEnv(): LlmConfig | null {
   return { apiKey, baseUrl: baseUrl.replace(/\/+$/, ""), model, timeoutMs: 8000 };
 }
 
-export async function chat(cfg: LlmConfig, messages: ChatMessage[], maxTokens = 200): Promise<string> {
+export async function chat(cfg: LlmConfig, messages: ChatMessage[], maxTokens = 600): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
   try {
