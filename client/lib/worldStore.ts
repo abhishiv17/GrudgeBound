@@ -10,7 +10,9 @@
  * from restarting the offline town from day 1.
  */
 import type { CaptureReport, GameEvent, WorldSummary } from "@grudgebound/shared";
+import type { PlayerAction } from "@grudgebound/shared";
 import { startWorldFeed, type BattleProof, type ReportAnswer, type WorldFeed } from "../game/worldFeed";
+import type { RemoteStart, RemoteTurn, Reply } from "../game/battleClient";
 
 export type FeedStatus = "connecting" | "server" | "offline";
 
@@ -116,5 +118,12 @@ export const worldStore = {
   async reportCapture(capture: CaptureReport, proof: BattleProof): Promise<ReportAnswer> {
     if (!feed) return { points: null, error: "the town is not running" };
     return feed.report(capture, proof);
+  },
+  /** With a server: it starts the battle and picks the curse. Null when the town runs offline (fight locally). */
+  startBattle(ward: string, playerCurse: string, by: string): Promise<Reply<RemoteStart>> | null {
+    return feed ? feed.startBattle(ward, playerCurse, by) : null;
+  },
+  battleTurn(battleId: string, action: PlayerAction): Promise<Reply<RemoteTurn>> {
+    return feed ? feed.battleTurn(battleId, action) : Promise.resolve({ ok: false, status: 0, error: "the town is not running" });
   },
 };

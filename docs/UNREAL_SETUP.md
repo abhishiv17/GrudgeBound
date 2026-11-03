@@ -118,7 +118,7 @@ All JSON. Base URL `http://localhost:8787` (make it a setting so we can point it
 | `GET /curses` | Every curse's `id`, `name`, `emotion`, `omen`, `home`, `bornFrom`, `signatureMove` (no stats): names for the Talisman Case |
 | `POST /battle/start` | **Unreal uses this.** The player walked into tall grass. Body `{ ward, playerCurse?, by? }`. The server picks the curse from the Ward's Grudge and keeps the seed secret. Answer: `battleId`, `wild`, `matchup`, `view`, `lines` |
 | `POST /battle/turn` | **Unreal uses this.** Body `{ battleId, action }`. Answer: this turn's `events` and ready-made log `lines`, the new `view`, `outcome`. When the battle ends: `points`, `seed`, `actions` |
-| `POST /battle` | Web client only: reports a battle it fought itself; the server replays it |
+| `POST /battle` | Removed in P2-C7: every client (web and Unreal) fights through `/battle/start` + `/battle/turn` |
 
 **Battles are run by the server.** The Unreal client has no copy of the battle rules: it sends a move and draws what
 comes back. Code: `server/src/battles.ts` (tests in `battles.test.ts`).

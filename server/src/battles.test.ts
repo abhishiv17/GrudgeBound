@@ -106,12 +106,6 @@ describe("server-run battles (P1-C5)", () => {
     assert.equal((next.body as TurnAnswer).view.turn, 3, "refused moves do not count as turns");
   });
 
-  test("the seed is marked as used, so POST /battle can't count it again", () => {
-    const { sessions } = setup(4242);
-    const a = start(sessions);
-    assert.ok(sessions.seen.has(`4242:${a.wild.id}:${DEFAULT_PLAYER_CURSE}`));
-  });
-
   test("idle battles expire", () => {
     const { sessions, tick } = setup();
     const a = start(sessions);

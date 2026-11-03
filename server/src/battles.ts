@@ -100,8 +100,6 @@ export interface BattleSessionOptions {
   now?: () => number;
   newSeed?: () => number;
   newId?: () => string;
-  /** Battles already counted ("seed:wild:playerCurse"), shared with POST /battle so nothing counts twice. */
-  seen?: Set<string>;
 }
 
 function side(c: Combatant): SideView {
@@ -148,13 +146,11 @@ export class BattleSessions {
   private readonly now: () => number;
   private readonly newSeed: () => number;
   private readonly newId: () => string;
-  readonly seen: Set<string>;
 
   constructor(private readonly world: World, opts: BattleSessionOptions = {}) {
     this.now = opts.now ?? Date.now;
     this.newSeed = opts.newSeed ?? (() => randomInt(0, 0x1_0000_0000));
     this.newId = opts.newId ?? randomUUID;
-    this.seen = opts.seen ?? new Set();
   }
 
   get openCount(): number {
@@ -187,7 +183,6 @@ export class BattleSessions {
       rng: createRng(seed), state, actions: [], lastSeen: this.now(),
     };
     this.open.set(s.id, s);
-    this.seen.add(`${seed}:${wild.id}:${playerCurse}`);
 
     const m = typeMultiplier(state.player.emotion, state.wild.emotion);
     return ok({

@@ -5,13 +5,15 @@
  *    sped up so you can watch the town change.
  * Call stop() when the scene is destroyed so no timers are left running.
  *
- * report() tells the town about a battle the player fought: the server replays it from its seed
- * and actions before believing it; the offline town just records it.
+ * With a server, battles run on it (startBattle / battleTurn, see battleClient.ts): it picks the curse and keeps
+ * the seed secret, so results can't be faked. Offline, the battle runs in the browser and report() records it
+ * in the offline town.
  */
 import {
   createWorld, createRng, recordCapture, step, summarize,
   type CaptureReport, type GameEvent, type Omen, type PlayerAction, type WorldSummary,
 } from "@grudgebound/shared";
+import { postReply, type RemoteStart, type RemoteTurn, type Reply } from "./battleClient";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:8787";
 /** NEAR account that gets this player's talismans and points (e.g. akshay.grudgebound.testnet); unset: the server's guest. */
@@ -34,7 +36,11 @@ export type ReportAnswer = { points: number } | { points: null; error: string };
 export interface WorldFeed {
   mode: "server" | "offline";
   latest: WorldSummary;
+  /** Offline only: record a battle fought in the browser. The server runs its own battles. */
   report(capture: CaptureReport, proof: BattleProof): Promise<ReportAnswer>;
+  /** Server only (null offline): start a battle the server runs. */
+  startBattle(ward: string, playerCurse: string, by: string): Promise<Reply<RemoteStart>> | null;
+  battleTurn(battleId: string, action: PlayerAction): Promise<Reply<RemoteTurn>>;
   stop(): void;
 }
 
@@ -60,13 +66,12 @@ export async function startWorldFeed(onUpdate: (s: WorldSummary) => void, onEven
     const feed: WorldFeed = {
       mode: "server",
       latest: first,
-      async report(capture, proof) {
-        try {
-          return await postJson<ReportAnswer>(`${SERVER}/battle`, { ...proof, ward: capture.ward, by: capture.by, outcome: capture.verb === "bind" ? "bound" : "won", ...(ACCOUNT ? { account: ACCOUNT } : {}) });
-        } catch (e) {
-          return { points: null, error: e instanceof Error ? e.message : "the town did not answer" };
-        }
+      async report() {
+        return { points: null, error: "the server runs its own battles" };
       },
+      startBattle: (ward, playerCurse, by) =>
+        postReply<RemoteStart>(`${SERVER}/battle/start`, { ward, playerCurse, by, ...(ACCOUNT ? { account: ACCOUNT } : {}) }),
+      battleTurn: (battleId, action) => postReply<RemoteTurn>(`${SERVER}/battle/turn`, { battleId, action }),
       stop: () => clearInterval(timer),
     };
     return feed;
@@ -93,18 +98,13 @@ export async function startWorldFeed(onUpdate: (s: WorldSummary) => void, onEven
         onUpdate(feed.latest);
         return { points };
       },
+      startBattle: () => null,
+      battleTurn: async () => ({ ok: false, status: 0, error: "the offline town runs no server battles" }),
       stop: () => clearInterval(timer),
     };
     onUpdate(feed.latest);
     return feed;
   }
-}
-
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) return { points: null, error: data.error ?? `server said ${res.status}` } as T;
-  return data;
 }
 
 async function fetchJson<T>(url: string): Promise<T> {

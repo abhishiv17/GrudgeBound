@@ -5,11 +5,9 @@
  *   GET /health          -> { ok: true }
  *   GET /state           -> world summary (Grudge, merchants, leaderboard, rules)
  *   GET /events?since=N  -> events after tick N
- *   POST /battle         -> a player's finished battle { wild, omen, playerCurse, seed, actions, outcome, ward, by }.
- *                           The server replays it from seed + actions; only if the replay ends the same way
- *                           does the capture count: Grudge drains, the town log records it, points come back.
- *   POST /battle/start   -> { ward, playerCurse?, by? }: the server picks the curse and the seed, and returns the battle view
- *   POST /battle/turn    -> { battleId, action }: the server resolves the turn (see battles.ts; used by the Unreal client)
+ *   POST /battle/start   -> { ward, playerCurse?, by?, account? }: the server picks the curse and the seed, and returns the battle view
+ *   POST /battle/turn    -> { battleId, action }: the server resolves the turn (see battles.ts; the Unreal and web clients)
+ *                           Every battle runs here, so a client can't retry seeds or claim a rarer curse.
  *   POST /rules/propose  -> { account, templateId, params }: Kessa's verdict, then the rule goes through the rite
  *                           contract (relayed for the player, resolved by the game master); see rules.ts
  *   GET /chain?rule=ID   -> that proposal's on-chain receipt
@@ -27,13 +25,12 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
-  createWorld, createRng, step, summarize, recordCapture, replayBattle, curseById, log,
-  DEFAULT_REAL_MS_PER_TICK, OMENS, WARDS,
-  type Omen, type PlayerAction, type WardId,
+  createWorld, createRng, step, summarize, log,
+  DEFAULT_REAL_MS_PER_TICK,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
-import { BattleSessions, MAX_TURNS, curseCatalog, type TurnAnswer } from "./battles";
-import { ChainWriter, chainConfigFromEnv, custodialKey, isAccountId, type BattleRecord } from "./chain";
+import { BattleSessions, curseCatalog, type TurnAnswer } from "./battles";
+import { ChainWriter, chainConfigFromEnv, custodialKey, type BattleRecord } from "./chain";
 import { ChainRules, rulesOverview } from "./rules";
 import { playerView } from "./player";
 import { describeChainEvent } from "./chainEvents";
@@ -62,8 +59,7 @@ function send(res: ServerResponse, status: number, body: unknown) {
 
 const MAX_BODY_BYTES = 16 * 1024;
 /** Seeds already counted, so the same battle cannot be reported twice (shared by both battle routes). */
-const seenBattles = new Set<string>();
-const battles = new BattleSessions(world, { seen: seenBattles });
+const battles = new BattleSessions(world);
 
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -135,50 +131,6 @@ async function shop(merchantId: string): Promise<{ status: number; body: unknown
   return { status: 200, body };
 }
 
-const ACTION_KINDS = new Set(["attack", "ward", "seal", "item", "flee"]);
-
-/** Checks a reported battle by replaying it. Returns the points it earned, or an error message. */
-function checkBattle(body: unknown): { points: number; record: BattleRecord | null } | { error: string; status: number } {
-  const b = body as Record<string, unknown>;
-  if (!b || typeof b !== "object") return { error: "expected a JSON object", status: 400 };
-  const { wild, omen, playerCurse, seed, actions, outcome, ward, by } = b;
-  if (typeof wild !== "string" || typeof playerCurse !== "string") return { error: "wild and playerCurse must be curse ids", status: 400 };
-  try { curseById(wild); curseById(playerCurse); } catch { return { error: "unknown curse", status: 400 }; }
-  if (typeof omen !== "string" || !(OMENS as readonly string[]).includes(omen)) return { error: "unknown omen", status: 400 };
-  if (curseById(wild).omen !== omen) return { error: "omen does not match that curse", status: 400 };
-  if (typeof ward !== "string" || !(WARDS as readonly string[]).includes(ward)) return { error: "unknown ward", status: 400 };
-  if (typeof seed !== "number" || !Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) return { error: "seed must be a 32-bit integer", status: 400 };
-  if (!Array.isArray(actions) || actions.length === 0 || actions.length > MAX_TURNS) return { error: `actions must hold 1-${MAX_TURNS} turns`, status: 400 };
-  if (!(actions.every((a) => a && typeof a === "object" && ACTION_KINDS.has((a as { kind: string }).kind)))) return { error: "unknown action", status: 400 };
-  if (outcome !== "bound" && outcome !== "won") return { error: "only bindings and exorcisms are reported", status: 400 };
-  const name = typeof by === "string" && by.trim() ? by.trim().slice(0, 40) : "A newcomer";
-  if (b.account !== undefined && !isAccountId(b.account)) return { error: "account must be a NEAR account id", status: 400 };
-
-  const key = `${seed}:${wild}:${playerCurse}`;
-  if (seenBattles.has(key)) return { error: "this battle was already recorded", status: 409 };
-
-  let turns;
-  try {
-    turns = replayBattle({ wild, omen: omen as Omen, playerCurse }, seed, actions as PlayerAction[]);
-  } catch (e) {
-    return { error: `replay failed: ${e instanceof Error ? e.message : "bad actions"}`, status: 422 };
-  }
-  const last = turns.at(-1)?.state;
-  if (!last || last.outcome !== outcome || turns.length !== actions.length) {
-    return { error: "the replay does not end the way the report says", status: 422 };
-  }
-
-  seenBattles.add(key);
-  const points = recordCapture(world, {
-    ward: ward as WardId, speciesId: wild, omen: omen as Omen, verb: outcome === "bound" ? "bind" : "exorcise", by: name,
-  });
-  const record: BattleRecord | null = chain ? {
-    battleId: `web-${key}`, account: (b.account as string | undefined) ?? chain.cfg.guestAccount, outcome, points, seed,
-    actions: actions as PlayerAction[], wild: { speciesId: wild, emotion: curseById(wild).emotion, omen: omen as Omen }, playerCurse,
-  } : null;
-  return { points, record };
-}
-
 createServer((req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   if (req.method === "OPTIONS") {
@@ -198,17 +150,6 @@ createServer((req, res) => {
         return withChain(t, recordFromTurn(t)).then((b) => send(res, 200, b));
       },
       (e: Error) => send(res, 400, { error: e.message }),
-    );
-    return;
-  }
-  if (req.method === "POST" && url.pathname === "/battle") {
-    readJson(req).then(
-      (body) => {
-        const r = checkBattle(body);
-        if ("error" in r) return send(res, r.status, { points: null, error: r.error });
-        return withChain({ points: r.points }, r.record).then((b) => send(res, 200, b));
-      },
-      (e: Error) => send(res, 400, { points: null, error: e.message }),
     );
     return;
   }

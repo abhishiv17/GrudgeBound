@@ -1,11 +1,12 @@
 import * as Phaser from "phaser";
-import { POINTS_FOR_OMEN, curseById, rollEncounter, createRng } from "@grudgebound/shared";
+import { POINTS_FOR_OMEN, curseById, rollEncounter, createRng, type CurseSpecies } from "@grudgebound/shared";
 import { SOLID, T, TILE, buildLanternWard, buildOverLayer } from "../tiles";
 import { PLAYER_FRAMES_PER_ROW, PLAYER_ROW } from "../sprites";
 import { worldStore } from "../../lib/worldStore";
 import { isBlocking, touchInput, uiStore, type BattleRequest } from "../../lib/uiStore";
 import { captureVerb, playerStore } from "../../lib/playerStore";
 import { BATTLE_END, type BattleData, type BattleResult } from "./BattleScene";
+import type { RemoteStart } from "../battleClient";
 
 const SPEED = 110;
 /** Integer zoom keeps every pixel the same size. */
@@ -56,6 +57,8 @@ export class WardScene extends Phaser.Scene {
   private reduceMotion = false;
   private blocked = false;
   private fighting = false;
+  /** Waiting for the server to start an encounter (no second roll meanwhile). */
+  private startingEncounter = false;
   private graceTiles = 0;
   private cleanups: (() => void)[] = [];
 
@@ -239,13 +242,30 @@ export class WardScene extends Phaser.Scene {
   // ---------------------------------------------------------------- encounters
 
   private encounter() {
-    const ward = worldStore.getSnapshot().summary?.wards.find((w) => w.id === "lantern");
-    const curse = rollEncounter(ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 }, this.rng);
+    if (this.startingEncounter) return;
+    // With a server, it picks the curse (and keeps the seed): the result can't be faked or re-rolled.
+    const remote = worldStore.startBattle("lantern", playerStore.partner().speciesId, PLAYER_NAME);
+    if (!remote) {
+      const ward = worldStore.getSnapshot().summary?.wards.find((w) => w.id === "lantern");
+      this.showEncounter(rollEncounter(ward?.grudge ?? { rage: 0, sorrow: 5, dread: 0 }, this.rng), null);
+      return;
+    }
+    this.startingEncounter = true;
+    void remote.then((r) => {
+      this.startingEncounter = false;
+      if (r.ok) return this.showEncounter(curseById(r.body.wild.id), r.body);
+      this.graceTiles = GRACE_TILES;
+      // 409: a curfew keeps the curses unchallenged here right now.
+      worldStore.say("rule-rejected", r.status === 409 ? r.error : `Something stirs in the grass, but the town is silent (${r.error}).`);
+    });
+  }
+
+  private showEncounter(curse: CurseSpecies, remote: RemoteStart | null) {
     if (!this.reduceMotion) {
       this.cameras.main.shake(160, 0.003);
       this.cameras.main.flash(180, 176, 21, 58);
     }
-    uiStore.openEncounter(curse);
+    uiStore.openEncounter(curse, remote);
   }
 
   /** The player pressed "Fight!": pause the Ward and run the battle on top of it. */
@@ -254,7 +274,7 @@ export class WardScene extends Phaser.Scene {
     if (!req || this.fighting) return;
     this.fighting = true;
     const partner = playerStore.partner();
-    const data: BattleData = { wild: req.wild, omen: req.omen, seed: req.seed, playerCurse: partner.speciesId };
+    const data: BattleData = { wild: req.wild, omen: req.omen, seed: req.seed, playerCurse: partner.speciesId, remote: req.remote };
     this.game.events.once(BATTLE_END, (r: BattleResult) => void this.afterBattle(req, r));
     this.scene.pause();
     this.scene.launch("battle", data);
@@ -280,6 +300,21 @@ export class WardScene extends Phaser.Scene {
       worldStore.say("battle", r.outcome === "fled"
         ? `You slipped away from ${sp.name}. It still haunts the tall grass.`
         : `${sp.name} drove you off. I patched up your ${partnerName}; rest a moment and try again.`);
+      return;
+    }
+
+    if (r.remote) {
+      // The server ran it, so the points are already settled (and written to NEAR when the server is on chain).
+      const points = r.points ?? 0;
+      playerStore.recordBattle({ ...report, points });
+      if (r.curfew) {
+        worldStore.say("rule-rejected", `${sp.name} is ${r.outcome === "bound" ? "bound" : "gone"}, but that broke the curfew (${r.curfew}). The Rite pays nothing.`);
+        return;
+      }
+      const near = r.chainPending ? " The Rite is writing it to NEAR." : "";
+      worldStore.say(r.outcome === "bound" ? "bound" : "exorcised", r.outcome === "bound"
+        ? `${sp.name} is bound. Its talisman is in your case (T). +${points} points.${near}`
+        : `${sp.name} is exorcised and the Ward breathes easier. +${points} points.${near}`);
       return;
     }
 
