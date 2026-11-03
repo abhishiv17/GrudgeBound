@@ -34,6 +34,7 @@ import { ChainWriter, chainConfigFromEnv, custodialKey, type BattleRecord } from
 import { ChainRules, rulesOverview } from "./rules";
 import { playerView } from "./player";
 import { describeChainEvent } from "./chainEvents";
+import { BattleArchive } from "./battleArchive";
 import { Shop } from "./shop";
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -85,9 +86,15 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 const chainCfg = chainConfigFromEnv();
 const chain = chainCfg ? new ChainWriter(chainCfg) : null;
+/** Replay records of every battle the Rite paid for (npm run replay <seed>). */
+const archive = new BattleArchive();
 // What the contracts logged (NEP-297) joins the town's event feed, with a link to the transaction.
 chain?.onEvents((events) => {
   for (const e of events) {
+    const d = e.data[0];
+    if (e.event === "battle" && typeof d?.battle_id === "string" && typeof d.log_hash === "string") {
+      archive.attachChain(d.battle_id, d.log_hash, e.txHash, e.url);
+    }
     const said = describeChainEvent(e, chainCfg!.gameAccount);
     if (said) log(world, { ...said, url: e.url });
   }
@@ -102,11 +109,12 @@ async function withChain<T extends object>(body: T, record: BattleRecord | null)
   return { ...body, chain: await chain.record(record) };
 }
 
+/** A binding or exorcism's replay record (also when the server runs off-chain: the archive keeps it). */
 function recordFromTurn(t: TurnAnswer): BattleRecord | null {
-  if ((t.outcome !== "bound" && t.outcome !== "won") || t.seed === undefined || !t.actions || !chain) return null;
+  if ((t.outcome !== "bound" && t.outcome !== "won") || t.seed === undefined || !t.actions) return null;
   const w = t.view.wild;
   return {
-    battleId: t.battleId, account: t.account ?? chain.cfg.guestAccount, outcome: t.outcome, points: t.points ?? 0,
+    battleId: t.battleId, account: t.account ?? chain?.cfg.guestAccount ?? "guest", outcome: t.outcome, points: t.points ?? 0,
     seed: t.seed, actions: t.actions, wild: { speciesId: w.speciesId, emotion: w.emotion, omen: w.omen },
     playerCurse: t.view.player.speciesId,
   };
@@ -147,7 +155,11 @@ createServer((req, res) => {
         const r = battles.turn(body);
         if (r.status !== 200) return send(res, r.status, r.body);
         const t = r.body as TurnAnswer;
-        return withChain(t, recordFromTurn(t)).then((b) => send(res, 200, b));
+        const record = recordFromTurn(t);
+        if (record) {
+          try { archive.add(record, t.ward ?? "lantern"); } catch (e) { console.warn(`battle archive: ${(e as Error).message}`); }
+        }
+        return withChain(t, record).then((b) => send(res, 200, b));
       },
       (e: Error) => send(res, 400, { error: e.message }),
     );

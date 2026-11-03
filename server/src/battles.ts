@@ -77,6 +77,8 @@ export interface TurnAnswer {
   account?: string;
   /** Only when the battle has ended: the curfew the ending broke (points were 0). */
   curfew?: string;
+  /** Only when the battle has ended: where it was fought. */
+  ward?: WardId;
 }
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
@@ -240,6 +242,7 @@ export class BattleSessions {
         : 0;
       answer.seed = s.seed;
       answer.actions = s.actions;
+      answer.ward = s.ward;
       if (s.account) answer.account = s.account;
     }
     return ok(answer);
