@@ -82,7 +82,7 @@ describe("rules through the rite contract", () => {
     const r = await rules.propose({ account: AFREEN, ...PVP_BONUS });
     const a = r.body as ProposeAnswer;
     assert.equal(a.accepted, false);
-    assert.match(a.reason, /Contradicts rule/);
+    assert.match(a.reason, /Contradicts "No PvP in Lantern Ward"/);
     await settle();
     assert.equal(world.rules.length, 1);
     assert.equal(rite.rules[1]!.status, "Rejected");

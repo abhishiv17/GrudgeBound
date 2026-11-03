@@ -88,7 +88,7 @@ export function renderRule(templateId: string, params: RuleParams): string {
     if (k === "ward") return wardName(String(v));
     if (k === "action" || k === "emotion") {
       const s = String(v);
-      return s.charAt(0).toUpperCase() + s.slice(1);
+      return s === "pvp" ? "PvP" : s.charAt(0).toUpperCase() + s.slice(1);
     }
     return String(v);
   }).replace(/^./, (c) => c.toUpperCase());
@@ -135,25 +135,25 @@ export function arbiterCheck(templateId: string, params: RuleParams, active: Rul
   const same = (r: Rule, keys: string[]) => keys.every((k) => String(r.params[k]) === String(params[k]));
   for (const r of active) {
     if (r.templateId === templateId && same(r, Object.keys(params))) {
-      return { accepted: false, reason: `That rule is already in force (rule #${r.id}).` };
+      return { accepted: false, reason: `That rule is already in force: "${renderRule(r.templateId, r.params)}".` };
     }
     // "PvP rewards in Ward X" vs "No PvP in Ward X"
     if (templateId === "R1" && params.action === "pvp" && r.templateId === "R8" && same(r, ["ward"])) {
-      return { accepted: false, reason: `Contradicts rule #${r.id}: PvP is banned in that Ward.` };
+      return { accepted: false, reason: `Contradicts "${renderRule(r.templateId, r.params)}": PvP is banned in that Ward.` };
     }
     if (templateId === "R8" && r.templateId === "R1" && r.params.action === "pvp" && same(r, ["ward"])) {
-      return { accepted: false, reason: `Contradicts rule #${r.id}: PvP is rewarded in that Ward.` };
+      return { accepted: false, reason: `Contradicts "${renderRule(r.templateId, r.params)}": PvP is rewarded in that Ward.` };
     }
     // "Action rewarded in Ward X" vs "Action forbidden in Ward X"
     if (templateId === "R1" && r.templateId === "R2" && same(r, ["action", "ward"])) {
-      return { accepted: false, reason: `Contradicts rule #${r.id}: that action is forbidden there.` };
+      return { accepted: false, reason: `Contradicts "${renderRule(r.templateId, r.params)}": that action is forbidden there.` };
     }
     if (templateId === "R2" && r.templateId === "R1" && same(r, ["action", "ward"])) {
-      return { accepted: false, reason: `Contradicts rule #${r.id}: that action is rewarded there.` };
+      return { accepted: false, reason: `Contradicts "${renderRule(r.templateId, r.params)}": that action is rewarded there.` };
     }
     // Only one Ward can host Calamities
     if (templateId === "R11" && r.templateId === "R11") {
-      return { accepted: false, reason: `Contradicts rule #${r.id}: Calamities are already bound to one Ward.` };
+      return { accepted: false, reason: `Contradicts "${renderRule(r.templateId, r.params)}": Calamities are already bound to one Ward.` };
     }
   }
   return { accepted: true, cruel: isCruel(templateId, params) };
