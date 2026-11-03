@@ -9,6 +9,7 @@ import { createWorld, summarize } from "@grudgebound/shared";
 import { BattleSessions, curseCatalog, type StartAnswer, type TurnAnswer } from "./battles";
 import { ChainWriter, type BattleRecord } from "./chain";
 import { rulesOverview } from "./rules";
+import { Shop } from "./shop";
 
 const VIEW = ["turn", "outcome", "player", "wild", "items", "chances", "canUse"];
 const SIDE = ["speciesId", "name", "emotion", "omen", "hp", "maxHp"];
@@ -127,5 +128,26 @@ describe("Unreal client contract", () => {
         assert.ok(t.text.includes(`{${p.key}}`), `${t.id}: Unreal fills {${p.key}} in the text`);
       }
     }
+  });
+
+  test("the shop extras and a trade answer have what GbJson::Shop / GbJson::Trade read", async () => {
+    const ember: Record<string, number> = { "afreen.gb.t": 60 };
+    const chain = new ChainWriter(
+      { network: "testnet", itemsContract: "items.gb.t", riteContract: "rite.gb.t", guestAccount: "guest.gb.t" },
+      {
+        call: async () => ({ hash: "h", result: "tal-1" }),
+        relay: async () => ({ hash: "h", result: null }),
+        view: async (_c, method, args) => (method === "mt_balance_of" ? String(ember[args.account_id as string] ?? 0) : null),
+      },
+    );
+    const shop = new Shop(createWorld(7), chain, "gb.t", () => true);
+    const x = await shop.extras("broker", "afreen.gb.t");
+    hasKeys(x, ["ember", "buyBack"], "shop extras");
+    assert.equal(typeof x.ember, "number", "Unreal reads ember as a number (-1 when null)");
+    assert.ok(Object.keys(x.buyBack).every((k) => k.startsWith("talisman-")), "buyBack is keyed by item id");
+    const r = await shop.buy({ account: "afreen.gb.t", merchant: "broker", itemId: "talisman-dread" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    hasKeys(r.body, ["jobId", "price", "text", "speciesId", "omen", "chain"], "trade");
+    hasKeys((r.body as { chain: object }).chain, ["status", "network", "account", "txs"], "trade.chain");
   });
 });

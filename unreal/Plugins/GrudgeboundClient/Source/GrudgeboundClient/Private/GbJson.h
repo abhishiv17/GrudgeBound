@@ -24,6 +24,10 @@ namespace GbJson
 	FGbBattleTurn BattleTurn(const TSharedPtr<FJsonObject>& O);
 	FGbChainReceipt ChainReceipt(const TSharedPtr<FJsonObject>& O);
 	FGbRulesOverview RulesOverview(const TSharedPtr<FJsonObject>& O);
+	FGbShop Shop(const TSharedPtr<FJsonObject>& O);
+	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy);
+	/** {"account":..,"merchant":..,"itemId"|"tokenId":..} */
+	FString TradeBody(const FString& Account, const FString& Merchant, const FString& Key, const FString& Value);
 	FGbRuleVerdict RuleVerdict(const TSharedPtr<FJsonObject>& O);
 	/** {"account":..,"templateId":..,"params":{..}} */
 	FString ProposeBody(const FString& Account, const FString& TemplateId, const TMap<FString, FString>& Params);

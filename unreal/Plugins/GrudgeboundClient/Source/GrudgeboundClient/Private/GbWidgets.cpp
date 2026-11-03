@@ -702,6 +702,225 @@ void UGbTalismanCaseWidget::Refresh()
 
 void UGbTalismanCaseWidget::HandlePlayerChanged() { Refresh(); }
 
+// ================================================================ the shop
+
+void UGbShopRowWidget::BuildTree()
+{
+	UHorizontalBox* H = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Root"));
+	WidgetTree->RootWidget = H;
+	UVerticalBox* Text = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	TitleText = MakeText(TEXT(""), 15, C::Ink, true);
+	DetailText = MakeText(TEXT(""), 12, Dim());
+	DetailText->SetAutoWrapText(true);
+	AddRow(Text, TitleText, 0.f, 0.f);
+	AddRow(Text, DetailText, 0.f, 4.f);
+	AddCol(H, Text, true);
+	UTextBlock* Label = nullptr;
+	Action = MakeButton(TEXT(""), Label, C::Gold);
+	ActionLabel = Label;
+	Action->OnClicked.AddDynamic(this, &UGbShopRowWidget::HandleClick);
+	AddCol(H, Sized(Action, 120.f, 36.f), false, 0.f);
+}
+
+void UGbShopRowWidget::Setup(const FString& InTitle, const FString& Detail, const FString& Button, bool bEnabled, const FLinearColor& TitleColor)
+{
+	if (!TitleText) return;
+	TitleText->SetText(FText::FromString(InTitle));
+	TitleText->SetColorAndOpacity(FSlateColor(TitleColor));
+	DetailText->SetText(FText::FromString(Detail));
+	ActionLabel->SetText(FText::FromString(Button));
+	Action->SetIsEnabled(bEnabled);
+}
+
+void UGbShopRowWidget::HandleClick()
+{
+	if (OnClick) OnClick();
+}
+
+void UGbShopWidget::BuildTree()
+{
+	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
+	WidgetTree->RootWidget = Root;
+
+	UBorder* Card = MakePanel(PaperPanel(), FMargin(22.f, 16.f));
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	Card->SetContent(Sized(Col, 620.f, 0.f));
+
+	Title = MakeText(TEXT("The Talisman Broker"), 22, C::Ink, true);
+	AddRow(Col, Title);
+	Purse = MakeText(TEXT("Counting your Ember..."), 13, C::Ink);
+	AddRow(Col, Purse, 2.f, 8.f);
+
+	AddRow(Col, MakeText(TEXT("For sale"), 14, C::Ink, true), 4.f);
+	Stock = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
+	AddRow(Col, Sized(Stock, 0.f, 230.f));
+
+	AddRow(Col, MakeText(TEXT("Your talismans on NEAR"), 14, C::Ink, true), 10.f);
+	Yours = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
+	AddRow(Col, Sized(Yours, 0.f, 150.f));
+
+	Status = MakeText(TEXT(""), 13, C::Ink);
+	Status->SetAutoWrapText(true);
+	AddRow(Col, Status, 8.f);
+
+	UTextBlock* Ignored = nullptr;
+	UButton* Close = MakeButton(TEXT("Close  (B)"), Ignored, C::Stone);
+	Close->OnClicked.AddDynamic(this, &UGbShopWidget::HandleClose);
+	AddRow(Col, Sized(Close, 0.f, 40.f), 10.f);
+
+	Centre(Root, Card);
+}
+
+void UGbShopWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	if (UGbApiSubsystem* A = Api())
+	{
+		A->OnShop.AddUniqueDynamic(this, &UGbShopWidget::HandleShop);
+		A->OnTrade.AddUniqueDynamic(this, &UGbShopWidget::HandleTrade);
+		A->OnTradeReceipt.AddUniqueDynamic(this, &UGbShopWidget::HandleTradeReceipt);
+		A->OnError.AddUniqueDynamic(this, &UGbShopWidget::HandleApiError);
+	}
+	if (UGbPlayerSubsystem* P = Player()) P->OnPlayerChanged.AddUniqueDynamic(this, &UGbShopWidget::HandlePlayerChanged);
+}
+
+void UGbShopWidget::NativeDestruct()
+{
+	if (UGbApiSubsystem* A = Api())
+	{
+		A->OnShop.RemoveDynamic(this, &UGbShopWidget::HandleShop);
+		A->OnTrade.RemoveDynamic(this, &UGbShopWidget::HandleTrade);
+		A->OnTradeReceipt.RemoveDynamic(this, &UGbShopWidget::HandleTradeReceipt);
+		A->OnError.RemoveDynamic(this, &UGbShopWidget::HandleApiError);
+	}
+	if (UGbPlayerSubsystem* P = Player()) P->OnPlayerChanged.RemoveDynamic(this, &UGbShopWidget::HandlePlayerChanged);
+	Super::NativeDestruct();
+}
+
+void UGbShopWidget::Open()
+{
+	if (UGbApiSubsystem* A = Api()) A->FetchShop(MerchantId);
+}
+
+void UGbShopWidget::HandleShop(const FGbShop& Shop)
+{
+	if (Shop.MerchantId != MerchantId) return;
+	Data = Shop;
+	Redraw();
+}
+
+void UGbShopWidget::HandlePlayerChanged()
+{
+	Redraw();
+}
+
+void UGbShopWidget::Redraw()
+{
+	if (!Stock) return;
+	const UGbPlayerSubsystem* P = Player();
+	const UGbApiSubsystem* A = Api();
+	Title->SetText(FText::FromString(Data.MerchantName.IsEmpty() ? FString(TEXT("The Talisman Broker"))
+		: Capitalised(Data.MerchantName) + (Data.bClosed ? TEXT("  (closed)") : TEXT(""))));
+	Purse->SetText(FText::FromString(Data.Ember >= 0
+		? FString::Printf(TEXT("Your Ember on NEAR: %d"), Data.Ember)
+		: FString(TEXT("Your Ember isn't on chain here (no Player Account, or the server runs off-chain)."))));
+
+	Stock->ClearChildren();
+	for (const FGbShopItem& It : Data.Items)
+	{
+		const bool bTalisman = It.Id.StartsWith(TEXT("talisman-"));
+		UGbShopRowWidget* Row = CreateWidget<UGbShopRowWidget>(this, UGbShopRowWidget::StaticClass());
+		if (!Row) continue;
+		const bool bCan = bTalisman && !bBusy && !Data.bClosed && It.Stock > 0 && Data.Ember >= It.Price;
+		const FString Detail = FString::Printf(TEXT("%d Ember  |  %d in stock  |  %s"), It.Price, It.Stock, *It.Text);
+		const FString Emotion = bTalisman ? It.Id.Mid(9) : FString();
+		Row->Setup(It.Name, bTalisman ? Detail : Detail + TEXT("  (not sold to players yet)"),
+			FString::Printf(TEXT("Buy  %d"), It.Price), bCan, bTalisman ? EmotionColor(Emotion) : C::Ink);
+		const FString ItemId = It.Id;
+		Row->OnClick = [this, ItemId]() { Buy(ItemId); };
+		Stock->AddChild(Row);
+	}
+
+	Yours->ClearChildren();
+	int32 Shown = 0;
+	if (P && A)
+	{
+		for (const FGbTalisman& T : P->GetTalismans())
+		{
+			if (T.ChainTokenId.IsEmpty()) continue;
+			const FGbCurseInfo Curse = A->GetCurse(T.SpeciesId);
+			const FGbShopItem* Line = Data.Items.FindByPredicate([&Curse](const FGbShopItem& I) { return I.Id == TEXT("talisman-") + Curse.Emotion; });
+			const int32 Offer = Line ? Line->BuyBack : 0;
+			UGbShopRowWidget* Row = CreateWidget<UGbShopRowWidget>(this, UGbShopRowWidget::StaticClass());
+			if (!Row) continue;
+			const bool bPartner = T.Id == P->GetPartner().Id;
+			Row->Setup(FString::Printf(TEXT("%s  (NEAR %s)"), *Curse.Name, *T.ChainTokenId),
+				bPartner ? FString(TEXT("Your partner: pick another partner (T) before selling it."))
+					: Offer > 0 ? FString::Printf(TEXT("The Broker offers %d Ember"), Offer) : FString(TEXT("The Broker doesn't buy these")),
+				FString::Printf(TEXT("Sell  %d"), Offer), !bBusy && !bPartner && Offer > 0 && !Data.bClosed, EmotionColor(Curse.Emotion));
+			const FString TokenId = T.ChainTokenId;
+			Row->OnClick = [this, TokenId]() { Sell(TokenId); };
+			Yours->AddChild(Row);
+			++Shown;
+		}
+	}
+	if (Shown == 0) Yours->AddChild(MakeText(TEXT("None yet: talismans you bind or buy on NEAR show up here."), 13, Dim()));
+}
+
+void UGbShopWidget::Buy(const FString& ItemId)
+{
+	UGbApiSubsystem* A = Api();
+	if (bBusy || !A) return;
+	bBusy = true;
+	Status->SetText(FText::FromString(TEXT("The Broker wraps it up...")));
+	Redraw();
+	A->BuyItem(MerchantId, ItemId);
+}
+
+void UGbShopWidget::Sell(const FString& TokenId)
+{
+	UGbApiSubsystem* A = Api();
+	if (bBusy || !A) return;
+	bBusy = true;
+	Status->SetText(FText::FromString(TEXT("The Broker weighs your talisman...")));
+	Redraw();
+	A->SellTalisman(MerchantId, TokenId);
+}
+
+void UGbShopWidget::HandleTrade(const FGbTrade& Trade)
+{
+	PendingJob = Trade.JobId;
+	Status->SetText(FText::FromString(Trade.Text + TEXT(". Settling it on NEAR...")));
+}
+
+void UGbShopWidget::HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
+{
+	if (JobId != PendingJob) return;
+	PendingJob.Reset();
+	bBusy = false;
+	const FString Was = Status->GetText().ToString().Replace(TEXT(" Settling it on NEAR..."), TEXT(""));
+	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
+		? FString::Printf(TEXT("%s Settled on NEAR%s. (L to see it)"), *Was, Receipt.TokenId.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (%s)"), *Receipt.TokenId))
+		: FString::Printf(TEXT("The ledger refused the trade: %s"), *Receipt.Error)));
+	Open();
+}
+
+void UGbShopWidget::HandleApiError(const FString& What, int32 StatusCode, const FString& Message)
+{
+	if (What == TEXT("shop/buy") || What == TEXT("shop/sell"))
+	{
+		bBusy = false;
+		Status->SetText(FText::FromString(FString::Printf(TEXT("The Broker: %s"), *Message)));
+		Redraw();
+	}
+	else if (What == TEXT("shop"))
+	{
+		Purse->SetText(FText::FromString(FString::Printf(TEXT("Could not reach the shop: %s"), *Message)));
+	}
+}
+
+void UGbShopWidget::HandleClose() { OnClose.Broadcast(); }
+
 // ================================================================ the Rite (rules panel)
 
 void UGbRulesWidget::BuildTree()

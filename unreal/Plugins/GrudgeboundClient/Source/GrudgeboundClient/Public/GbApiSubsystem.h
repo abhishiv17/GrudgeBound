@@ -16,6 +16,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTownEventsEvent, const TArray<FGb
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbKessaLineEvent, const FString&, Line);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleStartedEvent, const FGbBattleStart&, Battle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleTurn&, Turn);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbShopEvent, const FGbShop&, Shop);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTradeEvent, const FGbTrade&, Trade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRuleVerdictEvent, const FGbRuleVerdict&, Verdict);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FGbChainReceiptEvent, const FString&, BattleId, const FGbChainReceipt&, Receipt);
@@ -108,6 +110,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
 	void ProposeRule(const FString& TemplateId, const TMap<FString, FString>& Params);
 
+	// ------------------------------------------------------------ shop (GET /shop, POST /shop/buy, /shop/sell)
+
+	/** Prices, reasons, stock, buy-back offers and your chain Ember. Answer: OnShop (or OnError "shop"). */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Shop")
+	void FetchShop(const FString& MerchantId);
+
+	/** Buy a talisman (ItemId "talisman-sorrow", ...). Answer: OnTrade, then OnTradeReceipt. Refusals: OnError "shop/buy". */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Shop")
+	void BuyItem(const FString& MerchantId, const FString& ItemId);
+
+	/** Sell a talisman you own on chain. Answer: OnTrade, then OnTradeReceipt. Refusals: OnError "shop/sell". */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Shop")
+	void SellTalisman(const FString& MerchantId, const FString& TokenId);
+
 	// ------------------------------------------------------------ events
 
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Server")
@@ -136,6 +152,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Battle")
 	FGbChainReceiptEvent OnChainReceipt;
 
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Shop")
+	FGbShopEvent OnShop;
+
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Shop")
+	FGbTradeEvent OnTrade;
+
+	/** A trade's NEAR receipt is final (BattleId holds the trade's job id). */
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Shop")
+	FGbChainReceiptEvent OnTradeReceipt;
+
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
 	FGbRulesEvent OnRules;
 
@@ -159,7 +185,8 @@ private:
 	void FetchEvents();
 	void FetchCurses();
 	void SetOnline(bool bNowOnline);
-	/** Ask GET /chain?<Kind>=<id> again in a second, up to TriesLeft times (Kind: "battle" or "rule"). */
+	/** Ask GET /chain?<Kind>=<id> again in a second, up to TriesLeft times (Kind: "battle", "rule" or "shop"). */
+	void SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value);
 	void PollChain(const FString& Kind, const FString& Id, int32 TriesLeft);
 
 	FTimerHandle PollTimer;

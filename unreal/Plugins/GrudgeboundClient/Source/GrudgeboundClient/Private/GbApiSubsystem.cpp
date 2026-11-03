@@ -282,9 +282,64 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 			const FGbChainReceipt R = GbJson::ChainReceipt(O);
 			if (R.Status == TEXT("pending")) PollChain(Kind, Id, TriesLeft - 1);
 			else if (Kind == TEXT("rule")) OnRuleReceipt.Broadcast(Id, R);
+			else if (Kind == TEXT("shop")) OnTradeReceipt.Broadcast(Id, R);
 			else OnChainReceipt.Broadcast(Id, R);
 		});
 	}), 1.0f, false);
+}
+
+void UGbApiSubsystem::FetchShop(const FString& MerchantId)
+{
+	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();
+	FString Path = TEXT("/shop?merchant=") + FGenericPlatformHttp::UrlEncode(MerchantId);
+	if (!Account.IsEmpty()) Path += TEXT("&account=") + FGenericPlatformHttp::UrlEncode(Account);
+	Send(TEXT("GET"), Path, FString(), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			if (Status == 0) SetOnline(false);
+			OnError.Broadcast(TEXT("shop"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		OnShop.Broadcast(GbJson::Shop(O));
+	});
+}
+
+void UGbApiSubsystem::BuyItem(const FString& MerchantId, const FString& ItemId)
+{
+	SendTrade(true, MerchantId, TEXT("itemId"), ItemId);
+}
+
+void UGbApiSubsystem::SellTalisman(const FString& MerchantId, const FString& TokenId)
+{
+	SendTrade(false, MerchantId, TEXT("tokenId"), TokenId);
+}
+
+void UGbApiSubsystem::SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value)
+{
+	const FString What = bBuy ? TEXT("shop/buy") : TEXT("shop/sell");
+	const FString Account = GetDefault<UGbSettings>()->PlayerAccount;
+	if (Account.TrimStartAndEnd().IsEmpty())
+	{
+		OnError.Broadcast(What, 400, TEXT("Set Project Settings > Grudgebound > Player Account first."));
+		return;
+	}
+	Send(TEXT("POST"), TEXT("/") + What, GbJson::TradeBody(Account, MerchantId, Key, Value), [this, What, bBuy, Value](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			if (Status == 0) SetOnline(false);
+			OnError.Broadcast(What, Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		FGbTrade T = GbJson::Trade(O, bBuy);
+		if (!bBuy) T.TokenId = Value;
+		OnTrade.Broadcast(T);
+		if (T.Chain.Status == TEXT("pending")) PollChain(TEXT("shop"), T.JobId, 40);
+		else OnTradeReceipt.Broadcast(T.JobId, T.Chain);
+	});
 }
 
 void UGbApiSubsystem::FetchRules()

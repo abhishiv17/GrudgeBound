@@ -19,6 +19,9 @@ void UGbPlayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	{
 		Api->OnBattleTurn.AddDynamic(this, &UGbPlayerSubsystem::HandleBattleTurn);
 		Api->OnChainReceipt.AddDynamic(this, &UGbPlayerSubsystem::HandleChainReceipt);
+		Api->OnShop.AddDynamic(this, &UGbPlayerSubsystem::HandleShop);
+		Api->OnTrade.AddDynamic(this, &UGbPlayerSubsystem::HandleTrade);
+		Api->OnTradeReceipt.AddDynamic(this, &UGbPlayerSubsystem::HandleTradeReceipt);
 	}
 }
 
@@ -176,6 +179,52 @@ void UGbPlayerSubsystem::HandleBattleTurn(const FGbBattleTurn& Turn)
 
 	Save();
 	if (bBound) OnTalismanBound.Broadcast(NewTalisman);
+}
+
+void UGbPlayerSubsystem::HandleShop(const FGbShop& Shop)
+{
+	if (!Data || Shop.Ember < 0 || Shop.Ember == Data->Ember) return;
+	Data->Ember = Shop.Ember;
+	Save();
+}
+
+void UGbPlayerSubsystem::HandleTrade(const FGbTrade& Trade)
+{
+	PendingTrades.Add(Trade.JobId, Trade);
+}
+
+void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
+{
+	FGbTrade Trade;
+	if (!PendingTrades.RemoveAndCopyValue(JobId, Trade) || !Data || Receipt.Status != TEXT("done")) return;
+	if (Trade.bBuy)
+	{
+		FGbTalisman T;
+		T.Id = FString::Printf(TEXT("tal-%d"), Data->NextTalisman++);
+		T.SpeciesId = Trade.SpeciesId;
+		T.Omen = Trade.Omen;
+		T.ChainTokenId = Receipt.TokenId;
+		T.ChainUrl = Receipt.ExplorerUrl;
+		if (const UGameInstance* GI = GetGameInstance())
+		{
+			if (const UGbApiSubsystem* Api = GI->GetSubsystem<UGbApiSubsystem>()) T.BoundDay = Api->GetWorldState().Day;
+		}
+		Data->Talismans.Add(T);
+		Data->Ember = FMath::Max(0, Data->Ember - Trade.Price);
+	}
+	else
+	{
+		const int32 At = Data->Talismans.IndexOfByPredicate([&Trade](const FGbTalisman& T) { return T.ChainTokenId == Trade.TokenId; });
+		if (At != INDEX_NONE)
+		{
+			const bool bWasPartner = Data->Talismans[At].Id == Data->PartnerId;
+			Data->Talismans.RemoveAt(At);
+			// Never leave the player without a partner: fall back to the first talisman left.
+			if (bWasPartner) Data->PartnerId = Data->Talismans.Num() > 0 ? Data->Talismans[0].Id : FString();
+		}
+		Data->Ember += Trade.Price;
+	}
+	Save();
 }
 
 void UGbPlayerSubsystem::HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt)

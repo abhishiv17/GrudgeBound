@@ -186,6 +186,73 @@ private:
 	FString TalismanId;
 };
 
+/** One line in the shop: a title, a detail line and one button. */
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbShopRowWidget : public UGbWidgetBase
+{
+	GENERATED_BODY()
+
+public:
+	void Setup(const FString& Title, const FString& Detail, const FString& Button, bool bEnabled, const FLinearColor& TitleColor);
+
+	/** Called with nothing: the shop knows which row it built. */
+	TFunction<void()> OnClick;
+
+protected:
+	virtual void BuildTree() override;
+
+private:
+	UFUNCTION() void HandleClick();
+
+	UPROPERTY() TObjectPtr<UTextBlock> TitleText;
+	UPROPERTY() TObjectPtr<UTextBlock> DetailText;
+	UPROPERTY() TObjectPtr<UButton> Action;
+	UPROPERTY() TObjectPtr<UTextBlock> ActionLabel;
+};
+
+/** The Talisman Broker's shop (B): buy talismans for Ember, sell yours back; settled on NEAR (P2-G1). */
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbShopWidget : public UGbWidgetBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Fetch prices and your Ember (called when the shop opens). */
+	void Open();
+
+	FSimpleMulticastDelegate OnClose;
+
+	/** The merchant in the Lantern Ward. */
+	static constexpr const TCHAR* MerchantId = TEXT("broker");
+
+protected:
+	virtual void BuildTree() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
+private:
+	UFUNCTION() void HandleShop(const FGbShop& Shop);
+	UFUNCTION() void HandleTrade(const FGbTrade& Trade);
+	UFUNCTION() void HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt);
+	UFUNCTION() void HandleApiError(const FString& What, int32 Status, const FString& Message);
+	UFUNCTION() void HandlePlayerChanged();
+	UFUNCTION() void HandleClose();
+
+	void Redraw();
+	void Buy(const FString& ItemId);
+	void Sell(const FString& TokenId);
+
+	UPROPERTY() TObjectPtr<UTextBlock> Title;
+	UPROPERTY() TObjectPtr<UTextBlock> Purse;
+	UPROPERTY() TObjectPtr<UScrollBox> Stock;
+	UPROPERTY() TObjectPtr<UScrollBox> Yours;
+	UPROPERTY() TObjectPtr<UTextBlock> Status;
+
+	FGbShop Data;
+	FString PendingJob;
+	bool bBusy = false;
+};
+
 /**
  * The Rite (R): rules in force, and a rule builder. Propose sends it as your Player Account; Kessa answers at
  * once, then the proposal and her verdict are written on NEAR (P2-G2).

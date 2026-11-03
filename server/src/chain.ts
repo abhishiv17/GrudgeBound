@@ -52,7 +52,7 @@ export interface ChainRule {
 }
 
 /** One contract call: what it returned and the transaction hash. Swapped for a fake in tests. */
-export type ContractCall = (contractId: string, methodName: string, args: Record<string, unknown>) => Promise<{ hash: string; result: unknown }>;
+export type ContractCall = (contractId: string, methodName: string, args: Record<string, unknown>, deposit?: bigint) => Promise<{ hash: string; result: unknown }>;
 
 export interface BattleRecord {
   battleId: string;
@@ -67,7 +67,7 @@ export interface BattleRecord {
 }
 
 export interface ChainTx {
-  kind: "mint" | "points" | "propose" | "resolve";
+  kind: "mint" | "points" | "propose" | "resolve" | "pay" | "hand-over";
   hash: string;
   url: string;
 }
@@ -146,7 +146,7 @@ export function battleLogHash(r: Pick<BattleRecord, "seed" | "actions" | "wild" 
  * A player's call, relayed (NEP-366): the player signs a delegate action, the relayer account sends it and
  * pays the gas, and the contract sees the player as the caller. `result` is what the contract returned.
  */
-export type RelayCall = (player: string, contractId: string, methodName: string, args: Record<string, unknown>) => Promise<{ hash: string; result: unknown }>;
+export type RelayCall = (player: string, contractId: string, methodName: string, args: Record<string, unknown>, deposit?: bigint) => Promise<{ hash: string; result: unknown }>;
 /** A read-only contract call. */
 export type ViewCall = (contractId: string, methodName: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -202,12 +202,12 @@ function nearOps(cfg: ChainConfig): ChainOps {
   const players = new Map<string, Account>();
 
   return {
-    async call(contractId, methodName, args) {
-      const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit: 0n });
+    async call(contractId, methodName, args, deposit = 0n) {
+      const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit });
       checkReceipts(res);
       return { hash: txHash(res), result: getTransactionLastResult(res) };
     },
-    async relay(player, contractId, methodName, args) {
+    async relay(player, contractId, methodName, args, deposit = 0n) {
       if (!relayer) throw new Error(`no key for the relayer ${cfg.relayerAccount}`);
       let acct = players.get(player);
       if (!acct) {
@@ -218,7 +218,7 @@ function nearOps(cfg: ChainConfig): ChainOps {
       }
       const { signedDelegate } = await acct.createSignedMetaTransaction({
         receiverId: contractId,
-        actions: [actions.functionCall(methodName, args, GAS, 0n)],
+        actions: [actions.functionCall(methodName, args, GAS, deposit)],
       });
       const res = await relayer.signAndSendTransaction({ receiverId: player, actions: [actions.signedDelegate(signedDelegate)] });
       checkReceipts(res);
@@ -317,6 +317,51 @@ export class ChainWriter {
         receipt.status = "failed";
         receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         console.warn(`[chain] rule ${p.jobId}: ${receipt.error}`);
+      }
+    });
+    return this.settle(work, receipt, waitMs);
+  }
+
+  /** A player's Ember on the items contract. */
+  async ember(account: string): Promise<number> {
+    return Number(await this.view(this.cfg.itemsContract, "mt_balance_of", { account_id: account, token_id: "ember" }));
+  }
+
+  /** A talisman on the items contract, or null. */
+  async talisman(tokenId: string): Promise<{ token_id: string; owner: string; meta: { species: string; emotion: string; omen: string } } | null> {
+    return (await this.view(this.cfg.itemsContract, "talisman", { token_id: tokenId })) as never;
+  }
+
+  shopReceipt(jobId: string): ChainReceipt | undefined {
+    return this.receipts.get(`shop:${jobId}`);
+  }
+
+  /**
+   * Runs `steps` in the chain queue under a receipt (GET /chain?<kind>=<id>), then `onDone` if they all
+   * succeed, or `onFail` if one throws. The steps push their own transactions with `tx`.
+   */
+  job(
+    kind: "shop",
+    id: string,
+    account: string,
+    steps: (ops: { call: ContractCall; relay: RelayCall; tx: (k: ChainTx["kind"], hash: string) => void; receipt: ChainReceipt }) => Promise<void>,
+    onDone: (receipt: ChainReceipt) => void,
+    onFail: (receipt: ChainReceipt) => void = () => {},
+    waitMs = 0,
+  ): Promise<ChainReceipt> {
+    const receipt: ChainReceipt = { status: "pending", network: this.cfg.network, account, txs: [] };
+    this.remember(`${kind}:${id}`, receipt);
+    const tx = (k: ChainTx["kind"], hash: string) => { receipt.txs.push({ kind: k, hash, url: explorerTxUrl(this.cfg.network, hash) }); };
+    const work = this.enqueue(async () => {
+      try {
+        await steps({ call: this.call, relay: this.relay, tx, receipt });
+        receipt.status = "done";
+        onDone(receipt);
+      } catch (e) {
+        receipt.status = "failed";
+        receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+        console.warn(`[chain] ${kind} ${id}: ${receipt.error}`);
+        onFail(receipt);
       }
     });
     return this.settle(work, receipt, waitMs);

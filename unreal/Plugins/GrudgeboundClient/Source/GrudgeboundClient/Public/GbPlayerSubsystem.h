@@ -114,6 +114,19 @@ private:
 	UFUNCTION()
 	void HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt);
 
+	/** The shop reports your chain Ember: it replaces the local count. */
+	UFUNCTION()
+	void HandleShop(const FGbShop& Shop);
+
+	UFUNCTION()
+	void HandleTrade(const FGbTrade& Trade);
+
+	UFUNCTION()
+	void HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt);
+
+	/** Trades waiting for their NEAR receipt. */
+	TMap<FString, FGbTrade> PendingTrades;
+
 	void Load();
 	void Save();
 	void MakeFresh();

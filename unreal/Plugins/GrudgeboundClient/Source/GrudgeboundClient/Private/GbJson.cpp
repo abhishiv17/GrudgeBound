@@ -364,6 +364,51 @@ namespace GbJson
 		return R;
 	}
 
+	FGbShop Shop(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbShop S;
+		const TSharedPtr<FJsonObject> M = Obj(O, TEXT("merchant"));
+		S.MerchantId = Str(M, TEXT("id"));
+		S.MerchantName = Str(M, TEXT("name"));
+		S.bClosed = Bool(M, TEXT("closed"));
+		S.Ember = Int(O, TEXT("ember"), -1);
+		const TSharedPtr<FJsonObject> BuyBack = Obj(O, TEXT("buyBack"));
+		for (const TSharedPtr<FJsonObject>& I : Objects(O, TEXT("items")))
+		{
+			FGbShopItem& It = S.Items.AddDefaulted_GetRef();
+			It.Id = Str(I, TEXT("id"));
+			It.Name = Str(I, TEXT("name"));
+			It.Stock = Int(I, TEXT("stock"));
+			It.Price = Int(I, TEXT("price"));
+			It.Text = Str(I, TEXT("text"));
+			It.BuyBack = Int(BuyBack, *It.Id);
+		}
+		return S;
+	}
+
+	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy)
+	{
+		FGbTrade T;
+		T.bBuy = bBuy;
+		T.JobId = Str(O, TEXT("jobId"));
+		T.Price = Int(O, TEXT("price"));
+		T.Text = Str(O, TEXT("text"));
+		T.SpeciesId = Str(O, TEXT("speciesId"));
+		T.Omen = Str(O, TEXT("omen"));
+		T.Chain = ChainReceipt(Obj(O, TEXT("chain")));
+		T.TokenId = T.Chain.TokenId;
+		return T;
+	}
+
+	FString TradeBody(const FString& Account, const FString& Merchant, const FString& Key, const FString& Value)
+	{
+		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+		O->SetStringField(TEXT("account"), Account.TrimStartAndEnd().ToLower());
+		O->SetStringField(TEXT("merchant"), Merchant);
+		O->SetStringField(Key, Value);
+		return Write(O);
+	}
+
 	FGbRuleVerdict RuleVerdict(const TSharedPtr<FJsonObject>& O)
 	{
 		FGbRuleVerdict V;

@@ -244,6 +244,56 @@ struct FGbBattleTurn
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
 };
 
+/** One line of a merchant's stock from GET /shop. */
+USTRUCT(BlueprintType)
+struct FGbShopItem
+{
+	GENERATED_BODY()
+
+	/** e.g. "talisman-sorrow", "binding-seal". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Stock = 0;
+	/** What the merchant charges you. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Price = 0;
+	/** The merchant's one-line reason (written by the AI when the server has a NEAR AI key). */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	/** What the merchant pays for one of yours (talismans only); 0 when it doesn't buy them. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 BuyBack = 0;
+};
+
+/** GET /shop?merchant=&account=. */
+USTRUCT(BlueprintType)
+struct FGbShop
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString MerchantId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString MerchantName;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bClosed = false;
+	/** Your Ember on chain; -1 when unknown (off-chain server, no account). */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Ember = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbShopItem> Items;
+};
+
+/** POST /shop/buy or /shop/sell answer; Chain finishes later (OnTradeReceipt). */
+USTRUCT(BlueprintType)
+struct FGbTrade
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString JobId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bBuy = true;
+	/** Ember paid (buy) or received (sell). */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Price = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString SpeciesId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Omen;
+	/** Sold: the token handed over. Bought: set on the receipt once minted. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString TokenId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
+};
+
 /** One value a rule parameter may take, with the words the rule shows for it. */
 USTRUCT(BlueprintType)
 struct FGbRuleOption

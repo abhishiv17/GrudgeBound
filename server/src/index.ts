@@ -17,6 +17,8 @@
  *   GET /chain?battle=ID -> that battle's on-chain receipt (talisman id, tx links); without ?battle: the contracts in use
  *                           Both battle routes answer with `chain` when a binding or exorcism is written to NEAR (chain.ts)
  *   GET /curses          -> every curse's id, name, emotion, omen, home Ward and signature move (no stats)
+ *   POST /shop/buy, /shop/sell -> a player trades talismans for Ember on chain (see shop.ts); GET /chain?shop=ID
+ *   GET /shop?merchant=broker&account=A -> also A's Ember on chain and what the merchant pays per talisman
  *   GET /shop?merchant=broker -> that merchant's prices, each with a one-line reason in the merchant's voice
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
  *   POST /tick           -> advance one tick now (dev only)
@@ -33,6 +35,7 @@ import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agent
 import { BattleSessions, MAX_TURNS, curseCatalog, type TurnAnswer } from "./battles";
 import { ChainWriter, chainConfigFromEnv, custodialKey, isAccountId, type BattleRecord } from "./chain";
 import { ChainRules, rulesOverview } from "./rules";
+import { Shop } from "./shop";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -84,7 +87,9 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 const chainCfg = chainConfigFromEnv();
 const chain = chainCfg ? new ChainWriter(chainCfg) : null;
-const chainRules = chain && chainCfg ? new ChainRules(world, chain, (a) => custodialKey(chainCfg, a) !== undefined) : null;
+const canSignFor = (a: string) => !!chainCfg && custodialKey(chainCfg, a) !== undefined;
+const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
+const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor) : null;
 
 /** After a battle route answers 200 with a binding or exorcism: write it on chain and add the receipt. */
 async function withChain<T extends object>(body: T, record: BattleRecord | null): Promise<T> {
@@ -199,10 +204,28 @@ createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && url.pathname === "/shop") {
-    shop(url.searchParams.get("merchant") ?? "broker").then(
-      (r) => send(res, r.status, r.body),
+    const merchantId = url.searchParams.get("merchant") ?? "broker";
+    shop(merchantId).then(
+      async (r) => {
+        if (r.status !== 200 || !playerShop) return send(res, r.status, r.body);
+        const extras = await playerShop.extras(merchantId, url.searchParams.get("account"));
+        send(res, 200, { ...(r.body as object), ...extras });
+      },
       (e: Error) => send(res, 500, { error: e.message }),
     );
+    return;
+  }
+  if (req.method === "POST" && (url.pathname === "/shop/buy" || url.pathname === "/shop/sell")) {
+    if (!playerShop) return send(res, 503, { error: "trades are settled on chain, and this server runs off-chain" });
+    readJson(req).then(
+      (body) => (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body)).then((r) => {
+        // Stock and demand just changed: the next GET /shop recomputes prices (and Kessa's tooltip lines).
+        const m = (body as { merchant?: unknown } | null)?.merchant;
+        if (r.status === 200 && typeof m === "string") shopCache.delete(m);
+        send(res, r.status, r.body);
+      }),
+      (e: Error) => send(res, 400, { error: e.message }),
+    ).catch((e: Error) => send(res, 500, { error: e.message }));
     return;
   }
   if (req.method === "POST" && url.pathname === "/rules/propose") {
@@ -223,7 +246,12 @@ createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/chain") {
     const id = url.searchParams.get("battle");
     const ruleJob = url.searchParams.get("rule");
+    const shopJob = url.searchParams.get("shop");
     if (!chain || !chainCfg) return send(res, 200, { enabled: false });
+    if (shopJob) {
+      const receipt = chain.shopReceipt(shopJob);
+      return receipt ? send(res, 200, receipt) : send(res, 404, { error: "no chain receipt for that trade" });
+    }
     if (ruleJob) {
       const receipt = chain.ruleReceipt(ruleJob);
       return receipt ? send(res, 200, receipt) : send(res, 404, { error: "no chain receipt for that rule" });

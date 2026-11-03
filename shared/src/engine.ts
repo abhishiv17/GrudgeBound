@@ -498,7 +498,8 @@ function act(world: World, me: Participant, action: ParticipantAction, rng: Rng)
 }
 
 /** Applies R7 trade taxes to a sale; returns what the seller keeps. */
-function payTradeTax(world: World, amount: number): number {
+/** Applies trade-tax rules (R7) to an Ember payment; returns what the seller keeps. */
+export function payTradeTax(world: World, amount: number): number {
   let kept = amount;
   for (const r of activeRules(world, "R7")) {
     const tax = Math.floor((amount * Number(r.params.percent)) / 100);
