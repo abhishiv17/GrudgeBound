@@ -35,6 +35,7 @@ import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agent
 import { BattleSessions, MAX_TURNS, curseCatalog, type TurnAnswer } from "./battles";
 import { ChainWriter, chainConfigFromEnv, custodialKey, isAccountId, type BattleRecord } from "./chain";
 import { ChainRules, rulesOverview } from "./rules";
+import { playerView } from "./player";
 import { Shop } from "./shop";
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -234,6 +235,13 @@ createServer((req, res) => {
       (body) => chainRules.propose(body).then((r) => send(res, r.status, r.body)),
       (e: Error) => send(res, 400, { error: e.message }),
     ).catch((e: Error) => send(res, 500, { error: e.message }));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/player") {
+    playerView(chain, url.searchParams.get("account")).then(
+      (r) => send(res, r.status, r.body),
+      (e: Error) => send(res, 500, { error: e.message }),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/rules") {

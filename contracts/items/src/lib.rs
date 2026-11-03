@@ -33,6 +33,13 @@ pub struct TalismanView {
     pub purse: U128,
 }
 
+#[near(serializers = [json])]
+pub struct TalismanPage {
+    pub talismans: Vec<TalismanView>,
+    /// Pass as `from_index` for the next page; null when every talisman has been looked at.
+    pub next_index: Option<u64>,
+}
+
 #[near(contract_state)]
 #[derive(PanicOnDefault)]
 pub struct Items {
@@ -146,6 +153,20 @@ impl Items {
         Some(TalismanView { token_id, owner, meta, purse: U128(purse) })
     }
 
+    /// Talismans owned by `account_id`, oldest first. Walks token numbers from `from_index` (default 1), looking at
+    /// most `limit` numbers (default and cap 200), so a client pages with the returned `next_index`.
+    /// A linear scan is fine at game scale; an owner index would replace it if talismans number in the tens of thousands.
+    pub fn talismans_of(&self, account_id: AccountId, from_index: Option<u64>, limit: Option<u64>) -> TalismanPage {
+        let start = from_index.unwrap_or(1).max(1);
+        let end = start.saturating_add(limit.unwrap_or(200).min(200)).min(self.next_talisman);
+        let talismans = (start..end)
+            .map(|n| format!("tal-{}", n))
+            .filter(|id| self.owners.get(id) == Some(&account_id))
+            .filter_map(|id| self.talisman(id))
+            .collect();
+        TalismanPage { talismans, next_index: if end < self.next_talisman { Some(end) } else { None } }
+    }
+
     pub fn ember_supply(&self) -> U128 {
         U128(self.ember_supply)
     }
@@ -222,6 +243,26 @@ mod tests {
         let view = c.talisman(id).unwrap();
         assert_eq!(view.owner, accounts(1));
         assert_eq!(view.meta.species, "weepwick");
+    }
+
+    #[test]
+    fn talismans_of_lists_what_an_account_owns_and_pages() {
+        let mut c = setup();
+        for i in 0..5 {
+            c.mint_talisman(if i % 2 == 0 { accounts(1) } else { accounts(2) }, meta("weepwick"));
+        }
+        as_caller(accounts(1), 1);
+        c.mt_transfer(accounts(2), "tal-1".into(), U128(1), None);
+        let all = c.talismans_of(accounts(2), None, None);
+        let ids: Vec<_> = all.talismans.iter().map(|t| t.token_id.clone()).collect();
+        assert_eq!(ids, vec!["tal-1", "tal-2", "tal-4"]);
+        assert_eq!(all.next_index, None);
+        let first = c.talismans_of(accounts(1), Some(1), Some(3));
+        assert_eq!(first.talismans.len(), 1, "tal-3 only: tal-1 was given away");
+        assert_eq!(first.next_index, Some(4));
+        let rest = c.talismans_of(accounts(1), first.next_index, Some(3));
+        assert_eq!(rest.talismans[0].token_id, "tal-5");
+        assert_eq!(rest.next_index, None);
     }
 
     #[test]

@@ -10,6 +10,7 @@ import { BattleSessions, curseCatalog, type StartAnswer, type TurnAnswer } from 
 import { ChainWriter, type BattleRecord } from "./chain";
 import { rulesOverview } from "./rules";
 import { Shop } from "./shop";
+import { playerView } from "./player";
 
 const VIEW = ["turn", "outcome", "player", "wild", "items", "chances", "canUse"];
 const SIDE = ["speciesId", "name", "emotion", "omen", "hp", "maxHp"];
@@ -149,5 +150,19 @@ describe("Unreal client contract", () => {
     assert.equal(r.status, 200, JSON.stringify(r.body));
     hasKeys(r.body, ["jobId", "price", "text", "speciesId", "omen", "chain"], "trade");
     hasKeys((r.body as { chain: object }).chain, ["status", "network", "account", "txs"], "trade.chain");
+  });
+
+  test("GET /player has what GbJson::Player reads", async () => {
+    const chain = new ChainWriter(
+      { network: "testnet", itemsContract: "items.gb.t", riteContract: "rite.gb.t", guestAccount: "guest.gb.t" },
+      {
+        view: async (_c, method) =>
+          method === "get_points" ? 5 : method === "mt_balance_of" ? "60"
+            : { talismans: [{ token_id: "tal-1", owner: "a.gb.t", meta: { species: "hushmoth", emotion: "dread", omen: "whisper", level: 1, wins: 0 }, purse: "0" }], next_index: null },
+      },
+    );
+    const r = await playerView(chain, "a.gb.t");
+    hasKeys(r.body, ["account", "name", "chain", "points", "ember", "talismans", "explorerUrl"], "player");
+    for (const t of (r.body as { talismans: object[] }).talismans) hasKeys(t, ["tokenId", "speciesId", "emotion", "omen", "level", "wins", "purse"], "player.talismans[]");
   });
 });

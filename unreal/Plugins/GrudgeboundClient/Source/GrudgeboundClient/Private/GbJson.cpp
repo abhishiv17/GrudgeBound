@@ -386,6 +386,29 @@ namespace GbJson
 		return S;
 	}
 
+	FGbPlayerView Player(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbPlayerView P;
+		P.Account = Str(O, TEXT("account"));
+		P.Name = Str(O, TEXT("name"));
+		P.bChain = Bool(O, TEXT("chain"));
+		P.Points = Int(O, TEXT("points"), -1);
+		P.Ember = Int(O, TEXT("ember"), -1);
+		P.ExplorerUrl = Str(O, TEXT("explorerUrl"));
+		for (const TSharedPtr<FJsonObject>& T : Objects(O, TEXT("talismans")))
+		{
+			FGbChainTalisman& C = P.Talismans.AddDefaulted_GetRef();
+			C.TokenId = Str(T, TEXT("tokenId"));
+			C.SpeciesId = Str(T, TEXT("speciesId"));
+			C.Emotion = Str(T, TEXT("emotion"));
+			C.Omen = Str(T, TEXT("omen"));
+			C.Level = Int(T, TEXT("level"), 1);
+			C.Wins = Int(T, TEXT("wins"));
+			C.Purse = Int(T, TEXT("purse"));
+		}
+		return P;
+	}
+
 	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy)
 	{
 		FGbTrade T;

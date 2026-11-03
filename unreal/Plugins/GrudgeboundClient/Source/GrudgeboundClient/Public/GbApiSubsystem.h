@@ -16,6 +16,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTownEventsEvent, const TArray<FGb
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbKessaLineEvent, const FString&, Line);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleStartedEvent, const FGbBattleStart&, Battle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleTurn&, Turn);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbPlayerViewEvent, const FGbPlayerView&, Player);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbShopEvent, const FGbShop&, Shop);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTradeEvent, const FGbTrade&, Trade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
@@ -109,6 +110,15 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
 	void ProposeRule(const FString& TemplateId, const TMap<FString, FString>& Params);
+
+	// ------------------------------------------------------------ player (GET /player)
+
+	/** Your points, Ember and talismans on NEAR (needs Player Account). Answer: OnPlayerView (or OnError "player"). */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Player")
+	void FetchPlayer();
+
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Player")
+	FGbPlayerViewEvent OnPlayerView;
 
 	// ------------------------------------------------------------ shop (GET /shop, POST /shop/buy, /shop/sell)
 

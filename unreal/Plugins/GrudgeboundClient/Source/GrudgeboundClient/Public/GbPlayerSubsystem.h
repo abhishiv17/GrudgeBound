@@ -30,6 +30,8 @@ struct FGbTalisman
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") FString ChainTokenId;
 	/** Explorer link of the mint transaction. */
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") FString ChainUrl;
+	/** Ember this talisman has earned on chain (bounties). */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") int32 Purse = 0;
 };
 
 UCLASS()
@@ -84,6 +86,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Player")
 	void SetPartner(const FString& TalismanId);
 
+	/** Ask the server for your talismans, points and Ember on NEAR; the case updates when they arrive. */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Player")
+	void RefreshFromChain();
+
+	/** True once the chain has answered for your Player Account: points, Ember and NEAR talismans are the chain's. */
+	UFUNCTION(BlueprintPure, Category = "Grudgebound|Player")
+	bool IsOnChain() const { return bOnChain; }
+
+	/** Your account on the block explorer (empty off-chain). */
+	UFUNCTION(BlueprintPure, Category = "Grudgebound|Player")
+	FString GetAccountUrl() const { return AccountUrl; }
+
 	/** Won / bound / fled / lost counts. */
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Player")
 	void GetRecord(int32& Won, int32& Bound, int32& Fled, int32& Lost) const;
@@ -126,6 +140,12 @@ private:
 
 	/** Trades waiting for their NEAR receipt. */
 	TMap<FString, FGbTrade> PendingTrades;
+
+	UFUNCTION()
+	void HandlePlayerView(const FGbPlayerView& View);
+
+	bool bOnChain = false;
+	FString AccountUrl;
 
 	void Load();
 	void Save();

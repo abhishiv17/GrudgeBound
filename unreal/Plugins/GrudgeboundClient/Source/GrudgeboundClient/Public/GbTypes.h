@@ -244,6 +244,38 @@ struct FGbBattleTurn
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
 };
 
+/** A talisman as the items contract reports it (GET /player). */
+USTRUCT(BlueprintType)
+struct FGbChainTalisman
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString TokenId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString SpeciesId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Emotion;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Omen;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Level = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Wins = 0;
+	/** Ember the talisman has earned; moves with it when traded. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Purse = 0;
+};
+
+/** GET /player?account=: you as the chain sees you. */
+USTRUCT(BlueprintType)
+struct FGbPlayerView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Account;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	/** False when the server runs off-chain: keep the local save. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bChain = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Ember = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbChainTalisman> Talismans;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString ExplorerUrl;
+};
+
 /** One line of a merchant's stock from GET /shop. */
 USTRUCT(BlueprintType)
 struct FGbShopItem

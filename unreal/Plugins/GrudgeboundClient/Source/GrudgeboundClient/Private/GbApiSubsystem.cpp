@@ -288,6 +288,23 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 	}), 1.0f, false);
 }
 
+void UGbApiSubsystem::FetchPlayer()
+{
+	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();
+	if (Account.IsEmpty()) return; // No account: the local save is all there is.
+	Send(TEXT("GET"), TEXT("/player?account=") + FGenericPlatformHttp::UrlEncode(Account), FString(), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			if (Status == 0) SetOnline(false);
+			OnError.Broadcast(TEXT("player"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		OnPlayerView.Broadcast(GbJson::Player(O));
+	});
+}
+
 void UGbApiSubsystem::FetchShop(const FString& MerchantId)
 {
 	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();

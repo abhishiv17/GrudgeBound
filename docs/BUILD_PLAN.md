@@ -139,12 +139,12 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | ⬜ |
 | P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | 🟡 server + Unreal (B) built, testnet buy/sell verified; in-editor check at end of P2 |
 | P2-G2 | Must | Rules panel sends proposals to the server and shows Kessa's verdict and the explorer link. Built 4 Nov in Unreal: R opens the Rite (rules in force, cost, your points, rule builder); Kessa's verdict at once, then "Recorded on NEAR as rule N (L to see it)". `GET /rules` feeds it. Editor check at the end of P2 | G | | 🟡 |
-| P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | ⬜ |
+| P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | 🟡 Unreal case shows NEAR tal-N and purse; in-editor check at end of P2 |
 | P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | ⬜ |
 | P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | ⬜ |
 | P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | ⬜ |
 | P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | ⬜ |
-| P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | ⬜ |
+| P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | 🟡 GET /player + items `talismans_of` view (upgraded on testnet 4 Nov); Unreal case reads it; in-editor check at end of P2 |
 
 ---
 

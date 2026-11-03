@@ -25,6 +25,7 @@ namespace GbJson
 	FGbChainReceipt ChainReceipt(const TSharedPtr<FJsonObject>& O);
 	FGbRulesOverview RulesOverview(const TSharedPtr<FJsonObject>& O);
 	FGbShop Shop(const TSharedPtr<FJsonObject>& O);
+	FGbPlayerView Player(const TSharedPtr<FJsonObject>& O);
 	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy);
 	/** {"account":..,"merchant":..,"itemId"|"tokenId":..} */
 	FString TradeBody(const FString& Account, const FString& Merchant, const FString& Key, const FString& Value);

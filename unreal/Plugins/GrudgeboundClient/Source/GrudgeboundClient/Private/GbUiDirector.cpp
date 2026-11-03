@@ -160,6 +160,11 @@ void AGbUiDirector::ToggleTalismanCase()
 	else if (Current == EScreen::Ward)
 	{
 		TalismanCase->Refresh();
+		if (UGbPlayerSubsystem* P = GetGameInstance()->GetSubsystem<UGbPlayerSubsystem>())
+		{
+			P->RefreshFromChain();
+			if (!P->GetAccountUrl().IsEmpty()) LastChainUrl = P->GetAccountUrl(); // L: your account on the explorer.
+		}
 		ShowScreen(EScreen::TalismanCase);
 	}
 }

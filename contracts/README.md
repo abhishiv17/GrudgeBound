@@ -86,6 +86,8 @@ Smoke test (4 Nov): `mint_talisman` to the relayer returned `tal-1` and `talisma
 
 ```sh
 near contract call-function as-read-only items.grudgebound.testnet talisman json-args '{"token_id":"tal-1"}' network-config testnet now
+# Everything an account owns (pages with from_index / next_index; added 4 Nov, code-only upgrade):
+near contract call-function as-read-only items.grudgebound.testnet talismans_of json-args '{"account_id":"afreen.grudgebound.testnet"}' network-config testnet now
 ```
 
 ## TODOs (from the code)

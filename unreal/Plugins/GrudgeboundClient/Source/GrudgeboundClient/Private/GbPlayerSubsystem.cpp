@@ -22,7 +22,59 @@ void UGbPlayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		Api->OnShop.AddDynamic(this, &UGbPlayerSubsystem::HandleShop);
 		Api->OnTrade.AddDynamic(this, &UGbPlayerSubsystem::HandleTrade);
 		Api->OnTradeReceipt.AddDynamic(this, &UGbPlayerSubsystem::HandleTradeReceipt);
+		Api->OnPlayerView.AddDynamic(this, &UGbPlayerSubsystem::HandlePlayerView);
+		Api->FetchPlayer();
 	}
+}
+
+void UGbPlayerSubsystem::RefreshFromChain()
+{
+	if (const UGameInstance* GI = GetGameInstance())
+	{
+		if (UGbApiSubsystem* Api = GI->GetSubsystem<UGbApiSubsystem>()) Api->FetchPlayer();
+	}
+}
+
+void UGbPlayerSubsystem::HandlePlayerView(const FGbPlayerView& View)
+{
+	if (!Data || !View.bChain) return;
+	bOnChain = true;
+	AccountUrl = View.ExplorerUrl;
+	if (View.Points >= 0) Data->Points = View.Points;
+	if (View.Ember >= 0) Data->Ember = View.Ember;
+
+	// While a mint or trade is still settling, a token may be on chain before its receipt reaches us: matching it
+	// now would add it twice. Points and Ember are safe to take; the talisman list waits for the next refresh.
+	const bool bSettling = PendingTrades.Num() > 0
+		|| Data->Talismans.ContainsByPredicate([](const FGbTalisman& T) { return !T.BattleId.IsEmpty() && T.ChainTokenId.IsEmpty(); });
+	if (!bSettling)
+	{
+		TSet<FString> OnChain;
+		for (const FGbChainTalisman& C : View.Talismans)
+		{
+			OnChain.Add(C.TokenId);
+			FGbTalisman* Local = Data->Talismans.FindByPredicate([&C](const FGbTalisman& T) { return T.ChainTokenId == C.TokenId; });
+			if (!Local)
+			{
+				// Bound on another PC, bought on the web, or given by another player.
+				Local = &Data->Talismans.AddDefaulted_GetRef();
+				Local->Id = FString::Printf(TEXT("tal-%d"), Data->NextTalisman++);
+				Local->ChainTokenId = C.TokenId;
+			}
+			Local->SpeciesId = C.SpeciesId;
+			Local->Omen = C.Omen;
+			Local->Wins = FMath::Max(Local->Wins, C.Wins);
+			Local->Purse = C.Purse;
+		}
+		// Gone from the chain (sold or traded away): gone from the case. The starter and unminted talismans stay.
+		Data->Talismans.RemoveAll([&OnChain](const FGbTalisman& T) { return !T.ChainTokenId.IsEmpty() && !OnChain.Contains(T.ChainTokenId); });
+		if (Data->Talismans.Num() == 0) MakeFresh();
+		if (!Data->Talismans.ContainsByPredicate([this](const FGbTalisman& T) { return T.Id == Data->PartnerId; }))
+		{
+			Data->PartnerId = Data->Talismans[0].Id;
+		}
+	}
+	Save();
 }
 
 void UGbPlayerSubsystem::MakeFresh()
@@ -225,6 +277,7 @@ void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChain
 		Data->Ember += Trade.Price;
 	}
 	Save();
+	RefreshFromChain();
 }
 
 void UGbPlayerSubsystem::HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt)
@@ -237,6 +290,7 @@ void UGbPlayerSubsystem::HandleChainReceipt(const FString& BattleId, const FGbCh
 			T.ChainTokenId = Receipt.TokenId;
 			T.ChainUrl = Receipt.ExplorerUrl;
 			Save();
+			RefreshFromChain(); // The Rite's points changed too.
 			return;
 		}
 	}

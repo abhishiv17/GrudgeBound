@@ -72,6 +72,15 @@ export interface ChainTx {
   url: string;
 }
 
+/** A talisman as the items contract reports it. */
+export interface ChainTalisman {
+  token_id: string;
+  owner: string;
+  meta: { species: string; emotion: string; omen: string; level: number; wins: number };
+  /** Ember earned, as a decimal string (U128). */
+  purse: string;
+}
+
 export interface ChainReceipt {
   status: "done" | "pending" | "failed";
   network: string;
@@ -330,6 +339,20 @@ export class ChainWriter {
   /** A talisman on the items contract, or null. */
   async talisman(tokenId: string): Promise<{ token_id: string; owner: string; meta: { species: string; emotion: string; omen: string } } | null> {
     return (await this.view(this.cfg.itemsContract, "talisman", { token_id: tokenId })) as never;
+  }
+
+  /** Every talisman `account` owns on the items contract (pages through talismans_of). */
+  async talismansOf(account: string): Promise<ChainTalisman[]> {
+    const out: ChainTalisman[] = [];
+    let from: number | null = 1;
+    for (let pages = 0; from !== null && pages < 50; pages++) {
+      const page = (await this.view(this.cfg.itemsContract, "talismans_of", { account_id: account, from_index: from, limit: 200 })) as
+        { talismans: ChainTalisman[]; next_index: number | null } | null;
+      if (!page) break;
+      out.push(...page.talismans);
+      from = page.next_index;
+    }
+    return out;
   }
 
   shopReceipt(jobId: string): ChainReceipt | undefined {

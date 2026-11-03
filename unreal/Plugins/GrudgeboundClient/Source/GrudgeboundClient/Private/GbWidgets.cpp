@@ -620,8 +620,10 @@ void UGbTalismanRowWidget::Setup(const FGbTalisman& Talisman, const FGbCurseInfo
 	TalismanId = Talisman.Id;
 	Name->SetText(FText::FromString(Curse.Name));
 	Name->SetColorAndOpacity(FSlateColor(EmotionColor(Curse.Emotion)));
-	const FString Origin = Talisman.BoundDay < 0 ? FString(TEXT("Kessa's gift")) : FString::Printf(TEXT("bound on day %d"), Talisman.BoundDay);
-	const FString OnChain = Talisman.ChainTokenId.IsEmpty() ? FString() : FString::Printf(TEXT("  |  NEAR %s"), *Talisman.ChainTokenId);
+	const FString Origin = Talisman.Id == UGbPlayerSubsystem::StarterId ? FString(TEXT("Kessa's gift"))
+		: Talisman.BoundDay < 0 ? FString(TEXT("from the chain")) : FString::Printf(TEXT("bound on day %d"), Talisman.BoundDay);
+	const FString Purse = Talisman.Purse > 0 ? FString::Printf(TEXT(", purse %d Ember"), Talisman.Purse) : FString();
+	const FString OnChain = Talisman.ChainTokenId.IsEmpty() ? FString() : FString::Printf(TEXT("  |  NEAR %s%s"), *Talisman.ChainTokenId, *Purse);
 	Details->SetText(FText::FromString(FString::Printf(TEXT("%s %s  |  %s  |  %d wins%s"),
 		*Capitalised(Curse.Emotion), *Capitalised(Talisman.Omen), *Origin, Talisman.Wins, *OnChain)));
 	PartnerLabel->SetText(FText::FromString(bIsPartner ? TEXT("Partner") : TEXT("Make partner")));
@@ -686,8 +688,9 @@ void UGbTalismanCaseWidget::Refresh()
 	P->GetRecord(Won, Bound, Fled, Lost);
 	const TArray<FGbTalisman> Talismans = P->GetTalismans();
 	Record->SetText(FText::FromString(FString::Printf(
-		TEXT("%d talismans  |  bound %d, exorcised %d, fled %d, lost %d  |  %d points"),
-		Talismans.Num(), Bound, Won, Fled, Lost, P->GetPoints())));
+		TEXT("%d talismans  |  bound %d, exorcised %d, fled %d, lost %d\n%d points, %d Ember%s"),
+		Talismans.Num(), Bound, Won, Fled, Lost, P->GetPoints(), P->GetEmber(),
+		P->IsOnChain() ? TEXT("  (read from NEAR)") : TEXT("  (this PC only)"))));
 
 	List->ClearChildren();
 	const FString PartnerId = P->GetPartner().Id;
