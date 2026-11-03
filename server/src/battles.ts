@@ -17,7 +17,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import {
   CURSES, DEFAULT_PLAYER_CURSE, WARDS,
   actionLabel, canUse, createBattle, createRng, curseById, describeEvent, fleeChance, introLine,
-  recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
+  curfewText, recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
   type BattleEvent, type BattleState, type Combatant, type Omen, type Outcome, type PlayerAction,
   type Rng, type WardId, type World,
 } from "@grudgebound/shared";
@@ -58,6 +58,8 @@ export interface StartAnswer {
   matchup: "advantage" | "disadvantage" | "even";
   view: BattleView;
   lines: string[];
+  /** Curfews (R2) in force here right now, as rule text: "exorcise is forbidden in Lantern Ward during the night". */
+  curfews: string[];
 }
 
 export interface TurnAnswer {
@@ -73,6 +75,8 @@ export interface TurnAnswer {
   actions?: PlayerAction[];
   /** Only when the battle has ended: the NEAR account named at /battle/start, if any. */
   account?: string;
+  /** Only when the battle has ended: the curfew the ending broke (points were 0). */
+  curfew?: string;
 }
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
@@ -167,6 +171,10 @@ export class BattleSessions {
     if (b.account !== undefined && !isAccountId(b.account)) return fail(400, "account must be a NEAR account id");
     const account = b.account as string | undefined;
 
+    const noExorcise = curfewText(this.world, "exorcise", ward as WardId);
+    const noBind = curfewText(this.world, "bind", ward as WardId);
+    if (noExorcise && noBind) return fail(409, `Curfew: "${noExorcise}" and "${noBind}". Come back when it lifts.`);
+
     this.sweep();
     if (this.open.size >= MAX_OPEN_BATTLES) return fail(503, "too many battles in progress, try again shortly");
 
@@ -188,7 +196,12 @@ export class BattleSessions {
       wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: wild.omen },
       matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
       view: battleView(state),
-      lines: [introLine(state)],
+      lines: [
+        introLine(state),
+        ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
+        ...(noBind ? [`Kessa: "Curfew: ${noBind}. Drive it off, don't seal it."`] : []),
+      ],
+      curfews: [noExorcise, noBind].filter((x): x is string => x !== null),
     });
   }
 
@@ -200,6 +213,8 @@ export class BattleSessions {
     const action = parseAction(b.action);
     if (!action) return fail(400, "unknown action");
     if (!canUse(s.state, action)) return fail(409, `you can't ${actionLabel(action)} right now`);
+    const noBind = action.kind === "seal" ? curfewText(this.world, "bind", s.ward) : null;
+    if (noBind) return fail(409, `Curfew: "${noBind}". You can't seal it here now.`);
 
     const t = resolveTurn(s.state, action, s.rng);
     s.state = t.state;
@@ -218,6 +233,11 @@ export class BattleSessions {
     if (outcome) {
       this.open.delete(s.id);
       answer.outcome = outcome;
+      const curfew = outcome === "bound" || outcome === "won" ? curfewText(this.world, outcome === "bound" ? "bind" : "exorcise", s.ward) : null;
+      if (curfew) {
+        answer.curfew = curfew;
+        answer.lines.push(`Kessa: "That broke the curfew (${curfew}). The Rite pays nothing for it."`);
+      }
       answer.points = outcome === "bound" || outcome === "won"
         ? recordCapture(this.world, {
             ward: s.ward, speciesId: s.wildId, omen: s.omen, verb: outcome === "bound" ? "bind" : "exorcise", by: s.by,

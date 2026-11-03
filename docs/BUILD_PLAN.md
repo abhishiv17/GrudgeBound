@@ -143,7 +143,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | ⬜ |
 | P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | ⬜ |
 | P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | ⬜ |
-| P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | ⬜ |
+| P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | 🟡 server: both curfews block the fight, bind curfew refuses Seal, exorcising under curfew pays 0 and is logged; Unreal shows the warnings; in-editor check at end of P2 |
 | P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | 🟡 GET /player + items `talismans_of` view (upgraded on testnet 4 Nov); Unreal case reads it; in-editor check at end of P2 |
 
 ---

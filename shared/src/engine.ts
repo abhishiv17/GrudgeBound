@@ -172,11 +172,22 @@ function activeRules(world: World, templateId: string): Rule[] {
 /** The parts of a rule the helpers below need: works on World rules and on WorldSummary rules alike. */
 export type RuleLike = Pick<Rule, "templateId" | "params">;
 
-/** Is `action` forbidden in `ward` at `tick` by a curfew (R2) in `rules`? */
-export function curfewForbids(rules: readonly RuleLike[], action: string, ward: WardId, tick: number): boolean {
-  return rules.some(
+/** The curfew (R2) in `rules` that forbids `action` in `ward` at `tick`, if any. */
+export function curfewRule<R extends RuleLike>(rules: readonly R[], action: string, ward: WardId, tick: number): R | undefined {
+  return rules.find(
     (r) => r.templateId === "R2" && r.params.action === action && r.params.ward === ward && (r.params.time === "night") === isNight(tick),
   );
+}
+
+/** Is `action` forbidden in `ward` at `tick` by a curfew (R2) in `rules`? */
+export function curfewForbids(rules: readonly RuleLike[], action: string, ward: WardId, tick: number): boolean {
+  return curfewRule(rules, action, ward, tick) !== undefined;
+}
+
+/** "Kessa's curfew text" for the rule forbidding `action` in `ward` right now, or null. */
+export function curfewText(world: World, action: string, ward: WardId): string | null {
+  const r = curfewRule(world.rules, action, ward, world.tick);
+  return r ? renderRule(r.templateId, r.params) : null;
 }
 
 /** Points multiplier from bonus rules (R1: "[action] in [Ward] gives x[m] points") in `rules`. */
@@ -319,8 +330,17 @@ export interface CaptureReport {
  */
 export function recordCapture(world: World, c: CaptureReport): number {
   const sp = curseById(c.speciesId);
-  const points = capturePoints(world.rules, c.verb, c.ward, c.omen);
+  const curfew = curfewText(world, c.verb, c.ward);
   drainCapture(world, c.ward, sp);
+  if (curfew) {
+    // Players can still fight under a curfew; the Rite just won't pay for what it forbids.
+    log(world, {
+      type: c.verb, ward: c.ward, actor: c.by,
+      text: `${c.by} ${c.verb === "bind" ? "bound" : "exorcised"} ${sp.name} in ${wardName(c.ward)} against the curfew ("${curfew}"): the Rite pays nothing.`,
+    });
+    return 0;
+  }
+  const points = capturePoints(world.rules, c.verb, c.ward, c.omen);
   log(world, {
     type: c.verb, ward: c.ward, actor: c.by,
     text: `${c.by} ${c.verb === "bind" ? "bound" : "exorcised"} ${sp.name} in ${wardName(c.ward)} (+${points} points).`,

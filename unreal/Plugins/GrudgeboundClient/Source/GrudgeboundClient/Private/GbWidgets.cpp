@@ -321,6 +321,7 @@ void UGbEncounterWidget::BuildTree()
 	Title = MakeText(TEXT("A curse stirs in the tall grass!"), 22, C::Crimson, true);
 	AddRow(Col, Title);
 	Intro = MakeText(TEXT(""), 16, C::Ink);
+	Intro->SetAutoWrapText(true);
 	AddRow(Col, Intro, 6.f);
 	Matchup = MakeText(TEXT(""), 14, C::Ink, true);
 	AddRow(Col, Matchup, 6.f);
@@ -343,7 +344,8 @@ void UGbEncounterWidget::BuildTree()
 void UGbEncounterWidget::Show(const FGbBattleStart& Battle)
 {
 	if (!Intro) return;
-	Intro->SetText(FText::FromString(Battle.Lines.Num() > 0 ? Battle.Lines[0] : FString::Printf(TEXT("Wild %s!"), *Battle.Wild.Name)));
+	// Every start line: the intro, then any curfew warning from Kessa.
+	Intro->SetText(FText::FromString(Battle.Lines.Num() > 0 ? FString::Join(Battle.Lines, TEXT("\n")) : FString::Printf(TEXT("Wild %s!"), *Battle.Wild.Name)));
 
 	const FString& M = Battle.Matchup;
 	const FString Partner = Battle.View.Player.Name;

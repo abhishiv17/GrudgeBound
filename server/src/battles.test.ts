@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { capturePoints, createWorld, replayBattle, DEFAULT_PLAYER_CURSE } from "@grudgebound/shared";
+import { capturePoints, createWorld, enactRule, isNight, replayBattle, DEFAULT_PLAYER_CURSE, type World } from "@grudgebound/shared";
 import { BattleSessions, BATTLE_IDLE_MS, MAX_OPEN_BATTLES, curseCatalog, parseAction, type StartAnswer, type TurnAnswer } from "./battles";
 
 function setup(seed = 1234) {
@@ -143,5 +143,55 @@ describe("curse catalog (GET /curses)", () => {
     assert.equal(starter.emotion, "rage");
     assert.equal(new Set(list.map((c) => c.id)).size, list.length);
     for (const c of list) assert.equal("stats" in c, false);
+  });
+});
+
+/** Puts a curfew (R2) on `action` in Lantern Ward for the part of the day the world is in now. */
+function curfew(world: World, action: string) {
+  enactRule(world, {
+    author: "kessa.t", authorName: "Kessa", templateId: "R2", cost: 50,
+    params: { action, ward: "lantern", time: isNight(world.tick) ? "night" : "day" },
+  });
+}
+
+describe("curfews in player battles (P2-G4)", () => {
+  test("a curfew on exorcising: the battle starts with a warning, and winning pays nothing", () => {
+    for (let seed = 1; seed < 60; seed++) {
+      const { world, sessions } = setup(seed);
+      curfew(world, "exorcise");
+      const a = start(sessions);
+      assert.equal(a.curfews.length, 1);
+      assert.match(a.lines.join(" "), /Curfew: exorcise is forbidden in Lantern Ward/i);
+      const end = fightToTheEnd(sessions, a.battleId);
+      if (end.outcome !== "won") continue;
+      assert.equal(end.points, 0);
+      assert.match(end.curfew!, /exorcise is forbidden/i);
+      assert.match(world.events.at(-1)!.text, /against the curfew .*the Rite pays nothing/);
+      return;
+    }
+    assert.fail("no seed produced a win");
+  });
+
+  test("a curfew on binding refuses the seal, without spending the turn", () => {
+    const { world, sessions } = setup();
+    curfew(world, "bind");
+    const a = start(sessions);
+    const r = sessions.turn({ battleId: a.battleId, action: { kind: "seal" } });
+    assert.equal(r.status, 409);
+    assert.match((r.body as { error: string }).error, /Curfew: "bind is forbidden in Lantern Ward/i);
+    const next = sessions.turn({ battleId: a.battleId, action: { kind: "attack" } });
+    assert.equal(next.status, 200);
+    assert.equal((next.body as TurnAnswer).view.turn, 1);
+  });
+
+  test("curfews on both: no battle at all; no curfew: nothing changes", () => {
+    const { world, sessions } = setup();
+    assert.deepEqual(start(sessions).curfews, []);
+    curfew(world, "exorcise");
+    curfew(world, "bind");
+    const r = sessions.start({ ward: "lantern", by: "Tester" });
+    assert.equal(r.status, 409);
+    assert.match((r.body as { error: string }).error, /Come back when it lifts/);
+    assert.equal(sessions.start({ ward: "ash", by: "Tester" }).status, 200, "other Wards are open");
   });
 });
