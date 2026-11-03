@@ -118,8 +118,9 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	PC->SetShowMouseCursor(true);
 	if (Screen == EScreen::Ward)
 	{
-		// Back to walking: the world gets clicks and keys again.
-		PC->SetIgnoreMoveInput(false);
+		// Back to walking: the world gets clicks and keys again. SetIgnoreMoveInput is a counter, and a fight
+		// opens two dialogs in a row (encounter, then battle): reset it, or walking stays blocked after a fight.
+		PC->ResetIgnoreMoveInput();
 		FInputModeGameAndUI Mode;
 		Mode.SetHideCursorDuringCapture(false);
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
@@ -129,7 +130,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	{
 		// A dialog is open: stop the pawn where it stands; clicks go to the dialog only.
 		PC->StopMovement();
-		PC->SetIgnoreMoveInput(true);
+		if (!PC->IsMoveInputIgnored()) PC->SetIgnoreMoveInput(true);
 		UUserWidget* Focus = Screen == EScreen::Encounter ? static_cast<UUserWidget*>(Encounter.Get())
 			: Screen == EScreen::Battle ? static_cast<UUserWidget*>(Battle.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
