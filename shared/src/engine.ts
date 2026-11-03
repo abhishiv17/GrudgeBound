@@ -67,6 +67,8 @@ export interface GameEvent {
   ward?: WardId;
   actor?: string;
   text: string;
+  /** A link for the event (e.g. the NEAR transaction behind a "chain" event). */
+  url?: string;
 }
 
 export interface World {

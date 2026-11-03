@@ -128,6 +128,8 @@ struct FGbTownEvent
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Ward;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Actor;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	/** "chain" events: the NEAR transaction on the explorer. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Url;
 };
 
 /** GET /curses: a curse's name and looks (stats stay on the server). */

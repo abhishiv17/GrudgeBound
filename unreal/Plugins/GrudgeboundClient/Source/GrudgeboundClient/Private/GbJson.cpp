@@ -210,6 +210,7 @@ namespace GbJson
 		E.Ward = Str(O, TEXT("ward"));
 		E.Actor = Str(O, TEXT("actor"));
 		E.Text = Str(O, TEXT("text"));
+		E.Url = Str(O, TEXT("url"));
 		return E;
 	}
 

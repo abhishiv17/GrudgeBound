@@ -14,6 +14,7 @@
  * Rules: the player's propose_rule goes through the relayer (NEP-366 delegate action, gas paid by
  * NEAR_RELAYER_ACCOUNT), so the player's own points pay for it; the game master then resolves it as the Arbiter.
  */
+import { eventsIn, type ChainEvent, type RawChainEvent } from "./chainEvents";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -52,7 +53,9 @@ export interface ChainRule {
 }
 
 /** One contract call: what it returned and the transaction hash. Swapped for a fake in tests. */
-export type ContractCall = (contractId: string, methodName: string, args: Record<string, unknown>, deposit?: bigint) => Promise<{ hash: string; result: unknown }>;
+/** What a sent transaction gives back: its hash, the contract's return value, and the NEP-297 events it logged. */
+export interface CallResult { hash: string; result: unknown; events?: RawChainEvent[] }
+export type ContractCall = (contractId: string, methodName: string, args: Record<string, unknown>, deposit?: bigint) => Promise<CallResult>;
 
 export interface BattleRecord {
   battleId: string;
@@ -155,7 +158,7 @@ export function battleLogHash(r: Pick<BattleRecord, "seed" | "actions" | "wild" 
  * A player's call, relayed (NEP-366): the player signs a delegate action, the relayer account sends it and
  * pays the gas, and the contract sees the player as the caller. `result` is what the contract returned.
  */
-export type RelayCall = (player: string, contractId: string, methodName: string, args: Record<string, unknown>, deposit?: bigint) => Promise<{ hash: string; result: unknown }>;
+export type RelayCall = (player: string, contractId: string, methodName: string, args: Record<string, unknown>, deposit?: bigint) => Promise<CallResult>;
 /** A read-only contract call. */
 export type ViewCall = (contractId: string, methodName: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -214,7 +217,7 @@ function nearOps(cfg: ChainConfig): ChainOps {
     async call(contractId, methodName, args, deposit = 0n) {
       const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit });
       checkReceipts(res);
-      return { hash: txHash(res), result: getTransactionLastResult(res) };
+      return { hash: txHash(res), result: getTransactionLastResult(res), events: eventsIn(res) };
     },
     async relay(player, contractId, methodName, args, deposit = 0n) {
       if (!relayer) throw new Error(`no key for the relayer ${cfg.relayerAccount}`);
@@ -231,7 +234,7 @@ function nearOps(cfg: ChainConfig): ChainOps {
       });
       const res = await relayer.signAndSendTransaction({ receiverId: player, actions: [actions.signedDelegate(signedDelegate)] });
       checkReceipts(res);
-      return { hash: txHash(res), result: returnedBy(res, contractId) };
+      return { hash: txHash(res), result: returnedBy(res, contractId), events: eventsIn(res) };
     },
     async view(contractId, methodName, args) {
       return provider.callFunction({ contractId, method: methodName, args });
@@ -267,6 +270,7 @@ export class ChainWriter {
   private readonly call: ContractCall;
   private readonly relay: RelayCall;
   private readonly view: ViewCall;
+  private readonly eventListeners: ((events: ChainEvent[]) => void)[] = [];
 
   constructor(
     readonly cfg: Pick<ChainConfig, "network" | "itemsContract" | "riteContract" | "guestAccount"> & Partial<ChainConfig>,
@@ -276,9 +280,27 @@ export class ChainWriter {
     // The real connection is only built for what wasn't given (tests pass fakes and have no keys).
     let realOps: ChainOps | undefined;
     const real = () => (realOps ??= nearOps(cfg as ChainConfig));
-    this.call = given.call ?? ((...a) => real().call(...a));
-    this.relay = given.relay ?? ((...a) => real().relay(...a));
+    const call: ContractCall = given.call ?? ((...a) => real().call(...a));
+    const relay: RelayCall = given.relay ?? ((...a) => real().relay(...a));
+    // Every write passes its contract events on (GET /events shows them).
+    this.call = async (...a) => this.emitEvents(await call(...a));
+    this.relay = async (...a) => this.emitEvents(await relay(...a));
     this.view = given.view ?? ((...a) => real().view(...a));
+  }
+
+  /** Called with the NEP-297 events of every transaction this writer sends. */
+  onEvents(listener: (events: ChainEvent[]) => void): void {
+    this.eventListeners.push(listener);
+  }
+
+  private emitEvents(r: CallResult): CallResult {
+    if (r.events?.length) {
+      const events = r.events.map((e) => ({ ...e, txHash: r.hash, url: explorerTxUrl(this.cfg.network, r.hash) }));
+      for (const l of this.eventListeners) {
+        try { l(events); } catch (e) { console.warn(`chain event listener failed: ${(e as Error).message}`); }
+      }
+    }
+    return r;
   }
 
   receipt(battleId: string): ChainReceipt | undefined {

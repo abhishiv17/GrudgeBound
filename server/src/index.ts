@@ -27,7 +27,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
-  createWorld, createRng, step, summarize, recordCapture, replayBattle, curseById,
+  createWorld, createRng, step, summarize, recordCapture, replayBattle, curseById, log,
   DEFAULT_REAL_MS_PER_TICK, OMENS, WARDS,
   type Omen, type PlayerAction, type WardId,
 } from "@grudgebound/shared";
@@ -36,6 +36,7 @@ import { BattleSessions, MAX_TURNS, curseCatalog, type TurnAnswer } from "./batt
 import { ChainWriter, chainConfigFromEnv, custodialKey, isAccountId, type BattleRecord } from "./chain";
 import { ChainRules, rulesOverview } from "./rules";
 import { playerView } from "./player";
+import { describeChainEvent } from "./chainEvents";
 import { Shop } from "./shop";
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -88,6 +89,13 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 const chainCfg = chainConfigFromEnv();
 const chain = chainCfg ? new ChainWriter(chainCfg) : null;
+// What the contracts logged (NEP-297) joins the town's event feed, with a link to the transaction.
+chain?.onEvents((events) => {
+  for (const e of events) {
+    const said = describeChainEvent(e, chainCfg!.gameAccount);
+    if (said) log(world, { ...said, url: e.url });
+  }
+});
 const canSignFor = (a: string) => !!chainCfg && custodialKey(chainCfg, a) !== undefined;
 const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
 const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor) : null;
