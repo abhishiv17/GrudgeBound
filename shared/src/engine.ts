@@ -287,7 +287,8 @@ export const scriptedPolicy: Policy = (world, me, options, rng) => {
 // The tick
 // ---------------------------------------------------------------------------
 
-function log(world: World, e: Omit<GameEvent, "tick" | "day" | "hour">) {
+/** Adds a line to the town log (Kessa's banner shows the newest). */
+export function log(world: World, e: Omit<GameEvent, "tick" | "day" | "hour">) {
   world.events.push({ tick: world.tick, day: dayOf(world.tick), hour: hourOf(world.tick), ...e });
   if (world.events.length > TUNING.maxEvents) world.events.splice(0, world.events.length - TUNING.maxEvents);
 }
@@ -520,15 +521,28 @@ export function proposeRule(world: World, me: Participant, templateId: string, p
     return false;
   }
   me.points -= cost;
-  const rule: Rule = { id: world.nextRuleId++, templateId, params, author: me.id, cost, addedAtTick: world.tick };
+  enactRule(world, { author: me.id, authorName: me.name, templateId, params, cost });
+  return true;
+}
+
+/**
+ * Puts a rule the Arbiter accepted into force: Kessa announces it, and a cruel rule angers the Wards it touches.
+ * Used by proposeRule and by the server for rules passed on the rite contract (whose points were paid on chain).
+ */
+export function enactRule(
+  world: World,
+  r: { author: string; authorName: string; templateId: string; params: RuleParams; cost: number },
+): Rule {
+  const rule: Rule = { id: world.nextRuleId++, templateId: r.templateId, params: r.params, author: r.author, cost: r.cost, addedAtTick: world.tick };
   world.rules.push(rule);
-  log(world, { type: "rule-added", actor: me.id, text: `Kessa: "${me.name} spent ${cost} points. New rule #${rule.id}: ${text}."` });
-  if (verdict.cruel) {
-    for (const w of wardsTouched(params)) {
+  const text = renderRule(r.templateId, r.params);
+  log(world, { type: "rule-added", actor: r.author, text: `Kessa: "${r.authorName} spent ${r.cost} points. New rule #${rule.id}: ${text}."` });
+  if (isCruel(r.templateId, r.params)) {
+    for (const w of wardsTouched(r.params)) {
       world.wards[w].grudge = addGrudge(world.wards[w].grudge, GRUDGE_SOURCES.cruelRulePassed.emotion, GRUDGE_SOURCES.cruelRulePassed.amount);
     }
   }
-  return true;
+  return rule;
 }
 
 function endOfDay(world: World) {

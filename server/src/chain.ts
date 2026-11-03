@@ -1,5 +1,5 @@
 /**
- * Battle results on NEAR testnet (P2-C4).
+ * Battle results and rules on NEAR testnet (P2-C3, P2-C4, P2-C5).
  *
  * When a battle ends with a binding or an exorcism, the game master account:
  *   1. bind only: mints a talisman to the player on `items` (mint_talisman)
@@ -10,12 +10,17 @@
  *
  * Players have no NEAR accounts until Phase 3 (email sign-in). Until then a battle names its account with
  * `account`, or the talisman goes to NEAR_GUEST_ACCOUNT (default guest.<game account>).
+ *
+ * Rules: the player's propose_rule goes through the relayer (NEP-366 delegate action, gas paid by
+ * NEAR_RELAYER_ACCOUNT), so the player's own points pay for it; the game master then resolves it as the Arbiter.
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Account, JsonRpcProvider, KeyPairSigner, getTransactionLastResult, type KeyPairString } from "near-api-js";
+/** What callFunctionRaw / signAndSendTransaction resolve to (near-api-js does not export the type by name). */
+type RpcTransactionResponse = Awaited<ReturnType<Account["signAndSendTransaction"]>>;
+import { Account, JsonRpcProvider, KeyPairSigner, actions, getTransactionLastResult, type KeyPairString } from "near-api-js";
 import type { Combatant, Omen, PlayerAction } from "@grudgebound/shared";
 
 export interface ChainConfig {
@@ -28,6 +33,22 @@ export interface ChainConfig {
   privateKey: KeyPairString;
   /** Where the key came from, for the startup log (never the key itself). */
   keySource: string;
+  /** Pays the gas of players' relayed calls. */
+  relayerAccount: string;
+  /** From NEAR_RELAYER_PRIVATE_KEY; else read from the keychain when first needed. */
+  relayerKey?: KeyPairString;
+}
+
+/** A rule as the rite contract returns it. */
+export interface ChainRule {
+  id: number;
+  template_id: string;
+  params: string;
+  author: string;
+  cost: number;
+  status: string;
+  reason: string | null;
+  created_ms: number;
 }
 
 /** One contract call: what it returned and the transaction hash. Swapped for a fake in tests. */
@@ -46,7 +67,7 @@ export interface BattleRecord {
 }
 
 export interface ChainTx {
-  kind: "mint" | "points";
+  kind: "mint" | "points" | "propose" | "resolve";
   hash: string;
   url: string;
 }
@@ -57,6 +78,8 @@ export interface ChainReceipt {
   account: string;
   /** Set when a talisman was minted, e.g. "tal-3". */
   tokenId?: string;
+  /** Set when a rule was proposed: its id on the rite contract. */
+  ruleId?: number;
   txs: ChainTx[];
   error?: string;
 }
@@ -97,6 +120,8 @@ export function chainConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ChainC
     guestAccount: env.NEAR_GUEST_ACCOUNT?.trim() || `guest.${gameAccount}`,
     privateKey,
     keySource,
+    relayerAccount: env.NEAR_RELAYER_ACCOUNT?.trim() || `relayer.${gameAccount}`,
+    relayerKey: (env.NEAR_RELAYER_PRIVATE_KEY?.trim() || undefined) as KeyPairString | undefined,
   };
 }
 
@@ -117,29 +142,198 @@ export function battleLogHash(r: Pick<BattleRecord, "seed" | "actions" | "wild" 
   return createHash("sha256").update(log).digest("hex");
 }
 
-function nearCall(cfg: ChainConfig): ContractCall {
+/**
+ * A player's call, relayed (NEP-366): the player signs a delegate action, the relayer account sends it and
+ * pays the gas, and the contract sees the player as the caller. `result` is what the contract returned.
+ */
+export type RelayCall = (player: string, contractId: string, methodName: string, args: Record<string, unknown>) => Promise<{ hash: string; result: unknown }>;
+/** A read-only contract call. */
+export type ViewCall = (contractId: string, methodName: string, args: Record<string, unknown>) => Promise<unknown>;
+
+export interface ChainOps {
+  call: ContractCall;
+  relay: RelayCall;
+  view: ViewCall;
+}
+
+const GAS = 30_000_000_000_000n;
+
+function readKey(network: string, account: string): KeyPairString | undefined {
+  try {
+    const file = join(homedir(), ".near-credentials", network, `${account}.json`);
+    return (JSON.parse(readFileSync(file, "utf8")) as { private_key?: KeyPairString }).private_key;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Throws with the first failing receipt's error (a relayed call can fail inside while the outer transaction succeeds). */
+function checkReceipts(res: RpcTransactionResponse) {
+  for (const r of res.receipts_outcome) {
+    const status = r.outcome.status as { Failure?: unknown };
+    if (status && typeof status === "object" && "Failure" in status) {
+      throw new Error(`${r.outcome.executor_id} failed: ${JSON.stringify(status.Failure).slice(0, 240)}`);
+    }
+  }
+}
+
+/** The value returned by `contractId` inside a (possibly relayed) transaction. */
+function returnedBy(res: RpcTransactionResponse, contractId: string): unknown {
+  for (const r of res.receipts_outcome) {
+    const status = r.outcome.status as { SuccessValue?: string };
+    if (r.outcome.executor_id === contractId && status && typeof status === "object" && typeof status.SuccessValue === "string") {
+      const text = Buffer.from(status.SuccessValue, "base64").toString("utf8");
+      if (!text) return null;
+      try { return JSON.parse(text); } catch { return text; }
+    }
+  }
+  return null;
+}
+
+function txHash(res: RpcTransactionResponse): string {
+  return (res as { transaction?: { hash?: string } }).transaction?.hash ?? res.transaction_outcome.id;
+}
+
+function nearOps(cfg: ChainConfig): ChainOps {
   const provider = new JsonRpcProvider({ url: cfg.rpcUrl });
-  const account = new Account(cfg.gameAccount, provider, KeyPairSigner.fromSecretKey(cfg.privateKey));
-  return async (contractId, methodName, args) => {
-    const res = await account.callFunctionRaw({ contractId, methodName, args, gas: 30_000_000_000_000n, deposit: 0n });
-    const hash = (res as { transaction?: { hash?: string } }).transaction?.hash ?? res.transaction_outcome.id;
-    return { hash, result: getTransactionLastResult(res) };
+  const game = new Account(cfg.gameAccount, provider, KeyPairSigner.fromSecretKey(cfg.privateKey));
+  const relayerKey = cfg.relayerKey ?? readKey(cfg.network, cfg.relayerAccount);
+  const relayer = relayerKey ? new Account(cfg.relayerAccount, provider, KeyPairSigner.fromSecretKey(relayerKey)) : null;
+  const players = new Map<string, Account>();
+
+  return {
+    async call(contractId, methodName, args) {
+      const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit: 0n });
+      checkReceipts(res);
+      return { hash: txHash(res), result: getTransactionLastResult(res) };
+    },
+    async relay(player, contractId, methodName, args) {
+      if (!relayer) throw new Error(`no key for the relayer ${cfg.relayerAccount}`);
+      let acct = players.get(player);
+      if (!acct) {
+        const key = custodialKey(cfg, player);
+        if (!key) throw new Error(`the server holds no key for ${player}`);
+        acct = new Account(player, provider, KeyPairSigner.fromSecretKey(key));
+        players.set(player, acct);
+      }
+      const { signedDelegate } = await acct.createSignedMetaTransaction({
+        receiverId: contractId,
+        actions: [actions.functionCall(methodName, args, GAS, 0n)],
+      });
+      const res = await relayer.signAndSendTransaction({ receiverId: player, actions: [actions.signedDelegate(signedDelegate)] });
+      checkReceipts(res);
+      return { hash: txHash(res), result: returnedBy(res, contractId) };
+    },
+    async view(contractId, methodName, args) {
+      return provider.callFunction({ contractId, method: methodName, args });
+    },
   };
 }
 
+/**
+ * Demo players' keys (Phase 2 only): the server signs for its own sub-accounts (e.g. afreen.grudgebound.testnet)
+ * whose keys are in NEAR CLI's keychain on this machine. Phase 3 moves player keys to the player's side.
+ */
+export function custodialKey(cfg: Pick<ChainConfig, "network" | "gameAccount">, player: string): KeyPairString | undefined {
+  if (!isAccountId(player) || !player.endsWith(`.${cfg.gameAccount}`)) return undefined;
+  return readKey(cfg.network, player);
+}
+
+export interface RuleProposal {
+  /** Id for GET /chain?rule=<id>. */
+  jobId: string;
+  account: string;
+  templateId: string;
+  params: Record<string, string | number>;
+  /** Kessa's verdict, decided by the server before anything is sent. */
+  accepted: boolean;
+  reason: string;
+}
+
 export class ChainWriter {
-  /** Receipts by battle id, so a client can fetch one that was still pending when the battle ended. */
+  /** Receipts by battle id (and "rule:<job id>"), so a client can fetch one that was still pending. */
   private readonly receipts = new Map<string, ChainReceipt>();
   /** One transaction at a time: they share the game master's key, so they must not race for a nonce. */
   private queue: Promise<unknown> = Promise.resolve();
   private readonly call: ContractCall;
+  private readonly relay: RelayCall;
+  private readonly view: ViewCall;
 
-  constructor(readonly cfg: Pick<ChainConfig, "network" | "itemsContract" | "riteContract" | "guestAccount"> & Partial<ChainConfig>, call?: ContractCall) {
-    this.call = call ?? nearCall(cfg as ChainConfig);
+  constructor(
+    readonly cfg: Pick<ChainConfig, "network" | "itemsContract" | "riteContract" | "guestAccount"> & Partial<ChainConfig>,
+    ops?: ContractCall | Partial<ChainOps>,
+  ) {
+    const given: Partial<ChainOps> = typeof ops === "function" ? { call: ops } : ops ?? {};
+    // The real connection is only built for what wasn't given (tests pass fakes and have no keys).
+    let realOps: ChainOps | undefined;
+    const real = () => (realOps ??= nearOps(cfg as ChainConfig));
+    this.call = given.call ?? ((...a) => real().call(...a));
+    this.relay = given.relay ?? ((...a) => real().relay(...a));
+    this.view = given.view ?? ((...a) => real().view(...a));
   }
 
   receipt(battleId: string): ChainReceipt | undefined {
     return this.receipts.get(battleId);
+  }
+
+  ruleReceipt(jobId: string): ChainReceipt | undefined {
+    return this.receipts.get(`rule:${jobId}`);
+  }
+
+  /** Points on the rite contract. */
+  async points(account: string): Promise<number> {
+    return Number(await this.view(this.cfg.riteContract, "get_points", { account_id: account }));
+  }
+
+  /** What the next rule costs on the rite contract. */
+  async ruleCost(): Promise<number> {
+    return Number(await this.view(this.cfg.riteContract, "rule_cost", {}));
+  }
+
+  /** Rules in force on the rite contract. */
+  async activeRules(): Promise<ChainRule[]> {
+    return (await this.view(this.cfg.riteContract, "get_active_rules", {})) as ChainRule[];
+  }
+
+  /**
+   * The player proposes through the relayer (their points pay the cost), then the game master, as Arbiter,
+   * resolves it with Kessa's verdict (a rejection refunds the cost on chain). `onResolved` runs after both.
+   */
+  proposeRule(p: RuleProposal, onResolved: (chainRuleId: number) => void, waitMs = 0): Promise<ChainReceipt> {
+    const receipt: ChainReceipt = { status: "pending", network: this.cfg.network, account: p.account, txs: [] };
+    this.remember(`rule:${p.jobId}`, receipt);
+    const work = this.enqueue(async () => {
+      try {
+        const proposed = await this.relay(p.account, this.cfg.riteContract, "propose_rule", { template_id: p.templateId, params: JSON.stringify(p.params) });
+        const ruleId = Number(proposed.result);
+        if (!Number.isInteger(ruleId)) throw new Error(`propose_rule returned ${JSON.stringify(proposed.result)}`);
+        receipt.ruleId = ruleId;
+        receipt.txs.push({ kind: "propose", hash: proposed.hash, url: explorerTxUrl(this.cfg.network, proposed.hash) });
+        const resolved = await this.call(this.cfg.riteContract, "resolve_rule", { rule_id: ruleId, accepted: p.accepted, reason: p.reason });
+        receipt.txs.push({ kind: "resolve", hash: resolved.hash, url: explorerTxUrl(this.cfg.network, resolved.hash) });
+        receipt.status = "done";
+        onResolved(ruleId);
+      } catch (e) {
+        receipt.status = "failed";
+        receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+        console.warn(`[chain] rule ${p.jobId}: ${receipt.error}`);
+      }
+    });
+    return this.settle(work, receipt, waitMs);
+  }
+
+  private remember(key: string, receipt: ChainReceipt) {
+    this.receipts.set(key, receipt);
+    if (this.receipts.size > 2000) this.receipts.delete(this.receipts.keys().next().value!);
+  }
+
+  private settle(work: Promise<void>, receipt: ChainReceipt, waitMs: number): Promise<ChainReceipt> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs); });
+    return Promise.race([work, timeout]).then(() => {
+      clearTimeout(timer);
+      return { ...receipt, txs: [...receipt.txs] };
+    });
   }
 
   /**
@@ -149,8 +343,7 @@ export class ChainWriter {
    */
   record(r: BattleRecord, waitMs = 0): Promise<ChainReceipt> {
     const receipt: ChainReceipt = { status: "pending", network: this.cfg.network, account: r.account, txs: [] };
-    this.receipts.set(r.battleId, receipt);
-    if (this.receipts.size > 2000) this.receipts.delete(this.receipts.keys().next().value!);
+    this.remember(r.battleId, receipt);
 
     const work = this.enqueue(async () => {
       try {
@@ -172,13 +365,7 @@ export class ChainWriter {
         console.warn(`[chain] battle ${r.battleId}: ${receipt.error}`);
       }
     });
-
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs); });
-    return Promise.race([work, timeout]).then(() => {
-      clearTimeout(timer);
-      return { ...receipt, txs: [...receipt.txs] };
-    });
+    return this.settle(work, receipt, waitMs);
   }
 
   private enqueue(job: () => Promise<void>): Promise<void> {
