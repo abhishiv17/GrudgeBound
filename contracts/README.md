@@ -38,17 +38,49 @@ cargo test
   docker run --rm -v "%cd%":/c -w /c rust:1 sh -c "cargo test"
   ```
 
-## Deploy (Phase 2)
+## Deploy (testnet, live since 4 Nov)
 
-Get the exact, current commands from **https://docs.near.org (Smart Contracts > Quickstart)**. Roughly:
+| Account | Role | Funded with |
+|---|---|---|
+| `grudgebound.testnet` | Game master: `items` minter, `rite` game_server and arbiter (Kessa) | 10 NEAR from the faucet |
+| `items.grudgebound.testnet` | `items` contract | 2.5 NEAR |
+| `rite.grudgebound.testnet` | `rite` contract | 2.5 NEAR |
+| `relayer.grudgebound.testnet` | Pays players' gas (P2-C3) | 2 NEAR |
 
-1. Install `cargo-near` (build tool) and NEAR CLI. Build with `cargo near build`: it applies the wasm settings
-   the NEAR runtime accepts. Check which Rust version the NEAR docs recommend; very new compilers can emit
-   wasm features the runtime rejects.
-2. Create the testnet accounts (`grudgebound.testnet` plus `items.` and `rite.` sub-accounts).
-3. Deploy each contract and call `new(...)`.
+Look them up on https://testnet.nearblocks.io (e.g. `/address/items.grudgebound.testnet`).
+Keys live in `%USERPROFILE%\.near-credentials	estnet` on the laptop that created them, never in the repo.
 
-Never commit keys. NEAR CLI stores credentials outside the repo; `.gitignore` also blocks common key files.
+Tools (prebuilt installers, Windows PowerShell):
+
+```powershell
+irm https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-installer.ps1 | iex   # near 0.30.1
+irm https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.ps1 | iex     # cargo-near 0.22.0
+```
+
+Build. On Windows add `--no-abi`: the ABI step links the contract as a native DLL and MSVC rejects the
+NEAR host functions (LNK1120). The wasm is the same without it.
+
+```sh
+cd contracts/items && cargo near build non-reproducible-wasm --no-abi   # -> target/near/grudgebound_items/*.wasm (154 KB)
+cd contracts/rite  && cargo near build non-reproducible-wasm --no-abi   # -> target/near/grudgebound_rite/*.wasm (171 KB)
+```
+
+First deploy (already done; `new` can only run once per account):
+
+```sh
+near contract deploy items.grudgebound.testnet use-file target/near/grudgebound_items/grudgebound_items.wasm   with-init-call new json-args '{"minter":"grudgebound.testnet"}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR'   network-config testnet sign-with-legacy-keychain send
+near contract deploy rite.grudgebound.testnet use-file target/near/grudgebound_rite/grudgebound_rite.wasm   with-init-call new json-args '{"game_server":"grudgebound.testnet","arbiter":"grudgebound.testnet"}'   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send
+```
+
+Upgrade the code later: same command with `without-init-call` instead of `with-init-call ... attached-deposit '0 NEAR'`.
+If the stored state layout changed, add a migration first (or deploy to a fresh account).
+
+Smoke test (4 Nov): `mint_talisman` to the relayer returned `tal-1` and `talisman {"token_id":"tal-1"}` reads it back;
+`submit_battle` with +5 points, then `get_points` returns 5.
+
+```sh
+near contract call-function as-read-only items.grudgebound.testnet talisman json-args '{"token_id":"tal-1"}' network-config testnet now
+```
 
 ## TODOs (from the code)
 
@@ -56,4 +88,4 @@ Never commit keys. NEAR CLI stores credentials outside the repo; `.gitignore` al
 - `rite`: apply money rules (R1, R4, R5) to battle results here instead of trusting the server's numbers.
 - `rite`: let vows be settled as kept by anyone after they end; require evidence for breaches.
 - `items`: finish NEP-245 (approvals, `mt_batch_transfer`, `mt_transfer_call` + resolve, metadata views).
-- Both: a testnet deploy script; integration tests on testnet (near-workspaces' sandbox has no Windows build).
+- Both: integration tests on testnet (near-workspaces' sandbox has no Windows build).

@@ -34,7 +34,7 @@ The lead (Abhishek) decides every submission field and approves anything public:
 |---|---|---|---|---|
 | [0. Foundation](#phase-0--foundation) | 1 Nov | Repo, engine, simulator, agent loop, first client | none | ✅ |
 | [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | ✅ |
-| [2. On testnet](#phase-2--on-testnet) | 5-7 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | ⬜ |
+| [2. On testnet](#phase-2--on-testnet) | 5-7 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | 🟡 started 4 Nov |
 | [3. Accounts, agents, live world](#phase-3--accounts-agents-live-world) | 7-10 Nov | Email sign-in, agents with wallets, Observatory | G3 · 10 Nov (feature freeze) | ⬜ |
 | [4. Polish, hosting, video](#phase-4--polish-hosting-video) | 11-12 Nov | Hosted demo, recorded video, fresh-clone test | G4 · 12 Nov | ⬜ |
 | [5. Ship](#phase-5--ship) | 13-14 Nov | Repo public, X post, submission | G5 · 14 Nov 12:00 UTC | ⬜ |
@@ -131,8 +131,8 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
-| P2-C1 | Must | Testnet accounts: game master, `items`, `rite`, relayer (funded from the faucet) | C | | ⬜ |
-| P2-C2 | Must | Deploy `items` and `rite`; account names in `.env.example` | C | | ⬜ |
+| P2-C1 | Must | Testnet accounts: game master, `items`, `rite`, relayer (funded from the faucet). Done 4 Nov: see `contracts/README.md` | C | | ✅ |
+| P2-C2 | Must | Deploy `items` and `rite`; account names in `.env.example`. Done 4 Nov with cargo-near 0.22 (`--no-abi` on Windows); mint and battle smoke-tested | C | | ✅ |
 | P2-C3 | Must | Relayer endpoint in the server: signed delegate action in, gas paid by us (NEP-366) | C | | ⬜ |
 | P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points | C | | ⬜ |
 | P2-C5 | Must | Rule propose / resolve / repeal through `rite`; server reads rules in force from the contract | C | | ⬜ |
