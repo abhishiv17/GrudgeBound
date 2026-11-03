@@ -23,6 +23,10 @@ namespace GbJson
 	FGbBattleStart BattleStart(const TSharedPtr<FJsonObject>& O);
 	FGbBattleTurn BattleTurn(const TSharedPtr<FJsonObject>& O);
 	FGbChainReceipt ChainReceipt(const TSharedPtr<FJsonObject>& O);
+	FGbRulesOverview RulesOverview(const TSharedPtr<FJsonObject>& O);
+	FGbRuleVerdict RuleVerdict(const TSharedPtr<FJsonObject>& O);
+	/** {"account":..,"templateId":..,"params":{..}} */
+	FString ProposeBody(const FString& Account, const FString& TemplateId, const TMap<FString, FString>& Params);
 
 	EGbOutcome Outcome(const FString& Text);
 

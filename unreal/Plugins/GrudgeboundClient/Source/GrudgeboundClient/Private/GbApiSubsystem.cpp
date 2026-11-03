@@ -9,6 +9,7 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "TimerManager.h"
+#include "GenericPlatform/GenericPlatformHttp.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGrudgebound, Log, All);
 
@@ -255,33 +256,76 @@ void UGbApiSubsystem::SendAction(EGbAction Action)
 		OnBattleTurn.Broadcast(Turn);
 		if (Turn.bHasChain)
 		{
-			if (Turn.Chain.Status == TEXT("pending")) PollChain(Turn.BattleId, 30);
+			if (Turn.Chain.Status == TEXT("pending")) PollChain(TEXT("battle"), Turn.BattleId, 30);
 			else OnChainReceipt.Broadcast(Turn.BattleId, Turn.Chain);
 		}
 	});
 }
 
-void UGbApiSubsystem::PollChain(const FString& ForBattle, int32 TriesLeft)
+void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 TriesLeft)
 {
 	UGameInstance* GI = GetGameInstance();
 	if (!GI || TriesLeft <= 0) return;
 	FTimerHandle Unused;
-	GI->GetTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this, ForBattle, TriesLeft]()
+	GI->GetTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this, Kind, Id, TriesLeft]()
 	{
-		Send(TEXT("GET"), TEXT("/chain?battle=") + ForBattle, FString(), [this, ForBattle, TriesLeft](int32 Status, const FString& Text)
+		const FString Path = FString::Printf(TEXT("/chain?%s=%s"), *Kind, *Id);
+		Send(TEXT("GET"), Path, FString(), [this, Kind, Id, TriesLeft](int32 Status, const FString& Text)
 		{
 			TSharedPtr<FJsonObject> O;
 			if (Status != 200 || !GbJson::ParseObject(Text, O))
 			{
 				// 0: server briefly unreachable, try again; anything else (404: server restarted) is final.
-				if (Status == 0) PollChain(ForBattle, TriesLeft - 1);
+				if (Status == 0) PollChain(Kind, Id, TriesLeft - 1);
 				return;
 			}
 			const FGbChainReceipt R = GbJson::ChainReceipt(O);
-			if (R.Status == TEXT("pending")) PollChain(ForBattle, TriesLeft - 1);
-			else OnChainReceipt.Broadcast(ForBattle, R);
+			if (R.Status == TEXT("pending")) PollChain(Kind, Id, TriesLeft - 1);
+			else if (Kind == TEXT("rule")) OnRuleReceipt.Broadcast(Id, R);
+			else OnChainReceipt.Broadcast(Id, R);
 		});
 	}), 1.0f, false);
+}
+
+void UGbApiSubsystem::FetchRules()
+{
+	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();
+	const FString Path = Account.IsEmpty() ? FString(TEXT("/rules")) : TEXT("/rules?account=") + FGenericPlatformHttp::UrlEncode(Account);
+	Send(TEXT("GET"), Path, FString(), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			if (Status == 0) SetOnline(false);
+			OnError.Broadcast(TEXT("rules"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		OnRules.Broadcast(GbJson::RulesOverview(O));
+	});
+}
+
+void UGbApiSubsystem::ProposeRule(const FString& TemplateId, const TMap<FString, FString>& Params)
+{
+	const FString Account = GetDefault<UGbSettings>()->PlayerAccount;
+	if (Account.TrimStartAndEnd().IsEmpty())
+	{
+		OnError.Broadcast(TEXT("rules/propose"), 400, TEXT("Set Project Settings > Grudgebound > Player Account first."));
+		return;
+	}
+	Send(TEXT("POST"), TEXT("/rules/propose"), GbJson::ProposeBody(Account, TemplateId, Params), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			if (Status == 0) SetOnline(false);
+			OnError.Broadcast(TEXT("rules/propose"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		const FGbRuleVerdict V = GbJson::RuleVerdict(O);
+		OnRuleVerdict.Broadcast(V);
+		if (V.Chain.Status == TEXT("pending")) PollChain(TEXT("rule"), V.JobId, 40);
+		else OnRuleReceipt.Broadcast(V.JobId, V.Chain);
+	});
 }
 
 void UGbApiSubsystem::AbandonBattle()

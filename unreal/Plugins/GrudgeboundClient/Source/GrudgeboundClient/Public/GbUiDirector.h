@@ -12,6 +12,7 @@ class UGbHudWidget;
 class UGbEncounterWidget;
 class UGbBattleWidget;
 class UGbTalismanCaseWidget;
+class UGbRulesWidget;
 
 UCLASS(NotPlaceable, Transient)
 class GRUDGEBOUNDCLIENT_API AGbUiDirector : public AActor
@@ -26,10 +27,13 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 private:
-	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase };
+	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules };
 
 	void ShowScreen(EScreen Screen);
 	void ToggleTalismanCase();
+	/** R: the Rite (rules panel). */
+	void ToggleRules();
+	UFUNCTION() void HandleRuleReceipt(const FString& JobId, const FGbChainReceipt& Receipt);
 	void Fight();
 	void SlipAway();
 	void BackToWard();
@@ -45,6 +49,7 @@ private:
 	UPROPERTY() TObjectPtr<UGbEncounterWidget> Encounter;
 	UPROPERTY() TObjectPtr<UGbBattleWidget> Battle;
 	UPROPERTY() TObjectPtr<UGbTalismanCaseWidget> TalismanCase;
+	UPROPERTY() TObjectPtr<UGbRulesWidget> Rules;
 
 	EScreen Current = EScreen::Ward;
 	/** False until the first dialog opens. */

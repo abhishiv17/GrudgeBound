@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { createWorld } from "@grudgebound/shared";
 import { ChainWriter, type ChainOps } from "./chain";
-import { ChainRules, displayName, type ProposeAnswer } from "./rules";
+import { ChainRules, displayName, rulesOverview, templateCatalog, type ProposeAnswer } from "./rules";
 
 const CFG = { network: "testnet", itemsContract: "items.gb.testnet", riteContract: "rite.gb.testnet", guestAccount: "guest.gb.testnet" };
 const AFREEN = "afreen.gb.testnet";
@@ -116,7 +116,44 @@ describe("rules through the rite contract", () => {
     assert.equal(world.rules.length, 1);
   });
 
+  test("number parameters sent as text are stored as numbers", async () => {
+    const { world, rules } = setup();
+    const r = await rules.propose({ account: AFREEN, templateId: "R4", params: { amount: "5" } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    await settle();
+    assert.deepEqual(world.rules[0]!.params, { amount: 5 });
+  });
+
   test("display names", () => {
     assert.equal(displayName("akshay.grudgebound.testnet"), "Akshay");
   });
+
+  test("the Rules panel's catalog spells every value the way the rule reads", () => {
+    const cat = templateCatalog();
+    assert.equal(cat.length, 8, "the 8 MUST templates");
+    const r1 = cat.find((t) => t.id === "R1")!;
+    assert.deepEqual(r1.params.map((p) => p.key), ["action", "ward", "multiplier"]);
+    assert.deepEqual(r1.params[0]!.options.find((o) => o.value === "pvp"), { value: "pvp", label: "PvP" });
+    assert.deepEqual(r1.params[1]!.options[0], { value: "lantern", label: "Lantern Ward" });
+    const r4 = cat.find((t) => t.id === "R4")!;
+    assert.equal(r4.params[0]!.options.length, 20, "a 1-20 range becomes 20 values");
+  });
+
+  test("overview reads cost and points from the chain, and still answers when the chain is down", async () => {
+    const { world, chain, rules } = setup();
+    await rules.propose({ account: AFREEN, ...PVP_BAN });
+    await settle();
+    const o = await rulesOverview(world, chain, AFREEN);
+    assert.equal(o.chain, true);
+    assert.equal(o.cost, 75);
+    assert.equal(o.points, 70);
+    assert.deepEqual(o.active.map((r) => r.text), ["No PvP in Lantern Ward"]);
+    const down = new ChainWriter(CFG, { call: rite0, relay: rite0, view: async () => { throw new Error("rpc down"); } });
+    const d = await rulesOverview(world, down, AFREEN);
+    assert.equal(d.points, null);
+    const off = await rulesOverview(world, null, AFREEN);
+    assert.equal(off.chain, false);
+  });
 });
+
+const rite0 = async (): Promise<never> => { throw new Error("unused"); };

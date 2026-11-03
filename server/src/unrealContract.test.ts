@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { createWorld, summarize } from "@grudgebound/shared";
 import { BattleSessions, curseCatalog, type StartAnswer, type TurnAnswer } from "./battles";
 import { ChainWriter, type BattleRecord } from "./chain";
+import { rulesOverview } from "./rules";
 
 const VIEW = ["turn", "outcome", "player", "wild", "items", "chances", "canUse"];
 const SIDE = ["speciesId", "name", "emotion", "omen", "hp", "maxHp"];
@@ -112,5 +113,19 @@ describe("Unreal client contract", () => {
     hasKeys(done, ["tokenId"], "chain (done)");
     for (const tx of done.txs) hasKeys(tx, ["kind", "url"], "chain.txs[]");
     assert.ok(done.txs.some((t) => t.kind === "mint"), "Unreal shows the mint link");
+  });
+
+  test("GET /rules has what GbJson::RulesOverview reads", async () => {
+    const o = await rulesOverview(createWorld(7), null, null);
+    hasKeys(o, ["chain", "cost", "points", "templates", "active"], "rules");
+    for (const t of o.templates) {
+      hasKeys(t, ["id", "text", "cruel", "params"], `rules.templates ${t.id}`);
+      assert.ok(t.params.length <= 3, `${t.id}: the Unreal panel has 3 parameter rows`);
+      for (const p of t.params) {
+        hasKeys(p, ["key", "options"], `${t.id}.params`);
+        for (const opt of p.options) hasKeys(opt, ["value", "label"], `${t.id}.${p.key}.options[]`);
+        assert.ok(t.text.includes(`{${p.key}}`), `${t.id}: Unreal fills {${p.key}} in the text`);
+      }
+    }
   });
 });

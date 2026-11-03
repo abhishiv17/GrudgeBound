@@ -5,13 +5,14 @@
  *        the player's propose_rule is relayed (their points pay), then the game master resolves it as the Arbiter.
  *        An accepted rule joins world.rules once resolved, so prices and points change for everyone.
  *   GET /chain?rule=<jobId> -> the receipt (rule id on chain, explorer links).
+ *   GET /rules?account=  -> templates with display labels, rules in force, the cost and the player's points (Rules panel).
  *
  * On start the server loads the rules in force from the contract (syncFromChain), so a restart keeps them.
  * Agents' rules stay in the simulation until they get their own NEAR accounts (Phase 3).
  */
 import { randomUUID } from "node:crypto";
 import {
-  arbiterCheck, enactRule, log, renderRule, RULE_TEMPLATES, validateParams,
+  arbiterCheck, enactRule, log, paramLabel, renderRule, ruleCost, RULE_TEMPLATES, validateParams,
   type RuleParams, type World,
 } from "@grudgebound/shared";
 import { isAccountId, type ChainReceipt, type ChainRule, type ChainWriter } from "./chain";
@@ -27,6 +28,66 @@ export interface ProposeAnswer {
   text: string;
   cost: number;
   chain: ChainReceipt;
+}
+
+export interface TemplateParamView {
+  key: string;
+  /** Every value the parameter may take, with the words shown for it ("lantern" -> "Lantern Ward"). */
+  options: { value: string; label: string }[];
+}
+
+export interface TemplateView {
+  id: string;
+  /** With {key} placeholders, e.g. "No PvP in {ward}". */
+  text: string;
+  params: TemplateParamView[];
+  cruel: boolean;
+}
+
+export interface RulesOverview {
+  /** False when the server runs off-chain: proposals are refused. */
+  chain: boolean;
+  cost: number;
+  /** The player's points on the rite contract; null off-chain or without an account. */
+  points: number | null;
+  templates: TemplateView[];
+  active: { id: number; text: string; author: string; cost: number }[];
+}
+
+/** The hackathon's rule templates, every parameter value spelled out (a number range becomes its values). */
+export function templateCatalog(): TemplateView[] {
+  return RULE_TEMPLATES.filter((t) => t.mvp).map((t) => ({
+    id: t.id,
+    text: t.text,
+    cruel: typeof t.cruel === "boolean" ? t.cruel : false,
+    params: Object.entries(t.params).map(([key, spec]) => {
+      const values = spec.kind === "choice"
+        ? spec.options.map(String)
+        : Array.from({ length: spec.max - spec.min + 1 }, (_, i) => String(spec.min + i));
+      return { key, options: values.map((v) => ({ value: v, label: paramLabel(key, v) })) };
+    }),
+  }));
+}
+
+/** Everything the Rules panel draws. */
+export async function rulesOverview(world: World, chain: ChainWriter | null, account: string | null): Promise<RulesOverview> {
+  let cost = ruleCost(world.rules.length);
+  let points: number | null = null;
+  if (chain) {
+    try {
+      cost = await chain.ruleCost();
+      if (account && isAccountId(account)) points = await chain.points(account);
+    } catch {
+      // The panel still opens; the propose call reports the chain problem.
+    }
+  }
+  return {
+    chain: chain !== null,
+    cost,
+    points,
+    templates: templateCatalog(),
+    active: world.rules.map((r) => ({ id: r.id, text: renderRule(r.templateId, r.params), author: r.author, cost: r.cost })),
+  };
 }
 
 /** "afreen.grudgebound.testnet" -> "Afreen" for Kessa's lines. */
@@ -82,8 +143,12 @@ export class ChainRules {
     if (!this.canSignFor(account)) return fail(403, `the server can't sign for ${account} (only its demo players until email sign-in)`);
     const templateId = b.templateId;
     if (typeof templateId !== "string" || !RULE_TEMPLATES.some((t) => t.id === templateId)) return fail(400, "unknown rule template");
-    const params = parseParams(b.params);
-    if (!params) return fail(400, "params must be an object of strings and numbers");
+    const raw = parseParams(b.params);
+    if (!raw) return fail(400, "params must be an object of strings and numbers");
+    // Clients may send every value as text; number parameters are stored as numbers (the engine does maths on them).
+    const spec = RULE_TEMPLATES.find((t) => t.id === templateId)!.params;
+    const params: RuleParams = Object.fromEntries(Object.entries(raw).map(([k, v]) =>
+      [k, spec[k]?.kind === "number" && typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : v]));
     // Malformed rules never reach the chain; contradictions and duplicates do, so the rejection is on record.
     const errors = validateParams(templateId, params);
     if (errors.length) return fail(400, `Invalid rule: ${errors.join("; ")}`);

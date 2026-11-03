@@ -186,6 +186,67 @@ private:
 	FString TalismanId;
 };
 
+/**
+ * The Rite (R): rules in force, and a rule builder. Propose sends it as your Player Account; Kessa answers at
+ * once, then the proposal and her verdict are written on NEAR (P2-G2).
+ */
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbRulesWidget : public UGbWidgetBase
+{
+	GENERATED_BODY()
+
+public:
+	/** Fetch the latest rules and points (called when the panel opens). */
+	void Open();
+
+	FSimpleMulticastDelegate OnClose;
+
+	static constexpr int32 MaxParams = 3;
+
+protected:
+	virtual void BuildTree() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
+private:
+	UFUNCTION() void HandleRules(const FGbRulesOverview& Rules);
+	UFUNCTION() void HandleVerdict(const FGbRuleVerdict& Verdict);
+	UFUNCTION() void HandleRuleReceipt(const FString& JobId, const FGbChainReceipt& Receipt);
+	UFUNCTION() void HandleApiError(const FString& What, int32 Status, const FString& Message);
+	UFUNCTION() void HandlePrevTemplate();
+	UFUNCTION() void HandleNextTemplate();
+	UFUNCTION() void HandlePrev0();
+	UFUNCTION() void HandleNext0();
+	UFUNCTION() void HandlePrev1();
+	UFUNCTION() void HandleNext1();
+	UFUNCTION() void HandlePrev2();
+	UFUNCTION() void HandleNext2();
+	UFUNCTION() void HandlePropose();
+	UFUNCTION() void HandleClose();
+
+	void StepTemplate(int32 Delta);
+	void StepParam(int32 Index, int32 Delta);
+	void Redraw();
+	void SetBusy(bool bNowBusy);
+	const FGbRuleTemplate* Current() const;
+
+	UPROPERTY() TObjectPtr<UTextBlock> Info;
+	UPROPERTY() TObjectPtr<UVerticalBox> ActiveList;
+	UPROPERTY() TObjectPtr<UTextBlock> TemplateId;
+	UPROPERTY() TObjectPtr<UTextBlock> Preview;
+	UPROPERTY() TArray<TObjectPtr<UWidget>> ParamRows;
+	UPROPERTY() TArray<TObjectPtr<UTextBlock>> ParamKeys;
+	UPROPERTY() TArray<TObjectPtr<UTextBlock>> ParamValues;
+	UPROPERTY() TObjectPtr<UButton> ProposeButton;
+	UPROPERTY() TObjectPtr<UTextBlock> Status;
+
+	FGbRulesOverview Data;
+	int32 TemplateIndex = 0;
+	TArray<int32> Choice;
+	FString PendingJob;
+	bool bBusy = false;
+};
+
 /** Your talismans (T): pick the partner that fights for you. */
 UCLASS()
 class GRUDGEBOUNDCLIENT_API UGbTalismanCaseWidget : public UGbWidgetBase

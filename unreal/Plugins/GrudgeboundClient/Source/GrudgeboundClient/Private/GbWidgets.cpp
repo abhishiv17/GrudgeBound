@@ -701,4 +701,264 @@ void UGbTalismanCaseWidget::Refresh()
 }
 
 void UGbTalismanCaseWidget::HandlePlayerChanged() { Refresh(); }
+
+// ================================================================ the Rite (rules panel)
+
+void UGbRulesWidget::BuildTree()
+{
+	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
+	WidgetTree->RootWidget = Root;
+
+	UBorder* Card = MakePanel(PaperPanel(), FMargin(22.f, 16.f));
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	Card->SetContent(Sized(Col, 600.f, 0.f));
+
+	AddRow(Col, MakeText(TEXT("The Rite"), 22, C::Ink, true));
+	Info = MakeText(TEXT("Asking the Rite..."), 13, C::Ink);
+	AddRow(Col, Info, 2.f, 8.f);
+
+	AddRow(Col, MakeText(TEXT("In force"), 14, C::Ink, true), 4.f);
+	ActiveList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	UScrollBox* ActiveScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
+	ActiveScroll->AddChild(ActiveList);
+	AddRow(Col, Sized(ActiveScroll, 0.f, 120.f));
+
+	AddRow(Col, MakeText(TEXT("Propose a rule"), 14, C::Ink, true), 10.f);
+
+	UTextBlock* Ignored = nullptr;
+	auto Arrow = [this, &Ignored](const TCHAR* Label) { return MakeButton(Label, Ignored, C::Stone); };
+
+	// Template row: < R8 >
+	UHorizontalBox* TemplateRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	UButton* PrevT = Arrow(TEXT("<"));
+	UButton* NextT = Arrow(TEXT(">"));
+	PrevT->OnClicked.AddDynamic(this, &UGbRulesWidget::HandlePrevTemplate);
+	NextT->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleNextTemplate);
+	AddCol(TemplateRow, MakeText(TEXT("Rule"), 13, Dim()), false);
+	AddCol(TemplateRow, Sized(PrevT, 36.f, 32.f), false, 4.f);
+	TemplateId = MakeText(TEXT("-"), 14, C::Ink, true);
+	AddCol(TemplateRow, Sized(TemplateId, 60.f, 0.f), false, 4.f);
+	AddCol(TemplateRow, Sized(NextT, 36.f, 32.f), false);
+	AddRow(Col, TemplateRow, 4.f);
+
+	// Parameter rows: key  < value >. Buttons bind by function name (AddDynamic needs a literal member).
+	static const TCHAR* PrevName[MaxParams] = { TEXT("HandlePrev0"), TEXT("HandlePrev1"), TEXT("HandlePrev2") };
+	static const TCHAR* NextName[MaxParams] = { TEXT("HandleNext0"), TEXT("HandleNext1"), TEXT("HandleNext2") };
+	for (int32 i = 0; i < MaxParams; ++i)
+	{
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		UTextBlock* Key = MakeText(TEXT(""), 13, Dim());
+		UTextBlock* Value = MakeText(TEXT(""), 14, C::Ink, true);
+		UButton* P = Arrow(TEXT("<"));
+		UButton* N = Arrow(TEXT(">"));
+		FScriptDelegate PD;
+		PD.BindUFunction(this, FName(PrevName[i]));
+		P->OnClicked.Add(PD);
+		FScriptDelegate ND;
+		ND.BindUFunction(this, FName(NextName[i]));
+		N->OnClicked.Add(ND);
+		AddCol(Row, Sized(Key, 110.f, 0.f), false);
+		AddCol(Row, Sized(P, 36.f, 32.f), false, 4.f);
+		AddCol(Row, Sized(Value, 260.f, 0.f), false, 4.f);
+		AddCol(Row, Sized(N, 36.f, 32.f), false);
+		AddRow(Col, Row, 2.f);
+		ParamRows.Add(Row);
+		ParamKeys.Add(Key);
+		ParamValues.Add(Value);
+	}
+
+	Preview = MakeText(TEXT(""), 16, C::Ink, true);
+	Preview->SetAutoWrapText(true);
+	AddRow(Col, Preview, 8.f, 4.f);
+
+	UTextBlock* ProposeLabel = nullptr;
+	ProposeButton = MakeButton(TEXT("Propose"), ProposeLabel, C::Gold);
+	ProposeButton->OnClicked.AddDynamic(this, &UGbRulesWidget::HandlePropose);
+	AddRow(Col, Sized(ProposeButton, 0.f, 40.f), 4.f);
+
+	Status = MakeText(TEXT(""), 13, C::Ink);
+	Status->SetAutoWrapText(true);
+	AddRow(Col, Status, 6.f);
+
+	UButton* Close = MakeButton(TEXT("Close  (R)"), Ignored, C::Stone);
+	Close->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleClose);
+	AddRow(Col, Sized(Close, 0.f, 40.f), 10.f);
+
+	Centre(Root, Card);
+}
+
+void UGbRulesWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	if (UGbApiSubsystem* A = Api())
+	{
+		A->OnRules.AddUniqueDynamic(this, &UGbRulesWidget::HandleRules);
+		A->OnRuleVerdict.AddUniqueDynamic(this, &UGbRulesWidget::HandleVerdict);
+		A->OnRuleReceipt.AddUniqueDynamic(this, &UGbRulesWidget::HandleRuleReceipt);
+		A->OnError.AddUniqueDynamic(this, &UGbRulesWidget::HandleApiError);
+	}
+}
+
+void UGbRulesWidget::NativeDestruct()
+{
+	if (UGbApiSubsystem* A = Api())
+	{
+		A->OnRules.RemoveDynamic(this, &UGbRulesWidget::HandleRules);
+		A->OnRuleVerdict.RemoveDynamic(this, &UGbRulesWidget::HandleVerdict);
+		A->OnRuleReceipt.RemoveDynamic(this, &UGbRulesWidget::HandleRuleReceipt);
+		A->OnError.RemoveDynamic(this, &UGbRulesWidget::HandleApiError);
+	}
+	Super::NativeDestruct();
+}
+
+void UGbRulesWidget::Open()
+{
+	if (UGbApiSubsystem* A = Api()) A->FetchRules();
+}
+
+const FGbRuleTemplate* UGbRulesWidget::Current() const
+{
+	return Data.Templates.IsValidIndex(TemplateIndex) ? &Data.Templates[TemplateIndex] : nullptr;
+}
+
+void UGbRulesWidget::HandleRules(const FGbRulesOverview& Rules)
+{
+	const FString Was = Current() ? Current()->Id : FString();
+	Data = Rules;
+	// Keep the template being edited when the list comes back.
+	const int32 Same = Data.Templates.IndexOfByPredicate([&Was](const FGbRuleTemplate& T) { return T.Id == Was; });
+	if (Same == INDEX_NONE)
+	{
+		TemplateIndex = 0;
+		Choice.Init(0, MaxParams);
+	}
+	else
+	{
+		TemplateIndex = Same;
+	}
+	if (Choice.Num() != MaxParams) Choice.Init(0, MaxParams);
+
+	FString Line = FString::Printf(TEXT("The next rule costs %d points"), Data.Cost);
+	if (Data.Points >= 0) Line += FString::Printf(TEXT("  |  you have %d"), Data.Points);
+	if (!Data.bChain) Line = TEXT("This server runs off-chain, so no rules can be proposed.");
+	Info->SetText(FText::FromString(Line));
+
+	ActiveList->ClearChildren();
+	if (Data.Active.Num() == 0) ActiveList->AddChild(MakeText(TEXT("No rules yet. The Rite is waiting."), 13, Dim()));
+	for (const FGbActiveRule& R : Data.Active)
+	{
+		const FString Who = R.Author.Contains(TEXT(".")) ? R.Author.Left(R.Author.Find(TEXT("."))) : R.Author;
+		UTextBlock* T = MakeText(FString::Printf(TEXT("#%d  %s   (%s, %d pts)"), R.Id, *R.Text, *Who, R.Cost), 13, C::Ink);
+		T->SetAutoWrapText(true);
+		ActiveList->AddChild(T);
+	}
+	Redraw();
+}
+
+void UGbRulesWidget::Redraw()
+{
+	const FGbRuleTemplate* T = Current();
+	TemplateId->SetText(FText::FromString(T ? T->Id : TEXT("-")));
+	FString Text = T ? T->Text : FString();
+	for (int32 i = 0; i < MaxParams; ++i)
+	{
+		const bool bUsed = T && T->Params.IsValidIndex(i) && T->Params[i].Options.Num() > 0;
+		ParamRows[i]->SetVisibility(bUsed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (!bUsed) continue;
+		const FGbRuleParam& P = T->Params[i];
+		Choice[i] = FMath::Clamp(Choice[i], 0, P.Options.Num() - 1);
+		const FGbRuleOption& O = P.Options[Choice[i]];
+		ParamKeys[i]->SetText(FText::FromString(Capitalised(P.Key)));
+		ParamValues[i]->SetText(FText::FromString(O.Label));
+		Text = Text.Replace(*FString::Printf(TEXT("{%s}"), *P.Key), *O.Label);
+	}
+	if (!Text.IsEmpty()) Text = Text.Left(1).ToUpper() + Text.Mid(1);
+	if (T && T->bCruel) Text += TEXT("   (cruel: angers the Ward)");
+	Preview->SetText(FText::FromString(Text));
+	ProposeButton->SetIsEnabled(!bBusy && T && Data.bChain);
+}
+
+void UGbRulesWidget::StepTemplate(int32 Delta)
+{
+	if (bBusy || Data.Templates.Num() == 0) return;
+	TemplateIndex = (TemplateIndex + Delta + Data.Templates.Num()) % Data.Templates.Num();
+	Choice.Init(0, MaxParams);
+	Redraw();
+}
+
+void UGbRulesWidget::StepParam(int32 Index, int32 Delta)
+{
+	const FGbRuleTemplate* T = Current();
+	if (bBusy || !T || !T->Params.IsValidIndex(Index)) return;
+	const int32 N = T->Params[Index].Options.Num();
+	if (N == 0) return;
+	Choice[Index] = (Choice[Index] + Delta + N) % N;
+	Redraw();
+}
+
+void UGbRulesWidget::SetBusy(bool bNowBusy)
+{
+	bBusy = bNowBusy;
+	Redraw();
+}
+
+void UGbRulesWidget::HandlePropose()
+{
+	const FGbRuleTemplate* T = Current();
+	UGbApiSubsystem* A = Api();
+	if (bBusy || !T || !A) return;
+	TMap<FString, FString> Params;
+	for (int32 i = 0; i < T->Params.Num() && i < MaxParams; ++i)
+	{
+		const FGbRuleParam& P = T->Params[i];
+		if (P.Options.IsValidIndex(Choice[i])) Params.Add(P.Key, P.Options[Choice[i]].Value);
+	}
+	PendingJob.Reset();
+	Status->SetText(FText::FromString(TEXT("Kessa is reading your rule...")));
+	SetBusy(true);
+	A->ProposeRule(T->Id, Params);
+}
+
+void UGbRulesWidget::HandleVerdict(const FGbRuleVerdict& Verdict)
+{
+	PendingJob = Verdict.JobId;
+	Status->SetText(FText::FromString(Verdict.bAccepted
+		? FString::Printf(TEXT("Kessa: \"%s\" is accepted. Writing it into the Rite on NEAR..."), *Verdict.Text)
+		: FString::Printf(TEXT("Kessa rejects it: %s  Writing her verdict on NEAR (your %d points come back)..."), *Verdict.Reason, Verdict.Cost)));
+}
+
+void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
+{
+	if (JobId != PendingJob) return;
+	PendingJob.Reset();
+	const FString Was = Status->GetText().ToString().Replace(TEXT("Writing it into the Rite on NEAR..."), TEXT("")).Replace(TEXT("Writing her verdict on NEAR"), TEXT("On NEAR"));
+	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
+		? FString::Printf(TEXT("%s  Recorded on NEAR %s as rule %d. (L to see it)"), *Was, *Receipt.Network, Receipt.RuleId)
+		: FString::Printf(TEXT("The ledger refused it: %s"), *Receipt.Error)));
+	SetBusy(false);
+	Open();
+}
+
+void UGbRulesWidget::HandleApiError(const FString& What, int32 StatusCode, const FString& Message)
+{
+	if (What == TEXT("rules/propose"))
+	{
+		Status->SetText(FText::FromString(FString::Printf(TEXT("Kessa: %s"), *Message)));
+		SetBusy(false);
+	}
+	else if (What == TEXT("rules"))
+	{
+		Info->SetText(FText::FromString(FString::Printf(TEXT("Could not reach the Rite: %s"), *Message)));
+	}
+}
+
+void UGbRulesWidget::HandlePrevTemplate() { StepTemplate(-1); }
+void UGbRulesWidget::HandleNextTemplate() { StepTemplate(1); }
+void UGbRulesWidget::HandlePrev0() { StepParam(0, -1); }
+void UGbRulesWidget::HandleNext0() { StepParam(0, 1); }
+void UGbRulesWidget::HandlePrev1() { StepParam(1, -1); }
+void UGbRulesWidget::HandleNext1() { StepParam(1, 1); }
+void UGbRulesWidget::HandlePrev2() { StepParam(2, -1); }
+void UGbRulesWidget::HandleNext2() { StepParam(2, 1); }
+void UGbRulesWidget::HandleClose() { OnClose.Broadcast(); }
 void UGbTalismanCaseWidget::HandleClose() { OnClose.Broadcast(); }

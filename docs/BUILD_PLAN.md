@@ -138,7 +138,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P2-C5 | Must | Rule propose / resolve / repeal through `rite`; server reads rules in force from the contract. Done 4 Nov: `POST /rules/propose` (relayed for the player, resolved by Kessa), rules loaded on start (`server/src/rules.ts`). Seen on testnet: Afreen's R8 accepted, Akshay's contradicting R1 rejected and refunded. Repeal not wired yet | C | | ✅ |
 | P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | ⬜ |
 | P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | ⬜ |
-| P2-G2 | Must | Rules panel sends proposals to the server and shows Kessa's verdict and the explorer link | G | | ⬜ |
+| P2-G2 | Must | Rules panel sends proposals to the server and shows Kessa's verdict and the explorer link. Built 4 Nov in Unreal: R opens the Rite (rules in force, cost, your points, rule builder); Kessa's verdict at once, then "Recorded on NEAR as rule N (L to see it)". `GET /rules` feeds it. Editor check at the end of P2 | G | | 🟡 |
 | P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | ⬜ |
 | P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | ⬜ |
 | P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | ⬜ |

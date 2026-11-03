@@ -42,16 +42,19 @@ void AGbUiDirector::BeginPlay()
 	Encounter = CreateWidget<UGbEncounterWidget>(PC, UGbEncounterWidget::StaticClass());
 	Battle = CreateWidget<UGbBattleWidget>(PC, UGbBattleWidget::StaticClass());
 	TalismanCase = CreateWidget<UGbTalismanCaseWidget>(PC, UGbTalismanCaseWidget::StaticClass());
+	Rules = CreateWidget<UGbRulesWidget>(PC, UGbRulesWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
 	Battle->AddToViewport(20);
 	TalismanCase->AddToViewport(30);
+	Rules->AddToViewport(30);
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
 	Battle->OnBack.AddUObject(this, &AGbUiDirector::BackToWard);
 	TalismanCase->OnClose.AddUObject(this, &AGbUiDirector::ToggleTalismanCase);
+	Rules->OnClose.AddUObject(this, &AGbUiDirector::ToggleRules);
 
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -59,6 +62,7 @@ void AGbUiDirector::BeginPlay()
 		Api->OnBattleTurn.AddUniqueDynamic(this, &AGbUiDirector::HandleBattleTurn);
 		Api->OnError.AddUniqueDynamic(this, &AGbUiDirector::HandleApiError);
 		Api->OnChainReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleChainReceipt);
+		Api->OnRuleReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleRuleReceipt);
 	}
 
 	// T opens the Talisman Case (works alongside the template's Enhanced Input mappings).
@@ -67,6 +71,7 @@ void AGbUiDirector::BeginPlay()
 	{
 		InputComponent->BindKey(EKeys::T, IE_Pressed, this, &AGbUiDirector::ToggleTalismanCase);
 		InputComponent->BindKey(EKeys::L, IE_Pressed, this, &AGbUiDirector::OpenLastChainLink);
+		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AGbUiDirector::ToggleRules);
 	}
 
 	ShowScreen(EScreen::Ward);
@@ -80,6 +85,7 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 		Api->OnBattleTurn.RemoveDynamic(this, &AGbUiDirector::HandleBattleTurn);
 		Api->OnError.RemoveDynamic(this, &AGbUiDirector::HandleApiError);
 		Api->OnChainReceipt.RemoveDynamic(this, &AGbUiDirector::HandleChainReceipt);
+		Api->OnRuleReceipt.RemoveDynamic(this, &AGbUiDirector::HandleRuleReceipt);
 		// Leaving the level mid-battle: forget it locally; the server expires it.
 		Api->AbandonBattle();
 	}
@@ -95,6 +101,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	Encounter->SetVisibility(Screen == EScreen::Encounter ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Battle->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	TalismanCase->SetVisibility(Screen == EScreen::TalismanCase ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	Rules->SetVisibility(Screen == EScreen::Rules ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Hud->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
@@ -117,8 +124,9 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 		PC->StopMovement();
 		PC->SetIgnoreMoveInput(true);
 		UUserWidget* Focus = Screen == EScreen::Encounter ? static_cast<UUserWidget*>(Encounter.Get())
-			: Screen == EScreen::Battle ? static_cast<UUserWidget*>(Battle.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
-		if (Screen == EScreen::TalismanCase)
+			: Screen == EScreen::Battle ? static_cast<UUserWidget*>(Battle.Get())
+			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
+		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules)
 		{
 			// Keep game input so T closes the case again.
 			FInputModeGameAndUI Mode;
@@ -146,6 +154,26 @@ void AGbUiDirector::ToggleTalismanCase()
 		TalismanCase->Refresh();
 		ShowScreen(EScreen::TalismanCase);
 	}
+}
+
+void AGbUiDirector::ToggleRules()
+{
+	if (Current == EScreen::Rules)
+	{
+		ShowScreen(EScreen::Ward);
+	}
+	else if (Current == EScreen::Ward)
+	{
+		Rules->Open();
+		ShowScreen(EScreen::Rules);
+	}
+}
+
+void AGbUiDirector::HandleRuleReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
+{
+	if (Receipt.Status != TEXT("done")) return;
+	LastChainUrl = Receipt.ExplorerUrl;
+	UE_LOG(LogTemp, Log, TEXT("Grudgebound: rule %d on NEAR %s: %s"), Receipt.RuleId, *Receipt.Network, *Receipt.ExplorerUrl);
 }
 
 void AGbUiDirector::HandleBattleStarted(const FGbBattleStart& Start)

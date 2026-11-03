@@ -80,17 +80,19 @@ export function templateById(id: string): RuleTemplate {
   return t;
 }
 
+/** How a parameter value reads inside a rule ("lantern" -> "Lantern Ward", "pvp" -> "PvP"). */
+export function paramLabel(key: string, value: string | number): string {
+  const s = String(value);
+  if (key === "ward") return wardName(s);
+  if (key === "action" || key === "emotion") return s === "pvp" ? "PvP" : s.charAt(0).toUpperCase() + s.slice(1);
+  return s;
+}
+
 export function renderRule(templateId: string, params: RuleParams): string {
   const t = templateById(templateId);
   return t.text.replace(/\{(\w+)\}/g, (_, k: string) => {
     const v = params[k];
-    if (v === undefined) return `{${k}}`;
-    if (k === "ward") return wardName(String(v));
-    if (k === "action" || k === "emotion") {
-      const s = String(v);
-      return s === "pvp" ? "PvP" : s.charAt(0).toUpperCase() + s.slice(1);
-    }
-    return String(v);
+    return v === undefined ? `{${k}}` : paramLabel(k, v);
   }).replace(/^./, (c) => c.toUpperCase());
 }
 

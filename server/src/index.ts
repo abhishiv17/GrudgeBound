@@ -13,6 +13,7 @@
  *   POST /rules/propose  -> { account, templateId, params }: Kessa's verdict, then the rule goes through the rite
  *                           contract (relayed for the player, resolved by the game master); see rules.ts
  *   GET /chain?rule=ID   -> that proposal's on-chain receipt
+ *   GET /rules?account=A -> rule templates (with display labels), rules in force, the cost and A's points
  *   GET /chain?battle=ID -> that battle's on-chain receipt (talisman id, tx links); without ?battle: the contracts in use
  *                           Both battle routes answer with `chain` when a binding or exorcism is written to NEAR (chain.ts)
  *   GET /curses          -> every curse's id, name, emotion, omen, home Ward and signature move (no stats)
@@ -31,7 +32,7 @@ import {
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
 import { BattleSessions, MAX_TURNS, curseCatalog, type TurnAnswer } from "./battles";
 import { ChainWriter, chainConfigFromEnv, custodialKey, isAccountId, type BattleRecord } from "./chain";
-import { ChainRules } from "./rules";
+import { ChainRules, rulesOverview } from "./rules";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -210,6 +211,13 @@ createServer((req, res) => {
       (body) => chainRules.propose(body).then((r) => send(res, r.status, r.body)),
       (e: Error) => send(res, 400, { error: e.message }),
     ).catch((e: Error) => send(res, 500, { error: e.message }));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/rules") {
+    rulesOverview(world, chain, url.searchParams.get("account")).then(
+      (body) => send(res, 200, body),
+      (e: Error) => send(res, 500, { error: e.message }),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/chain") {

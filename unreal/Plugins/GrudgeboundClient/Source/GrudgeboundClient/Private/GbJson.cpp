@@ -297,17 +297,94 @@ namespace GbJson
 		R.Account = Str(O, TEXT("account"));
 		R.TokenId = Str(O, TEXT("tokenId"));
 		R.Error = Str(O, TEXT("error"));
+		R.RuleId = Int(O, TEXT("ruleId"), -1);
 		const TArray<TSharedPtr<FJsonValue>>* Txs = nullptr;
 		if (O.IsValid() && O->TryGetArrayField(TEXT("txs"), Txs))
 		{
 			for (const TSharedPtr<FJsonValue>& V : *Txs)
 			{
 				const TSharedPtr<FJsonObject> Tx = V.IsValid() ? V->AsObject() : nullptr;
-				// The mint link is the one worth showing; the points link only when nothing was minted.
-				if (R.ExplorerUrl.IsEmpty() || Str(Tx, TEXT("kind")) == TEXT("mint")) R.ExplorerUrl = Str(Tx, TEXT("url"));
+				// The mint (or the rule's verdict) is the link worth showing; else the first one.
+				const FString Kind = Str(Tx, TEXT("kind"));
+				if (R.ExplorerUrl.IsEmpty() || Kind == TEXT("mint") || Kind == TEXT("resolve")) R.ExplorerUrl = Str(Tx, TEXT("url"));
 			}
 		}
 		return R;
+	}
+
+	static TArray<TSharedPtr<FJsonObject>> Objects(const TSharedPtr<FJsonObject>& O, const TCHAR* Key)
+	{
+		TArray<TSharedPtr<FJsonObject>> Out;
+		const TArray<TSharedPtr<FJsonValue>>* Arr = nullptr;
+		if (O.IsValid() && O->TryGetArrayField(Key, Arr))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Arr)
+			{
+				if (V.IsValid() && V->Type == EJson::Object) Out.Add(V->AsObject());
+			}
+		}
+		return Out;
+	}
+
+	FGbRulesOverview RulesOverview(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbRulesOverview R;
+		R.bChain = Bool(O, TEXT("chain"));
+		R.Cost = Int(O, TEXT("cost"));
+		R.Points = Int(O, TEXT("points"), -1);
+		for (const TSharedPtr<FJsonObject>& T : Objects(O, TEXT("templates")))
+		{
+			FGbRuleTemplate Tpl;
+			Tpl.Id = Str(T, TEXT("id"));
+			Tpl.Text = Str(T, TEXT("text"));
+			Tpl.bCruel = Bool(T, TEXT("cruel"));
+			for (const TSharedPtr<FJsonObject>& P : Objects(T, TEXT("params")))
+			{
+				FGbRuleParam Param;
+				Param.Key = Str(P, TEXT("key"));
+				for (const TSharedPtr<FJsonObject>& Opt : Objects(P, TEXT("options")))
+				{
+					FGbRuleOption& Option = Param.Options.AddDefaulted_GetRef();
+					Option.Value = Str(Opt, TEXT("value"));
+					Option.Label = Str(Opt, TEXT("label"));
+				}
+				Tpl.Params.Add(Param);
+			}
+			R.Templates.Add(Tpl);
+		}
+		for (const TSharedPtr<FJsonObject>& A : Objects(O, TEXT("active")))
+		{
+			FGbActiveRule Rule;
+			Rule.Id = Int(A, TEXT("id"));
+			Rule.Text = Str(A, TEXT("text"));
+			Rule.Author = Str(A, TEXT("author"));
+			Rule.Cost = Int(A, TEXT("cost"));
+			R.Active.Add(Rule);
+		}
+		return R;
+	}
+
+	FGbRuleVerdict RuleVerdict(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbRuleVerdict V;
+		V.JobId = Str(O, TEXT("jobId"));
+		V.bAccepted = Bool(O, TEXT("accepted"));
+		V.Reason = Str(O, TEXT("reason"));
+		V.Text = Str(O, TEXT("text"));
+		V.Cost = Int(O, TEXT("cost"));
+		V.Chain = ChainReceipt(Obj(O, TEXT("chain")));
+		return V;
+	}
+
+	FString ProposeBody(const FString& Account, const FString& TemplateId, const TMap<FString, FString>& Params)
+	{
+		const TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+		for (const TPair<FString, FString>& KV : Params) P->SetStringField(KV.Key, KV.Value);
+		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+		O->SetStringField(TEXT("account"), Account.TrimStartAndEnd().ToLower());
+		O->SetStringField(TEXT("templateId"), TemplateId);
+		O->SetObjectField(TEXT("params"), P);
+		return Write(O);
 	}
 
 	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account)

@@ -16,6 +16,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTownEventsEvent, const TArray<FGb
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbKessaLineEvent, const FString&, Line);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleStartedEvent, const FGbBattleStart&, Battle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleTurn&, Turn);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRuleVerdictEvent, const FGbRuleVerdict&, Verdict);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FGbChainReceiptEvent, const FString&, BattleId, const FGbChainReceipt&, Receipt);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FGbApiErrorEvent, const FString&, What, int32, Status, const FString&, Message);
 
@@ -93,6 +95,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Battle")
 	FGbBattleView GetBattleView() const { return BattleView; }
 
+	// ------------------------------------------------------------ rules (GET /rules, POST /rules/propose)
+
+	/** Templates, rules in force, cost and your points. Answer: OnRules (or OnError "rules"). */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
+	void FetchRules();
+
+	/**
+	 * Propose a rule as Project Settings > Grudgebound > Player Account. Answer: OnRuleVerdict (Kessa's verdict),
+	 * then OnRuleReceipt once it is on NEAR. Refusals (too few points, ...) come as OnError "rules/propose".
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
+	void ProposeRule(const FString& TemplateId, const TMap<FString, FString>& Params);
+
 	// ------------------------------------------------------------ events
 
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Server")
@@ -121,6 +136,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Battle")
 	FGbChainReceiptEvent OnChainReceipt;
 
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
+	FGbRulesEvent OnRules;
+
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
+	FGbRuleVerdictEvent OnRuleVerdict;
+
+	/** A proposal's NEAR receipt is final (BattleId holds the proposal's job id). */
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
+	FGbChainReceiptEvent OnRuleReceipt;
+
 	/** What = "state", "events", "curses", "battle/start" or "battle/turn"; Status 0 = no answer (server down). */
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Server")
 	FGbApiErrorEvent OnError;
@@ -134,8 +159,8 @@ private:
 	void FetchEvents();
 	void FetchCurses();
 	void SetOnline(bool bNowOnline);
-	/** Ask GET /chain?battle=<id> again in a second, up to TriesLeft times. */
-	void PollChain(const FString& ForBattle, int32 TriesLeft);
+	/** Ask GET /chain?<Kind>=<id> again in a second, up to TriesLeft times (Kind: "battle" or "rule"). */
+	void PollChain(const FString& Kind, const FString& Id, int32 TriesLeft);
 
 	FTimerHandle PollTimer;
 	bool bOnline = false;

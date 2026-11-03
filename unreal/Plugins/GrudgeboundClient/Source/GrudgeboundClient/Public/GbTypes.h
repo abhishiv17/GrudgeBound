@@ -214,7 +214,9 @@ struct FGbChainReceipt
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Account;
 	/** Token id on the items contract, e.g. "tal-7"; empty for an exorcism. */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString TokenId;
-	/** Explorer link of the mint (bind) or else of the points transaction. */
+	/** Rule id on the rite contract, for a rule proposal; -1 otherwise. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 RuleId = -1;
+	/** Explorer link of the mint (bind), the verdict (rule), or else the points transaction. */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString ExplorerUrl;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Error;
 };
@@ -239,5 +241,76 @@ struct FGbBattleTurn
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int64 Seed = -1;
 	/** True when the server is writing this battle to NEAR (it runs with chain keys); see Chain. */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bHasChain = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
+};
+
+/** One value a rule parameter may take, with the words the rule shows for it. */
+USTRUCT(BlueprintType)
+struct FGbRuleOption
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Value;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Label;
+};
+
+USTRUCT(BlueprintType)
+struct FGbRuleParam
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Key;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbRuleOption> Options;
+};
+
+/** A rule template from GET /rules, e.g. "No PvP in {ward}". */
+USTRUCT(BlueprintType)
+struct FGbRuleTemplate
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbRuleParam> Params;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bCruel = false;
+};
+
+USTRUCT(BlueprintType)
+struct FGbActiveRule
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Id = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Author;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Cost = 0;
+};
+
+/** GET /rules?account=: everything the Rules panel draws. */
+USTRUCT(BlueprintType)
+struct FGbRulesOverview
+{
+	GENERATED_BODY()
+
+	/** False when the server runs off-chain (proposals are refused). */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bChain = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Cost = 0;
+	/** Your points on the rite contract; -1 when unknown. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbRuleTemplate> Templates;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbActiveRule> Active;
+};
+
+/** POST /rules/propose answer: Kessa's verdict now; Chain finishes later (OnRuleReceipt). */
+USTRUCT(BlueprintType)
+struct FGbRuleVerdict
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString JobId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bAccepted = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Reason;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Cost = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
 };
