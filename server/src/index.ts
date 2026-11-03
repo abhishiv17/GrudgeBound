@@ -121,21 +121,44 @@ function recordFromTurn(t: TurnAnswer): BattleRecord | null {
 }
 
 const llm = llmConfigFromEnv();
-/** Tooltips per merchant, recomputed once per tick so the LLM is not called on every request. */
-const shopCache = new Map<string, { tick: number; body: unknown }>();
+type ShopLine = Tooltip & { id: string; name: string; stock: number };
+/** Shop answers per merchant, recomputed once per tick (or after a trade) so prices stay live. */
+const shopCache = new Map<string, { tick: number; body: { items: ShopLine[] } & Record<string, unknown> }>();
+/** The merchant's last AI-written line per item, with the price it was written for. */
+const aiLines = new Map<string, { price: number; text: string }>();
+/** Merchants whose AI lines are being written right now. */
+const writing = new Set<string>();
 
+/**
+ * GET /shop never waits for the AI (four NEAR AI calls took ~8 s, past the Unreal client's timeout): it answers
+ * at once with live prices and the formula's reason, or the merchant's earlier AI line when the price is unchanged,
+ * and has the AI write fresh lines in the background, all items in parallel; the next request shows them.
+ */
 async function shop(merchantId: string): Promise<{ status: number; body: unknown }> {
   const m = world.merchants.find((x) => x.id === merchantId);
   if (!m) return { status: 404, body: { error: `no merchant "${merchantId}"`, merchants: world.merchants.map((x) => x.id) } };
   const hit = shopCache.get(m.id);
   if (hit && hit.tick === world.tick) return { status: 200, body: hit.body };
-  const items: (Tooltip & { id: string; name: string; stock: number })[] = [];
+  const items: ShopLine[] = [];
   for (const item of m.items) {
-    const t = await priceTooltip(world, m, item.id, llm);
-    items.push({ id: item.id, name: item.name, stock: item.stock, ...t });
+    const t = await priceTooltip(world, m, item.id, null);
+    const said = aiLines.get(`${m.id}:${item.id}`);
+    items.push({ id: item.id, name: item.name, stock: item.stock, ...t, ...(said && said.price === t.price ? { text: said.text, source: "llm" as const } : {}) });
   }
   const body = { merchant: { id: m.id, name: m.name, ward: m.ward, closed: m.closed }, tick: world.tick, items };
   shopCache.set(m.id, { tick: world.tick, body });
+  if (llm && !writing.has(m.id) && items.some((i) => i.source !== "llm")) {
+    writing.add(m.id);
+    const tick = world.tick;
+    void Promise.all(m.items.map((item) => priceTooltip(world, m, item.id, llm).then((t) => ({ id: item.id, t }))))
+      .then((lines) => {
+        for (const { id, t } of lines) if (t.source === "llm") aiLines.set(`${m.id}:${id}`, { price: t.price, text: t.text });
+        const cached = shopCache.get(m.id);
+        if (cached && cached.tick === tick) shopCache.delete(m.id); // the next request picks the new lines up
+      })
+      .catch((e: Error) => console.warn(`merchant lines for ${m.id}: ${e.message}`))
+      .finally(() => writing.delete(m.id));
+  }
   return { status: 200, body };
 }
 
