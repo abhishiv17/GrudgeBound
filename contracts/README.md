@@ -48,7 +48,7 @@ cargo test
 | `relayer.grudgebound.testnet` | Pays players' gas (P2-C3) | 2 NEAR |
 
 Look them up on https://testnet.nearblocks.io (e.g. `/address/items.grudgebound.testnet`).
-Keys live in `%USERPROFILE%\.near-credentials	estnet` on the laptop that created them, never in the repo.
+Keys live in `%USERPROFILE%\.near-credentials\testnet` on the laptop that created them, never in the repo.
 
 Tools (prebuilt installers, Windows PowerShell):
 
@@ -68,8 +68,12 @@ cd contracts/rite  && cargo near build non-reproducible-wasm --no-abi   # -> tar
 First deploy (already done; `new` can only run once per account):
 
 ```sh
-near contract deploy items.grudgebound.testnet use-file target/near/grudgebound_items/grudgebound_items.wasm   with-init-call new json-args '{"minter":"grudgebound.testnet"}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR'   network-config testnet sign-with-legacy-keychain send
-near contract deploy rite.grudgebound.testnet use-file target/near/grudgebound_rite/grudgebound_rite.wasm   with-init-call new json-args '{"game_server":"grudgebound.testnet","arbiter":"grudgebound.testnet"}'   prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send
+near contract deploy items.grudgebound.testnet use-file target/near/grudgebound_items/grudgebound_items.wasm \
+  with-init-call new json-args '{"minter":"grudgebound.testnet"}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  network-config testnet sign-with-legacy-keychain send
+near contract deploy rite.grudgebound.testnet use-file target/near/grudgebound_rite/grudgebound_rite.wasm \
+  with-init-call new json-args '{"game_server":"grudgebound.testnet","arbiter":"grudgebound.testnet"}' \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send
 ```
 
 Upgrade the code later: same command with `without-init-call` instead of `with-init-call ... attached-deposit '0 NEAR'`.
