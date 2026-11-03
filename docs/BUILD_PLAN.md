@@ -33,7 +33,7 @@ The lead (Abhishek) decides every submission field and approves anything public:
 | Phase | Dates | Goal | Gate | Status |
 |---|---|---|---|---|
 | [0. Foundation](#phase-0--foundation) | 1 Nov | Repo, engine, simulator, agent loop, first client | none | ✅ |
-| [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | 🟡 2 items left |
+| [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | ✅ |
 | [2. On testnet](#phase-2--on-testnet) | 5-7 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | ⬜ |
 | [3. Accounts, agents, live world](#phase-3--accounts-agents-live-world) | 7-10 Nov | Email sign-in, agents with wallets, Observatory | G3 · 10 Nov (feature freeze) | ⬜ |
 | [4. Polish, hosting, video](#phase-4--polish-hosting-video) | 11-12 Nov | Hosted demo, recorded video, fresh-clone test | G4 · 12 Nov | ⬜ |
@@ -90,7 +90,7 @@ Everything until the feature freeze must show up in this video. If a task doesn'
 - [x] `items` and `rite` compile to wasm.
 - [x] `npm test` (30 tests), `npm run typecheck` and `npm run build` pass. (Not committed yet: commit at the milestone.)
 
-**Left before G1:** check the Talisman Case (T) in Unreal (P1-U6).
+**G1 passed on 4 Nov.** Nothing left in Phase 1.
 
 **Unreal client (from 2 Nov).** The web loop above is done and stays as the fallback demo. The same loop is now rebuilt in
 Unreal Engine 5 on a teammate's RTX 3050 laptop; steps in [`UNREAL_SETUP.md`](UNREAL_SETUP.md). Target: U1-U4 by 4 Nov,
@@ -115,7 +115,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P1-U3 | Must | `GrudgeboundApi` C++ class (`/health`, `/state`, `/events`); HUD shows the Ward's Grudge and Kessa's latest line. `UGbApiSubsystem`, `UGbHudWidget`; seen live (day/hour, Grudge bars, town events) | G | | ✅ |
 | P1-U4 | Must | Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away). Both buttons tested in Unreal | G | | ✅ |
 | P1-U5 | Must | Battle screen on the server's turn API (P1-C5): attack, ward, seal, flee; result back to the Ward. Played to a bind in Unreal (+10 points) | G | | ✅ |
-| P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD. Points and Ember update after a bind; the Talisman Case (T) still to be checked in Unreal | G | | 🟡 |
+| P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD. Points and Ember update after a bind; the Talisman Case (T) lists the new talisman and the partner (checked in the editor, 4 Nov) | G | | ✅ |
 | P1-C6 | Should | `GET /curses`: names and looks of every curse for the Unreal Talisman Case (no stats), 1 test | C | | ✅ |
 
 ---
