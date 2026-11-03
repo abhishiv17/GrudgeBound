@@ -214,7 +214,7 @@ void UGbApiSubsystem::StartBattle(const FString& WardId, const FString& PlayerCu
 	if (IsBattleOpen() || bBattleRequestInFlight) return;
 	bBattleRequestInFlight = true;
 	const UGbSettings* Settings = GetDefault<UGbSettings>();
-	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, PlayerCurse, Settings->PlayerName);
+	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, PlayerCurse, Settings->PlayerName, Settings->PlayerAccount);
 	Send(TEXT("POST"), TEXT("/battle/start"), Body, [this](int32 Status, const FString& Text)
 	{
 		bBattleRequestInFlight = false;
@@ -253,7 +253,35 @@ void UGbApiSubsystem::SendAction(EGbAction Action)
 		BattleView = Turn.View;
 		if (Turn.bEnded) BattleId.Reset();
 		OnBattleTurn.Broadcast(Turn);
+		if (Turn.bHasChain)
+		{
+			if (Turn.Chain.Status == TEXT("pending")) PollChain(Turn.BattleId, 30);
+			else OnChainReceipt.Broadcast(Turn.BattleId, Turn.Chain);
+		}
 	});
+}
+
+void UGbApiSubsystem::PollChain(const FString& ForBattle, int32 TriesLeft)
+{
+	UGameInstance* GI = GetGameInstance();
+	if (!GI || TriesLeft <= 0) return;
+	FTimerHandle Unused;
+	GI->GetTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this, ForBattle, TriesLeft]()
+	{
+		Send(TEXT("GET"), TEXT("/chain?battle=") + ForBattle, FString(), [this, ForBattle, TriesLeft](int32 Status, const FString& Text)
+		{
+			TSharedPtr<FJsonObject> O;
+			if (Status != 200 || !GbJson::ParseObject(Text, O))
+			{
+				// 0: server briefly unreachable, try again; anything else (404: server restarted) is final.
+				if (Status == 0) PollChain(ForBattle, TriesLeft - 1);
+				return;
+			}
+			const FGbChainReceipt R = GbJson::ChainReceipt(O);
+			if (R.Status == TEXT("pending")) PollChain(ForBattle, TriesLeft - 1);
+			else OnChainReceipt.Broadcast(ForBattle, R);
+		});
+	}), 1.0f, false);
 }
 
 void UGbApiSubsystem::AbandonBattle()

@@ -14,6 +14,8 @@ import {
 } from "@grudgebound/shared";
 
 const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:8787";
+/** NEAR account that gets this player's talismans and points (e.g. akshay.grudgebound.testnet); unset: the server's guest. */
+const ACCOUNT = process.env.NEXT_PUBLIC_PLAYER_ACCOUNT?.trim().toLowerCase() || undefined;
 const POLL_MS = 3000;
 const OFFLINE_TICK_MS = 2000;
 
@@ -60,7 +62,7 @@ export async function startWorldFeed(onUpdate: (s: WorldSummary) => void, onEven
       latest: first,
       async report(capture, proof) {
         try {
-          return await postJson<ReportAnswer>(`${SERVER}/battle`, { ...proof, ward: capture.ward, by: capture.by, outcome: capture.verb === "bind" ? "bound" : "won" });
+          return await postJson<ReportAnswer>(`${SERVER}/battle`, { ...proof, ward: capture.ward, by: capture.by, outcome: capture.verb === "bind" ? "bound" : "won", ...(ACCOUNT ? { account: ACCOUNT } : {}) });
         } catch (e) {
           return { points: null, error: e instanceof Error ? e.message : "the town did not answer" };
         }

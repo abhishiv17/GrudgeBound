@@ -134,7 +134,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P2-C1 | Must | Testnet accounts: game master, `items`, `rite`, relayer (funded from the faucet). Done 4 Nov: see `contracts/README.md` | C | | ✅ |
 | P2-C2 | Must | Deploy `items` and `rite`; account names in `.env.example`. Done 4 Nov with cargo-near 0.22 (`--no-abi` on Windows); mint and battle smoke-tested | C | | ✅ |
 | P2-C3 | Must | Relayer endpoint in the server: signed delegate action in, gas paid by us (NEP-366) | C | | ⬜ |
-| P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points | C | | ⬜ |
+| P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points. Server done and checked on testnet (`server/src/chain.ts`); Unreal shows the token id, L opens the explorer. Left: see it in the editor | C | | 🟡 |
 | P2-C5 | Must | Rule propose / resolve / repeal through `rite`; server reads rules in force from the contract | C | | ⬜ |
 | P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | ⬜ |
 | P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | ⬜ |

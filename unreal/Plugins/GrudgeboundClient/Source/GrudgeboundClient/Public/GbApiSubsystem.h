@@ -16,6 +16,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTownEventsEvent, const TArray<FGb
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbKessaLineEvent, const FString&, Line);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleStartedEvent, const FGbBattleStart&, Battle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleTurn&, Turn);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FGbChainReceiptEvent, const FString&, BattleId, const FGbChainReceipt&, Receipt);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FGbApiErrorEvent, const FString&, What, int32, Status, const FString&, Message);
 
 UCLASS()
@@ -113,6 +114,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Battle")
 	FGbBattleTurnEvent OnBattleTurn;
 
+	/**
+	 * A finished battle's NEAR receipt is final ("done" or "failed"). The last turn answers with "pending"
+	 * (testnet takes a few seconds), so this subsystem polls GET /chain?battle=<id> until then.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Battle")
+	FGbChainReceiptEvent OnChainReceipt;
+
 	/** What = "state", "events", "curses", "battle/start" or "battle/turn"; Status 0 = no answer (server down). */
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Server")
 	FGbApiErrorEvent OnError;
@@ -126,6 +134,8 @@ private:
 	void FetchEvents();
 	void FetchCurses();
 	void SetOnline(bool bNowOnline);
+	/** Ask GET /chain?battle=<id> again in a second, up to TriesLeft times. */
+	void PollChain(const FString& ForBattle, int32 TriesLeft);
 
 	FTimerHandle PollTimer;
 	bool bOnline = false;

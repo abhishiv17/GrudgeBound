@@ -621,8 +621,9 @@ void UGbTalismanRowWidget::Setup(const FGbTalisman& Talisman, const FGbCurseInfo
 	Name->SetText(FText::FromString(Curse.Name));
 	Name->SetColorAndOpacity(FSlateColor(EmotionColor(Curse.Emotion)));
 	const FString Origin = Talisman.BoundDay < 0 ? FString(TEXT("Kessa's gift")) : FString::Printf(TEXT("bound on day %d"), Talisman.BoundDay);
-	Details->SetText(FText::FromString(FString::Printf(TEXT("%s %s  |  %s  |  %d wins"),
-		*Capitalised(Curse.Emotion), *Capitalised(Talisman.Omen), *Origin, Talisman.Wins)));
+	const FString OnChain = Talisman.ChainTokenId.IsEmpty() ? FString() : FString::Printf(TEXT("  |  NEAR %s"), *Talisman.ChainTokenId);
+	Details->SetText(FText::FromString(FString::Printf(TEXT("%s %s  |  %s  |  %d wins%s"),
+		*Capitalised(Curse.Emotion), *Capitalised(Talisman.Omen), *Origin, Talisman.Wins, *OnChain)));
 	PartnerLabel->SetText(FText::FromString(bIsPartner ? TEXT("Partner") : TEXT("Make partner")));
 	PartnerButton->SetIsEnabled(!bIsPartner);
 }

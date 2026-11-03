@@ -29,6 +29,13 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = "Player")
 	FString PlayerName = TEXT("A newcomer");
 
+	/**
+	 * NEAR account that receives your talismans and points, e.g. afreen.grudgebound.testnet.
+	 * Empty: the server's guest account. Until email sign-in (Phase 3) this is set per machine.
+	 */
+	UPROPERTY(config, EditAnywhere, Category = "Player")
+	FString PlayerAccount;
+
 	/** Ward the player is in (Phase 1 has only Lantern Ward). */
 	UPROPERTY(config, EditAnywhere, Category = "Player")
 	FString WardId = TEXT("lantern");

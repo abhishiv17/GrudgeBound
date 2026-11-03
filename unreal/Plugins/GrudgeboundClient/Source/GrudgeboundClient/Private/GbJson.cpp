@@ -281,15 +281,43 @@ namespace GbJson
 		T.Points = Int(O, TEXT("points"));
 		double Seed = -1.0;
 		if (O.IsValid() && O->TryGetNumberField(TEXT("seed"), Seed)) T.Seed = static_cast<int64>(Seed);
+		if (const TSharedPtr<FJsonObject> C = Obj(O, TEXT("chain")))
+		{
+			T.bHasChain = true;
+			T.Chain = ChainReceipt(C);
+		}
 		return T;
 	}
 
-	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By)
+	FGbChainReceipt ChainReceipt(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbChainReceipt R;
+		R.Status = Str(O, TEXT("status"));
+		R.Network = Str(O, TEXT("network"));
+		R.Account = Str(O, TEXT("account"));
+		R.TokenId = Str(O, TEXT("tokenId"));
+		R.Error = Str(O, TEXT("error"));
+		const TArray<TSharedPtr<FJsonValue>>* Txs = nullptr;
+		if (O.IsValid() && O->TryGetArrayField(TEXT("txs"), Txs))
+		{
+			for (const TSharedPtr<FJsonValue>& V : *Txs)
+			{
+				const TSharedPtr<FJsonObject> Tx = V.IsValid() ? V->AsObject() : nullptr;
+				// The mint link is the one worth showing; the points link only when nothing was minted.
+				if (R.ExplorerUrl.IsEmpty() || Str(Tx, TEXT("kind")) == TEXT("mint")) R.ExplorerUrl = Str(Tx, TEXT("url"));
+			}
+		}
+		return R;
+	}
+
+	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account)
 	{
 		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
 		O->SetStringField(TEXT("ward"), Ward);
 		if (!PlayerCurse.IsEmpty()) O->SetStringField(TEXT("playerCurse"), PlayerCurse);
 		if (!By.IsEmpty()) O->SetStringField(TEXT("by"), By);
+		const FString Acct = Account.TrimStartAndEnd().ToLower();
+		if (!Acct.IsEmpty()) O->SetStringField(TEXT("account"), Acct);
 		return Write(O);
 	}
 

@@ -37,6 +37,9 @@ private:
 	UFUNCTION() void HandleBattleStarted(const FGbBattleStart& Start);
 	UFUNCTION() void HandleBattleTurn(const FGbBattleTurn& Turn);
 	UFUNCTION() void HandleApiError(const FString& What, int32 Status, const FString& Message);
+	UFUNCTION() void HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt);
+	/** L: open the last NEAR transaction in the browser. */
+	void OpenLastChainLink();
 
 	UPROPERTY() TObjectPtr<UGbHudWidget> Hud;
 	UPROPERTY() TObjectPtr<UGbEncounterWidget> Encounter;
@@ -47,6 +50,9 @@ private:
 	/** False until the first dialog opens. */
 	bool bInputTouched = false;
 	FGbBattleStart PendingBattle;
+	/** Wild curse of each battle that just ended, for Kessa's line when its receipt arrives. */
+	TMap<FString, FString> CurseOfBattle;
+	FString LastChainUrl;
 };
 
 /** Starts polling the server and spawns the UI director when a game world begins play. */

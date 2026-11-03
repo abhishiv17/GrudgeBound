@@ -201,6 +201,24 @@ struct FGbBattleStart
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Lines;
 };
 
+/** The "chain" part of a finished battle, and GET /chain?battle=<id>: the binding or exorcism on NEAR (P2-C4). */
+USTRUCT(BlueprintType)
+struct FGbChainReceipt
+{
+	GENERATED_BODY()
+
+	/** "pending" (still writing; poll again), "done" or "failed". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Status;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Network;
+	/** NEAR account that got the talisman and points. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Account;
+	/** Token id on the items contract, e.g. "tal-7"; empty for an exorcism. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString TokenId;
+	/** Explorer link of the mint (bind) or else of the points transaction. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString ExplorerUrl;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Error;
+};
+
 /** POST /battle/turn answer. */
 USTRUCT(BlueprintType)
 struct FGbBattleTurn
@@ -219,4 +237,7 @@ struct FGbBattleTurn
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = 0;
 	/** Seed of the battle, revealed at the end so anyone can replay it. */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int64 Seed = -1;
+	/** True when the server is writing this battle to NEAR (it runs with chain keys); see Chain. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bHasChain = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
 };

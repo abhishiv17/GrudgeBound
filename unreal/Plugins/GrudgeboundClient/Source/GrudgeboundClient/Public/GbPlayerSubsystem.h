@@ -24,6 +24,12 @@ struct FGbTalisman
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") int64 Seed = -1;
 	/** Battles this talisman has won or bound a curse in. */
 	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") int32 Wins = 0;
+	/** Server battle that bound it, to match the NEAR receipt that arrives a few seconds later. */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") FString BattleId;
+	/** Token id on the items contract once minted on NEAR (e.g. "tal-7"); empty while off-chain. */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") FString ChainTokenId;
+	/** Explorer link of the mint transaction. */
+	UPROPERTY(SaveGame, BlueprintReadOnly, Category = "Grudgebound") FString ChainUrl;
 };
 
 UCLASS()
@@ -104,6 +110,9 @@ public:
 private:
 	UFUNCTION()
 	void HandleBattleTurn(const FGbBattleTurn& Turn);
+
+	UFUNCTION()
+	void HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt);
 
 	void Load();
 	void Save();

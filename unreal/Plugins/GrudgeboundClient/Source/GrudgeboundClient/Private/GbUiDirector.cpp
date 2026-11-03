@@ -58,6 +58,7 @@ void AGbUiDirector::BeginPlay()
 		Api->OnBattleStarted.AddUniqueDynamic(this, &AGbUiDirector::HandleBattleStarted);
 		Api->OnBattleTurn.AddUniqueDynamic(this, &AGbUiDirector::HandleBattleTurn);
 		Api->OnError.AddUniqueDynamic(this, &AGbUiDirector::HandleApiError);
+		Api->OnChainReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleChainReceipt);
 	}
 
 	// T opens the Talisman Case (works alongside the template's Enhanced Input mappings).
@@ -65,6 +66,7 @@ void AGbUiDirector::BeginPlay()
 	if (InputComponent)
 	{
 		InputComponent->BindKey(EKeys::T, IE_Pressed, this, &AGbUiDirector::ToggleTalismanCase);
+		InputComponent->BindKey(EKeys::L, IE_Pressed, this, &AGbUiDirector::OpenLastChainLink);
 	}
 
 	ShowScreen(EScreen::Ward);
@@ -77,6 +79,7 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 		Api->OnBattleStarted.RemoveDynamic(this, &AGbUiDirector::HandleBattleStarted);
 		Api->OnBattleTurn.RemoveDynamic(this, &AGbUiDirector::HandleBattleTurn);
 		Api->OnError.RemoveDynamic(this, &AGbUiDirector::HandleApiError);
+		Api->OnChainReceipt.RemoveDynamic(this, &AGbUiDirector::HandleChainReceipt);
 		// Leaving the level mid-battle: forget it locally; the server expires it.
 		Api->AbandonBattle();
 	}
@@ -171,8 +174,34 @@ void AGbUiDirector::SlipAway()
 
 void AGbUiDirector::HandleBattleTurn(const FGbBattleTurn& Turn)
 {
+	if (Turn.bEnded && Turn.bHasChain) CurseOfBattle.Add(Turn.BattleId, Turn.View.Wild.Name);
 	if (Current != EScreen::Battle) return;
 	Battle->ApplyTurn(Turn);
+}
+
+void AGbUiDirector::HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt)
+{
+	UGbApiSubsystem* Api = ApiOf(GetWorld());
+	if (!Api) return;
+	FString Curse;
+	CurseOfBattle.RemoveAndCopyValue(BattleId, Curse);
+	if (Curse.IsEmpty()) Curse = TEXT("Your curse");
+	if (Receipt.Status != TEXT("done"))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Grudgebound: NEAR write for battle %s failed: %s"), *BattleId, *Receipt.Error);
+		Api->SayAsKessa(TEXT("Kessa: The ledger would not take it this time. Your talisman stays in your case."));
+		return;
+	}
+	LastChainUrl = Receipt.ExplorerUrl;
+	UE_LOG(LogTemp, Log, TEXT("Grudgebound: battle %s on NEAR %s: %s"), *BattleId, *Receipt.Network, *Receipt.ExplorerUrl);
+	Api->SayAsKessa(Receipt.TokenId.IsEmpty()
+		? FString::Printf(TEXT("Kessa: The Rite has written your points on NEAR %s. (L to see it)"), *Receipt.Network)
+		: FString::Printf(TEXT("Kessa: %s is sealed on NEAR %s as %s. (L to see it)"), *Curse, *Receipt.Network, *Receipt.TokenId));
+}
+
+void AGbUiDirector::OpenLastChainLink()
+{
+	if (!LastChainUrl.IsEmpty()) FPlatformProcess::LaunchURL(*LastChainUrl, nullptr, nullptr);
 }
 
 void AGbUiDirector::BackToWard()

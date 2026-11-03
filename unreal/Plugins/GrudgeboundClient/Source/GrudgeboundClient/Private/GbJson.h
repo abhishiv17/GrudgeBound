@@ -22,11 +22,12 @@ namespace GbJson
 	FGbBattleView BattleView(const TSharedPtr<FJsonObject>& O);
 	FGbBattleStart BattleStart(const TSharedPtr<FJsonObject>& O);
 	FGbBattleTurn BattleTurn(const TSharedPtr<FJsonObject>& O);
+	FGbChainReceipt ChainReceipt(const TSharedPtr<FJsonObject>& O);
 
 	EGbOutcome Outcome(const FString& Text);
 
-	/** {"ward":..,"playerCurse":..,"by":..} */
-	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By);
+	/** {"ward":..,"playerCurse":..,"by":..,"account":..} (empty fields left out) */
+	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account = FString());
 	/** {"battleId":..,"action":{"kind":..}} */
 	FString TurnBody(const FString& BattleId, EGbAction Action);
 }

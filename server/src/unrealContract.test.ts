@@ -7,6 +7,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { createWorld, summarize } from "@grudgebound/shared";
 import { BattleSessions, curseCatalog, type StartAnswer, type TurnAnswer } from "./battles";
+import { ChainWriter, type BattleRecord } from "./chain";
 
 const VIEW = ["turn", "outcome", "player", "wild", "items", "chances", "canUse"];
 const SIDE = ["speciesId", "name", "emotion", "omen", "hp", "maxHp"];
@@ -88,5 +89,28 @@ describe("Unreal client contract", () => {
       }
     }
     assert.fail("battle never ended");
+  });
+
+  test("the chain receipt (turn.chain and GET /chain?battle=) has what GbJson::ChainReceipt reads", async () => {
+    const w = new ChainWriter(
+      { network: "testnet", itemsContract: "items.t", riteContract: "rite.t", guestAccount: "guest.t" },
+      async (_c, method) => {
+        await new Promise((res) => setTimeout(res, 5));
+        return { hash: "h", result: method === "mint_talisman" ? "tal-1" : null };
+      },
+    );
+    const r: BattleRecord = {
+      battleId: "b", account: "guest.t", outcome: "bound", points: 5, seed: 1, actions: [{ kind: "seal" }],
+      wild: { speciesId: "hushmoth", emotion: "dread", omen: "whisper" }, playerCurse: "cinder-grin",
+    };
+    const pending = await w.record(r);
+    hasKeys(pending, ["status", "network", "account", "txs"], "chain (pending)");
+    assert.equal(pending.status, "pending", "the last turn answers before the chain does; Unreal polls on \"pending\"");
+    await new Promise((res) => setTimeout(res, 50));
+    const done = w.receipt("b")!;
+    assert.equal(done.status, "done");
+    hasKeys(done, ["tokenId"], "chain (done)");
+    for (const tx of done.txs) hasKeys(tx, ["kind", "url"], "chain.txs[]");
+    assert.ok(done.txs.some((t) => t.kind === "mint"), "Unreal shows the mint link");
   });
 });

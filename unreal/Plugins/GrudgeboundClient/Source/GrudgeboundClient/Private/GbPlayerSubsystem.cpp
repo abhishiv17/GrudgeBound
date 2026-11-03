@@ -18,6 +18,7 @@ void UGbPlayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	if (Api)
 	{
 		Api->OnBattleTurn.AddDynamic(this, &UGbPlayerSubsystem::HandleBattleTurn);
+		Api->OnChainReceipt.AddDynamic(this, &UGbPlayerSubsystem::HandleChainReceipt);
 	}
 }
 
@@ -162,6 +163,7 @@ void UGbPlayerSubsystem::HandleBattleTurn(const FGbBattleTurn& Turn)
 		NewTalisman.SpeciesId = Turn.View.Wild.SpeciesId;
 		NewTalisman.Omen = Turn.View.Wild.Omen;
 		NewTalisman.Seed = Turn.Seed;
+		NewTalisman.BattleId = Turn.BattleId;
 		if (const UGameInstance* GI = GetGameInstance())
 		{
 			if (const UGbApiSubsystem* Api = GI->GetSubsystem<UGbApiSubsystem>())
@@ -174,4 +176,19 @@ void UGbPlayerSubsystem::HandleBattleTurn(const FGbBattleTurn& Turn)
 
 	Save();
 	if (bBound) OnTalismanBound.Broadcast(NewTalisman);
+}
+
+void UGbPlayerSubsystem::HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt)
+{
+	if (!Data || Receipt.Status != TEXT("done") || Receipt.TokenId.IsEmpty()) return;
+	for (FGbTalisman& T : Data->Talismans)
+	{
+		if (T.BattleId == BattleId)
+		{
+			T.ChainTokenId = Receipt.TokenId;
+			T.ChainUrl = Receipt.ExplorerUrl;
+			Save();
+			return;
+		}
+	}
 }

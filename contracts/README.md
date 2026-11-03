@@ -46,6 +46,8 @@ cargo test
 | `items.grudgebound.testnet` | `items` contract | 2.5 NEAR |
 | `rite.grudgebound.testnet` | `rite` contract | 2.5 NEAR |
 | `relayer.grudgebound.testnet` | Pays players' gas (P2-C3) | 2 NEAR |
+| `afreen.grudgebound.testnet` | Player (Unreal laptop: Project Settings > Grudgebound > Player Account) | 0.2 NEAR |
+| `akshay.grudgebound.testnet` | Player (web client: `NEXT_PUBLIC_PLAYER_ACCOUNT`) | 0.2 NEAR |
 
 Look them up on https://testnet.nearblocks.io (e.g. `/address/items.grudgebound.testnet`).
 Keys live in `%USERPROFILE%\.near-credentials\testnet` on the laptop that created them, never in the repo.
