@@ -34,9 +34,9 @@ The lead (Abhishek) decides every submission field and approves anything public:
 |---|---|---|---|---|
 | [0. Foundation](#phase-0--foundation) | 1 Nov | Repo, engine, simulator, agent loop, first client | none | ✅ |
 | [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | ✅ |
-| [2. On testnet](#phase-2--on-testnet) | 5-7 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | 🟡 started 4 Nov |
-| [3. Accounts, agents, live world](#phase-3--accounts-agents-live-world) | 7-10 Nov | Email sign-in, agents with wallets, Observatory | G3 · 10 Nov (feature freeze) | ⬜ |
-| [4. Polish, hosting, video](#phase-4--polish-hosting-video) | 11-12 Nov | Hosted demo, recorded video, fresh-clone test | G4 · 12 Nov | ⬜ |
+| [2. On testnet](#phase-2--on-testnet) | 4-5 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | ✅ G2 passed 5 Nov (Rite panel check in Unreal left) |
+| [3. Accounts, agents, live world](#phase-3--accounts-agents-live-world) | 5-8 Nov | Email sign-in (from Unreal too), agents with wallets, vows, Observatory | G3 · 8 Nov (feature freeze) | 🟡 started 5 Nov |
+| [4. Look, story, hosting, video](#phase-4--look-story-hosting-video) | 6-12 Nov (starts alongside Phase 3) | Unreal looks like a real game and tells a story; hosted server, packaged build, video | G4 · 12 Nov | ⬜ |
 | [5. Ship](#phase-5--ship) | 13-14 Nov | Repo public, X post, submission | G5 · 14 Nov 12:00 UTC | ⬜ |
 
 ## The demo we are building towards (3 minutes)
@@ -150,10 +150,10 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 ## Phase 3 · Accounts, agents, live world
 
-**7-10 Nov · Gate G3 on 10 Nov = feature freeze.** After G3: only fixes, art and text.
+**5-8 Nov · Gate G3 on 8 Nov = feature freeze** (pulled forward from 10 Nov on 5 Nov). After G3: no new systems; the look, story text, sound and fixes (Phase 4) carry on.
 
 **G3 is done when:**
-- [ ] A new player signs in with an email and plays without seeing a wallet.
+- [ ] A new player signs in with an email and plays without seeing a wallet, in the Unreal client.
 - [ ] AI agents trade and propose rules through their own NEAR accounts.
 - [ ] The Observatory shows Grudge, prices and rules over time.
 - [ ] Vows are sworn and settled by the `rite` contract.
@@ -171,17 +171,23 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P3-A1 | Must | Agents act through their own accounts, guardrail on every action | A | | ⬜ |
 | P3-A2 | Must | Observatory page: Grudge, prices and rules over time, plus fast-forward | A | | ⬜ |
 | P3-A3 | Should | Rival dialogue lines from NEAR AI, shown by Kessa | A | | ⬜ |
+| P3-U1 | Must | Sign-in from Unreal: the game opens the browser at our sign-in page and gets the session back (local callback), then plays as that account; no account settings in Project Settings | G | | ⬜ |
+| P3-U2 | Must | Chain words out of the game UI: "Sealed in the Rite's ledger" with a seal icon; L / the icon opens the explorer (the proof stays one key away, "players never notice the chain") | G | | ⬜ |
+| P3-U3 | Must | Unreal project in the repo: `.uproject`, `Source`, `Config`, `Content/Grudgebound` (Git LFS); template content from each developer's own engine (`setup-project.ps1 -TemplateContent`) | G | | ✅ 5 Nov |
 
 ---
 
-## Phase 4 · Polish, hosting, video
+## Phase 4 · Look, story, hosting, video
 
-**11-12 Nov · Gate G4 on 12 Nov.**
+**6-12 Nov · Gate G4 on 12 Nov.** The look and story start on 6 Nov, alongside Phase 3; hosting, the packaged build and the video take 11-12 Nov.
 
 **G4 is done when:**
 - [ ] Client and server are hosted, and stay up until 25 Nov.
 - [ ] The 3-minute video is recorded from the hosted build.
 - [ ] Someone clones the repo on a second machine and runs it by following the README alone.
+- [ ] Unreal: a new player gets the intro, an objective on screen, and Chapters 1-3 on the demo seed.
+- [ ] Unreal: the Ward, the panels and the battle look like the concept art (CC0 assets, listed in the README).
+- [ ] A packaged Windows build on a GitHub Release plays against the hosted server.
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
@@ -191,6 +197,15 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P4-G2 | Should | Sound, phone controls, transitions | G | | ⬜ |
 | P4-A1 | Must | README for judges: "do X, see Y" steps, Q-005 disclosures, NEAR features used | A | | ⬜ |
 | P4-A2 | Must | Draft the X post: problem first, one full moment, NEAR's role, tags @NEARProtocol #NEARHackathon | A | | ⬜ |
+| P4-U1 | Must | Story script: the player is a newcomer in debt whom Kessa takes in as a binder; the Rite, the Grudge and the four rivals (Vane, Silk, Fen, Rook-Ash) each get a face, a want and lines. Written first, reviewed by the lead | G | | ⬜ |
+| P4-U2 | Must | Intro: 3-4 illustrated paper panels before the Ward (skippable) | G | | ⬜ |
+| P4-U3 | Must | Chapters driven by the world's real events (demo seed 2): 1 Arrival (first bind, Kessa explains Grudge), 2 The Broker's Debt (day 3 bankruptcy, The Shuttered), 3 The Calamity (day 4; pass a rule, swear a vow or fight); objective line in the HUD | G | | ⬜ |
+| P4-U4 | Must | Night-market Ward from CC0 packs (Quaternius, Kenney, Poly Pizza): stalls, lanterns, banners, water, tall grass; lantern lighting, fog, colour grade; fits the 4 GB GPU | G | | ⬜ |
+| P4-U5 | Must | Panels in the paper-and-ink style of the concept art: paper textures, ink frames, a pixel/brush font, open and close animations (HUD, Rite, shop, case, battle) | G | | ⬜ |
+| P4-U6 | Should | Battle staging: camera framing, the two curses on screen, hit flashes, the seal animation | G | | ⬜ |
+| P4-U7 | Should | Sound: footsteps, grass rustle, battle hits, seal, UI clicks, a night-market loop (CC0) | G | | ⬜ |
+| P4-U8 | Must | Packaged Windows build (Shipping) on a GitHub Release, pointed at the hosted server | G | | ⬜ |
+| P4-U9 | Should | Web client: title offers "Enter Hollowmere" (online) and "Practice run" (offline, nothing kept) | G | | ⬜ |
 
 ---
 
@@ -231,8 +246,11 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | Too many Wards for 14 days | Lantern only, Tide second, the rest locked | 9 Nov | open |
 | Judges' AI screening can't run the project (Q-017) | Fresh-clone test; every README step is "do X, see Y" | 12 Nov | open |
 | Hosted demo down during judging | Local run steps in the README; check the host daily until 25 Nov | 11 Nov | open |
-| Unreal client not at parity in time (new engine, one laptop) | Web client stays working and is the NEAR entry; decide on 6 Nov | 6 Nov | open |
-| Judges can't build an Unreal project | Packaged Windows build on a GitHub Release + demo video; web client runs from the README | 12 Nov | open |
+| Unreal client not at parity in time (new engine, one laptop) | Decided 5 Nov: Unreal is the main client; the web client stays working as the fallback | 6 Nov | closed |
+| Judges can't build an Unreal project (and the AI screening can't either, Q-017) | Packaged Windows build on a GitHub Release (P4-U8) + demo video; web client, `npm test`, `npm run sim` and `npm run replay` run from the README | 12 Nov | open |
+| The Unreal build is online-only: if the hosted server is down, it can't play | Host until 25 Nov and check daily; the video shows the full loop; the web client's practice run works with no server | 11 Nov | open |
+| Email sign-in from inside Unreal (browser hand-off) takes too long | Same fallback as the web: a guest account the server makes, kept on the PC; no wallet words | 7 Nov | open |
+| An asset pack's licence doesn't allow a public repo | CC0 or our own assets only; every pack and its licence listed in the README | ongoing | open |
 | Unreal assets fill the Git LFS quota, or two people edit one map | No Starter Content; commit at milestones only; announce or `git lfs lock` before editing a map/Blueprint | ongoing | open |
 
 ## Open questions
@@ -258,6 +276,13 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 5 Nov | Phase 3 pulled forward: G3 and the feature freeze on 8 Nov (was 10 Nov); Phase 4 (look, story) starts 6 Nov alongside it | Leaves 4 days for the Unreal look, story, packaging and video instead of 2 |
+| 5 Nov | Story: the player is a newcomer in debt whom Kessa takes in as a binder; three chapters trigger on the world's real events (demo seed 2: bankruptcy day 3, Calamity day 4, rule war day 5), with an objective line in the HUD | The loop worked but the game had no reason to play; the simulation already writes the drama, so the story frames it instead of adding systems |
+| 5 Nov | Chain words stay out of the game UI ("Sealed in the Rite's ledger" + seal icon); the explorer link is one key away | Track bonus: "players never notice the chain"; the video still shows the proof |
+| 5 Nov | Modes: the Unreal client is online-only, against the hosted server; the web client keeps its offline town as a labelled "Practice run" | Offline Unreal would need the battle engine in C++ or a bundled Node server; the web practice run covers judges with no server |
+| 5 Nov | Art for the public repo: CC0 or our own assets only (Quaternius, Kenney, Poly Pizza), each listed in the README; no Fab/Megascans | The repo goes public on 14 Nov and Fab assets can't be redistributed; low-poly CC0 suits the paper-lantern style and the 4 GB GPU |
+| 5 Nov | The Unreal project is committed: `.uproject`, `Source`, `Config`, `Content/Grudgebound` through Git LFS; the Top Down template's content comes from each developer's own engine (`setup-project.ps1 -TemplateContent`) | Judges and teammates can see the level and setup; the project no longer lives on one laptop; Epic template content stays out of the public repo |
+| 5 Nov | Unreal is the main client (video and players), decided a day early; the web client stays working as the fallback and the path the AI screening can run, without visual polish | Lead's choice after reading the live rules: any engine is allowed, a local demo is fine with a video (Q-012), screening doesn't decide (Q-017) |
 | 2 Nov | Unreal client code lives in a plugin (`unreal/Plugins/GrudgeboundClient`) with its UI built in C++ | Written before the engine was installed, without touching template files; works with no widget assets; Blueprint widgets can replace the screens in the art pass |
 | 2 Nov | Pin Unreal Engine 5.8 and Visual Studio Community 2026; Lumen, Nanite and virtual shadow maps off | Newest 5.x, out since June with hotfixes; VS 2026 is Epic's pick for 5.8; the build laptop's GPU has 4 GB |
 | 2 Nov | Game client moves to Unreal Engine 5 (built on a teammate's RTX 3050 laptop); server, shared, agents and contracts unchanged; web client kept as fallback until the Unreal loop works | Team choice for a richer game; the fallback protects the NEAR deadline |
@@ -277,6 +302,7 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
+| 5 Nov | Unreal project committed (Git LFS, template content kept out); decisions on Unreal, story, modes, assets; Phase 3 to 8 Nov and Phase 4 look-and-story tasks | | branch `client/P1-U1-unreal-client` |
 | 3 Nov | First Unreal build on UE 5.8.4: project created, plugin compiles (2 fixes), LanternWard level script; walk, encounter, battle and bind work in the editor | | branch `client/P1-U1-unreal-client` |
 | 2 Nov | Unreal client plugin (API subsystem, Lantern Ward greybox, tall grass, HUD, encounter, battle screen, Talisman Case), `GET /curses`, Unreal contract test, `setup-project.ps1`, UE 5.8 + VS 2026 pinned; 44 tests | | branch `client/P1-U1-unreal-client` |
 | 1 Nov | Server-run battles (`/battle/start`, `/battle/turn`) for the Unreal client; encounter roll and battle log text moved to `shared/`; 40 tests | | |

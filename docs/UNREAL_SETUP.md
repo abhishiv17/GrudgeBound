@@ -35,22 +35,24 @@ The build laptop (HP Victus 15, i5-12450H, 16 GB, RTX 3050 4 GB, 512 GB NVMe) wa
 4. **Node.js 20+** (nodejs.org) and **Git** with **Git LFS** (`git lfs install` once).
 5. Clone the repo, then in the repo folder: `npm install`.
 
-## 3. Create the project (only one person does this, once)
+## 3. Open the project after cloning
 
-1. Open Unreal > *Games* > **Top Down** template (it already has click-to-walk and a camera that suits a Ward map).
-2. Project type **C++** (not Blueprint): the HTTP code for the server is C++. Target *Desktop*, quality *Scalable*,
-   Starter Content off (keeps the repo small).
-3. **Location:** the repo's `unreal` folder. **Name:** `Grudgebound`.
-   Result: `unreal/Grudgebound/Grudgebound.uproject`.
-4. Close Unreal and run, in the repo folder:
-   `powershell -ExecutionPolicy Bypass -File unreal\tools\setup-project.ps1`
-   It turns on our plugin (`unreal/Plugins/GrudgeboundClient`, see section 4) and sets the 4 GB GPU render settings.
-   Then right-click `Grudgebound.uproject` > *Generate Visual Studio project files*, and open the project again:
+The project is in the repo (since 5 Nov): `unreal/GrudgeBound` holds the `.uproject`, `Source`, `Config` and our own
+content (`Content/Grudgebound`, the Lantern Ward map). The Top Down template's content (characters, blueprints,
+~130 MB) is Epic content, so it is **not** in the public repo: you copy it from your own engine install once.
+
+1. Make a throwaway project: Unreal > *Games* > **Top Down**, **C++**, any folder outside the repo, name `GrudgeBound`.
+   Close Unreal.
+2. In the repo folder:
+   `powershell -ExecutionPolicy Bypass -File unreal\tools\setup-project.ps1 -TemplateContent <throwaway>\Content`
+   It copies the template content in (everything except `Content/Grudgebound`, which is ours), turns on our plugin
+   (`unreal/Plugins/GrudgeboundClient`, see section 4) and sets the 4 GB GPU render settings.
+3. Right-click `unreal/GrudgeBound/GrudgeBound.uproject` > *Generate Visual Studio project files*, then open it:
    Unreal asks to build the missing modules, say **Yes** (first build takes a few minutes).
-5. Check `git status`: you should see `unreal/Grudgebound/Source`, `Config`, `Content`
-   and the `.uproject`, but **not** `Binaries`, `Intermediate`, `Saved` or `DerivedDataCache` (git-ignored).
-6. Big files (`.uasset`, `.umap`, audio, textures) go through Git LFS automatically (`.gitattributes`).
-   Run `git lfs ls-files` after adding content to check.
+4. `git status` stays clean: the template content, `Binaries`, `Intermediate`, `Saved` and `DerivedDataCache` are
+   git-ignored. Only `Content/Grudgebound` is committed, through Git LFS (`.gitattributes`).
+   Put every asset we make or add under `Content/Grudgebound`, and only CC0 or our own assets (the repo is public;
+   Fab/Megascans assets can't be redistributed). List each pack in the README (Q-005).
 
 **Git LFS quota:** GitHub's free plan has a limited LFS storage and download allowance (check yours at
 *Settings > Billing*). Keep `Content/` lean: no Starter Content, no unused marketplace packs.
