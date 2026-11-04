@@ -125,26 +125,26 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 **5-7 Nov · Gate G2 on 7 Nov.** The things that decide fairness move on chain.
 
 **G2 is done when:**
-- [ ] Binding mints a talisman on testnet, visible on the explorer.
-- [ ] A rule proposal goes through the `rite` contract, and the game reads it back.
-- [ ] The relayer pays the gas; the player signs nothing visible.
+- [x] Binding mints a talisman on testnet, visible on the explorer.
+- [x] A rule proposal goes through the `rite` contract, and the game reads it back.
+- [x] The relayer pays the gas; the player signs nothing visible.
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
 | P2-C1 | Must | Testnet accounts: game master, `items`, `rite`, relayer (funded from the faucet). Done 4 Nov: see `contracts/README.md` | C | | ✅ |
 | P2-C2 | Must | Deploy `items` and `rite`; account names in `.env.example`. Done 4 Nov with cargo-near 0.22 (`--no-abi` on Windows); mint and battle smoke-tested | C | | ✅ |
 | P2-C3 | Must | Relayer endpoint in the server: signed delegate action in, gas paid by us (NEP-366). Relayer works on testnet: `relayer.grudgebound.testnet` sends players' delegate actions and pays the gas (`chain.ts` relay). For now the server signs for its demo players; an endpoint taking client-signed delegates comes with player keys (Phase 3) | C | | 🟡 |
-| P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points. Server done and checked on testnet (`server/src/chain.ts`); Unreal shows the token id, L opens the explorer. Left: see it in the editor | C | | 🟡 |
+| P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points. Server done and checked on testnet (`server/src/chain.ts`); Unreal shows the token id, L opens the explorer. Left: see it in the editor Checked 5 Nov: bound in Unreal (tal-9) and on the web (tal-11), both minted and recorded on the rite. | C | | ✅ |
 | P2-C5 | Must | Rule propose / resolve / repeal through `rite`; server reads rules in force from the contract. Done 4 Nov: `POST /rules/propose` (relayed for the player, resolved by Kessa), rules loaded on start (`server/src/rules.ts`). Seen on testnet: Afreen's R8 accepted, Akshay's contradicting R1 rejected and refunded. Repeal: `POST /rules/repeal` (relayed, twice the cost; a repealed cruel rule eases the Ward's dread), Strike row in the Rite (R); rules synced from the contract every minute. Editor check at the end of P2 | C | | ✅ |
-| P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | 🟡 EVENT_JSON read from every tx the server sends (game + relayed) into /events with explorer links; verified on testnet 4 Nov. Block indexer for outside writes: Phase 3 |
-| P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | 🟡 server + Unreal (B) built, testnet buy/sell verified; in-editor check at end of P2 |
+| P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | ✅ verified 5 Nov (contract events show in the Unreal and web feeds); block indexer for outside writes: Phase 3 |
+| P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | ✅ checked in Unreal 5 Nov: buy tal-10, sell tal-8 and tal-9, all settled on NEAR |
 | P2-G2 | Must | Rules panel sends proposals to the server and shows Kessa's verdict and the explorer link. Built 4 Nov in Unreal: R opens the Rite (rules in force, cost, your points, rule builder); Kessa's verdict at once, then "Recorded on NEAR as rule N (L to see it)". `GET /rules` feeds it. Editor check at the end of P2 | G | | 🟡 |
-| P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | 🟡 Unreal case shows NEAR tal-N and purse; in-editor check at end of P2 |
-| P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | 🟡 NPC factions now contest rules (mercenary vs zealot over PvP, one public challenge a day); ambient Grudge 0.35 -> 0.4. 43% of seeds 1-200 show all three beats (`npm run sim:seeds`). Demo seed 2: bankruptcy d3, Calamity d4 in the same Ward, rule war d5 |
-| P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | 🟡 server archives every paid battle (data/battles.jsonl); `npm run replay <seed|id>` replays it and checks the hash the rite contract logged; VERIFIED on testnet 4 Nov (seed 1499753501) |
-| P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | 🟡 web client fights through /battle/start + /battle/turn when the server is up (offline town still local); POST /battle removed; web check at end of P2 |
+| P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | ✅ checked in Unreal (NEAR tal-N and purse in the case) |
+| P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | ✅ Demo seed 2: bankruptcy d3, Calamity d4 in the same Ward, rule war d5; `npm run sim` checked 5 Nov |
+| P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | ✅ server archives every paid battle (data/battles.jsonl); `npm run replay <seed or id>` replays it and checks the hash the rite contract logged. VERIFIED on testnet: seed 1499753501 (4 Nov), 4251663236 (Unreal bind) and 4063853491 (web bind) on 5 Nov |
+| P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | ✅ checked 5 Nov: a web battle ran on the server (battle eba5d60e, tal-11 minted for the guest account); POST /battle removed |
 | P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | 🟡 server: both curfews block the fight, bind curfew refuses Seal, exorcising under curfew pays 0 and is logged; Unreal shows the warnings; in-editor check at end of P2 |
-| P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | 🟡 GET /player + items `talismans_of` view (upgraded on testnet 4 Nov); Unreal case reads it; in-editor check at end of P2 |
+| P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | ✅ GET /player + items `talismans_of`; checked in Unreal; local-only talismans hidden once the chain answers |
 
 ---
 
