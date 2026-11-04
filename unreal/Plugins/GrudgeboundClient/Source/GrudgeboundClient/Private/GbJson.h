@@ -32,6 +32,10 @@ namespace GbJson
 	FGbRuleVerdict RuleVerdict(const TSharedPtr<FJsonObject>& O);
 	/** {"account":..,"templateId":..,"params":{..}} */
 	FString ProposeBody(const FString& Account, const FString& TemplateId, const TMap<FString, FString>& Params);
+	/** POST /rules/repeal answer, as a verdict (Text = the rule, Cost = what the repeal cost, Chain.RuleId = rite id). */
+	FGbRuleVerdict Repeal(const TSharedPtr<FJsonObject>& O);
+	/** {"account":..,"ruleId":N} */
+	FString RepealBody(const FString& Account, int32 ChainRuleId);
 
 	EGbOutcome Outcome(const FString& Text);
 

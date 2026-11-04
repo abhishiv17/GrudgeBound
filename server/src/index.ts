@@ -10,7 +10,8 @@
  *                           Every battle runs here, so a client can't retry seeds or claim a rarer curse.
  *   POST /rules/propose  -> { account, templateId, params }: Kessa's verdict, then the rule goes through the rite
  *                           contract (relayed for the player, resolved by the game master); see rules.ts
- *   GET /chain?rule=ID   -> that proposal's on-chain receipt
+ *   POST /rules/repeal   -> { account, ruleId }: strikes a rule in force for twice its cost (relayed; ruleId = rite id)
+ *   GET /chain?rule=ID   -> that proposal's (or repeal's) on-chain receipt
  *   GET /rules?account=A -> rule templates (with display labels), rules in force, the cost and A's points
  *   GET /chain?battle=ID -> that battle's on-chain receipt (talisman id, tx links); without ?battle: the contracts in use
  *                           Both battle routes answer with `chain` when a binding or exorcism is written to NEAR (chain.ts)
@@ -21,7 +22,7 @@
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
  *   POST /tick           -> advance one tick now (dev only)
  *
- * Next (Phase 2-3): player sessions, relayer for meta transactions, reading active rules from the Rite contract.
+ * Next (Phase 3): player sign-in (keys held by the player), agents with their own NEAR accounts, vows.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
@@ -41,6 +42,7 @@ const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
 const SEED = Number(process.env.WORLD_SEED ?? DEMO_SEED);
 const DEV = process.env.NODE_ENV !== "production";
+const RULE_SYNC_MS = 60_000;
 
 const world = createWorld(SEED);
 const rng = createRng(SEED);
@@ -213,10 +215,10 @@ createServer((req, res) => {
     ).catch((e: Error) => send(res, 500, { error: e.message }));
     return;
   }
-  if (req.method === "POST" && url.pathname === "/rules/propose") {
+  if (req.method === "POST" && (url.pathname === "/rules/propose" || url.pathname === "/rules/repeal")) {
     if (!chainRules) return send(res, 503, { error: "rules go through the rite contract, and this server runs off-chain" });
     readJson(req).then(
-      (body) => chainRules.propose(body).then((r) => send(res, r.status, r.body)),
+      (body) => (url.pathname === "/rules/propose" ? chainRules.propose(body) : chainRules.repeal(body)).then((r) => send(res, r.status, r.body)),
       (e: Error) => send(res, 400, { error: e.message }),
     ).catch((e: Error) => send(res, 500, { error: e.message }));
     return;
@@ -229,7 +231,7 @@ createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && url.pathname === "/rules") {
-    rulesOverview(world, chain, url.searchParams.get("account")).then(
+    rulesOverview(world, chain, url.searchParams.get("account"), chainRules).then(
       (body) => send(res, 200, body),
       (e: Error) => send(res, 500, { error: e.message }),
     );
@@ -276,5 +278,11 @@ createServer((req, res) => {
     (n) => console.log(`Rules: ${n} in force on ${chainCfg?.riteContract} loaded into the world`),
     (e: Error) => console.warn(`Rules: could not read the rite contract (${e.message}); starting without chain rules`),
   );
+  // Rules passed or repealed on the contract by anyone else (another server, the CLI) reach the world within a minute.
+  if (chainRules) {
+    setInterval(() => {
+      chainRules.syncFromChain().catch((e: Error) => console.warn(`Rules: sync with the rite contract failed (${e.message})`));
+    }, RULE_SYNC_MS).unref();
+  }
   console.log(llm ? `Merchant tooltips: NEAR AI Cloud (${llm.model})` : "Merchant tooltips: formula reasons (no NEAR_AI_* settings in .env)");
 });

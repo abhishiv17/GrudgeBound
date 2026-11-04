@@ -255,7 +255,8 @@ private:
 
 /**
  * The Rite (R): rules in force, and a rule builder. Propose sends it as your Player Account; Kessa answers at
- * once, then the proposal and her verdict are written on NEAR (P2-G2).
+ * once, then the proposal and her verdict are written on NEAR (P2-G2). Repeal strikes a rule in force for twice
+ * its cost, paid from your points on NEAR (P2-C5).
  */
 UCLASS()
 class GRUDGEBOUNDCLIENT_API UGbRulesWidget : public UGbWidgetBase
@@ -279,7 +280,11 @@ private:
 	UFUNCTION() void HandleRules(const FGbRulesOverview& Rules);
 	UFUNCTION() void HandleVerdict(const FGbRuleVerdict& Verdict);
 	UFUNCTION() void HandleRuleReceipt(const FString& JobId, const FGbChainReceipt& Receipt);
+	UFUNCTION() void HandleRepealAnswer(const FGbRuleVerdict& Answer);
 	UFUNCTION() void HandleApiError(const FString& What, int32 Status, const FString& Message);
+	UFUNCTION() void HandlePrevRepeal();
+	UFUNCTION() void HandleNextRepeal();
+	UFUNCTION() void HandleRepeal();
 	UFUNCTION() void HandlePrevTemplate();
 	UFUNCTION() void HandleNextTemplate();
 	UFUNCTION() void HandlePrev0();
@@ -292,6 +297,9 @@ private:
 	UFUNCTION() void HandleClose();
 
 	void StepTemplate(int32 Delta);
+	void StepRepeal(int32 Delta);
+	/** Rules in force that live on the rite contract (only those can be repealed). */
+	TArray<const FGbActiveRule*> Repealable() const;
 	void StepParam(int32 Index, int32 Delta);
 	void Redraw();
 	void SetBusy(bool bNowBusy);
@@ -305,12 +313,19 @@ private:
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> ParamKeys;
 	UPROPERTY() TArray<TObjectPtr<UTextBlock>> ParamValues;
 	UPROPERTY() TObjectPtr<UButton> ProposeButton;
+	UPROPERTY() TObjectPtr<UWidget> RepealRow;
+	UPROPERTY() TObjectPtr<UTextBlock> RepealPick;
+	UPROPERTY() TObjectPtr<UButton> RepealButton;
+	UPROPERTY() TObjectPtr<UTextBlock> RepealLabel;
 	UPROPERTY() TObjectPtr<UTextBlock> Status;
 
 	FGbRulesOverview Data;
 	int32 TemplateIndex = 0;
+	int32 RepealIndex = 0;
 	TArray<int32> Choice;
 	FString PendingJob;
+	/** The pending job is a repeal (its receipt reads differently). */
+	bool bPendingRepeal = false;
 	bool bBusy = false;
 };
 

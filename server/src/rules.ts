@@ -5,6 +5,8 @@
  *        the player's propose_rule is relayed (their points pay), then the game master resolves it as the Arbiter.
  *        An accepted rule joins world.rules once resolved, so prices and points change for everyone.
  *   GET /chain?rule=<jobId> -> the receipt (rule id on chain, explorer links).
+ *   POST /rules/repeal { account, ruleId } -> relays the player's repeal_rule (twice the rule's cost, paid on chain);
+ *        the rule leaves world.rules once the contract has repealed it. ruleId is the rule's id on the rite contract.
  *   GET /rules?account=  -> templates with display labels, rules in force, the cost and the player's points (Rules panel).
  *
  * On start the server loads the rules in force from the contract (syncFromChain), so a restart keeps them.
@@ -12,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 import {
-  arbiterCheck, enactRule, log, paramLabel, renderRule, ruleCost, RULE_TEMPLATES, validateParams,
+  arbiterCheck, enactRule, repealRule, log, REPEAL_MULTIPLIER, paramLabel, renderRule, ruleCost, RULE_TEMPLATES, validateParams,
   type RuleParams, type World,
 } from "@grudgebound/shared";
 import { isAccountId, type ChainReceipt, type ChainRule, type ChainWriter } from "./chain";
@@ -25,6 +27,15 @@ export interface ProposeAnswer {
   /** Kessa's reason, also stored on chain with the verdict. */
   reason: string;
   /** The rule in words. */
+  text: string;
+  cost: number;
+  chain: ChainReceipt;
+}
+
+export interface RepealAnswer {
+  jobId: string;
+  /** The rule's id on the rite contract. */
+  ruleId: number;
   text: string;
   cost: number;
   chain: ChainReceipt;
@@ -51,7 +62,11 @@ export interface RulesOverview {
   /** The player's points on the rite contract; null off-chain or without an account. */
   points: number | null;
   templates: TemplateView[];
-  active: { id: number; text: string; author: string; cost: number }[];
+  /**
+   * id: the rule's number in the world (Kessa's "#N"); chainId: its id on the rite contract (null for a rule
+   * only the simulation knows), which POST /rules/repeal takes; repealCost: what striking it costs.
+   */
+  active: { id: number; chainId: number | null; text: string; author: string; cost: number; repealCost: number }[];
 }
 
 /** The hackathon's rule templates, every parameter value spelled out (a number range becomes its values). */
@@ -70,7 +85,9 @@ export function templateCatalog(): TemplateView[] {
 }
 
 /** Everything the Rules panel draws. */
-export async function rulesOverview(world: World, chain: ChainWriter | null, account: string | null): Promise<RulesOverview> {
+export async function rulesOverview(
+  world: World, chain: ChainWriter | null, account: string | null, chainRules: ChainRules | null = null,
+): Promise<RulesOverview> {
   let cost = ruleCost(world.rules.length);
   let points: number | null = null;
   if (chain) {
@@ -86,7 +103,10 @@ export async function rulesOverview(world: World, chain: ChainWriter | null, acc
     cost,
     points,
     templates: templateCatalog(),
-    active: world.rules.map((r) => ({ id: r.id, text: renderRule(r.templateId, r.params), author: r.author, cost: r.cost })),
+    active: world.rules.map((r) => ({
+      id: r.id, chainId: chainRules?.chainIdOf(r.id) ?? null, text: renderRule(r.templateId, r.params),
+      author: r.author, cost: r.cost, repealCost: r.cost * REPEAL_MULTIPLIER,
+    })),
   };
 }
 
@@ -107,8 +127,10 @@ function parseParams(raw: unknown): RuleParams | null {
 }
 
 export class ChainRules {
-  /** Rite rule ids already in world.rules. */
-  private readonly enacted = new Set<number>();
+  /** Rite rule id -> world rule id, for every chain rule in world.rules. */
+  private readonly enacted = new Map<number, number>();
+  /** Rite rule ids with a repeal on its way, so the same rule isn't paid for twice. */
+  private readonly repealing = new Set<number>();
 
   constructor(
     private readonly world: World,
@@ -124,16 +146,70 @@ export class ChainRules {
     let params: RuleParams | null;
     try { params = parseParams(JSON.parse(r.params)); } catch { params = null; }
     if (!params || validateParams(r.template_id, params).length) return false;
-    this.enacted.add(r.id);
-    enactRule(this.world, { author: r.author, authorName: displayName(r.author), templateId: r.template_id, params, cost: r.cost });
+    const rule = enactRule(this.world, { author: r.author, authorName: displayName(r.author), templateId: r.template_id, params, cost: r.cost });
+    this.enacted.set(r.id, rule.id);
     return true;
   }
 
-  /** Loads the rules in force from the rite contract. */
+  /** The rite contract's id for a world rule, or null when the rule came from the simulation. */
+  chainIdOf(worldRuleId: number): number | null {
+    for (const [chainId, worldId] of this.enacted) if (worldId === worldRuleId) return chainId;
+    return null;
+  }
+
+  /** Takes a repealed chain rule out of the world, once. */
+  private strike(chainId: number, by: string, cost: number): boolean {
+    const worldId = this.enacted.get(chainId);
+    if (worldId === undefined) return false;
+    this.enacted.delete(chainId);
+    return repealRule(this.world, worldId, { by, byName: displayName(by), cost }) !== null;
+  }
+
+  /**
+   * Matches world.rules to the rules in force on the rite contract: adds new ones, and strikes ones that were
+   * repealed there by someone else. Returns how many were added.
+   */
   async syncFromChain(): Promise<number> {
+    const onChain = await this.chain.activeRules();
     let n = 0;
-    for (const r of await this.chain.activeRules()) if (this.enact(r)) n++;
+    for (const r of onChain) if (this.enact(r)) n++;
+    const live = new Set(onChain.map((r) => r.id));
+    for (const chainId of [...this.enacted.keys()]) {
+      if (!live.has(chainId) && !this.repealing.has(chainId)) this.strike(chainId, "the Rite", 0);
+    }
     return n;
+  }
+
+  async repeal(body: unknown): Promise<Answer<RepealAnswer>> {
+    const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const account = b.account;
+    if (!isAccountId(account)) return fail(400, "account must be a NEAR account id");
+    if (!this.canSignFor(account)) return fail(403, `the server can't sign for ${account} (only its demo players until email sign-in)`);
+    const ruleId = typeof b.ruleId === "string" && b.ruleId.trim() !== "" ? Number(b.ruleId) : b.ruleId;
+    if (typeof ruleId !== "number" || !Number.isInteger(ruleId) || ruleId < 0) return fail(400, "ruleId must be the rule's id on the rite contract");
+    const worldId = this.enacted.get(ruleId);
+    const rule = worldId === undefined ? undefined : this.world.rules.find((r) => r.id === worldId);
+    if (!rule) return fail(404, `rule ${ruleId} is not in force`);
+    if (this.repealing.has(ruleId)) return fail(409, `rule ${ruleId} is already being repealed`);
+    const cost = rule.cost * REPEAL_MULTIPLIER;
+
+    let points: number;
+    try {
+      points = await this.chain.points(account);
+    } catch (e) {
+      return fail(502, `could not read the rite contract: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (points < cost) return fail(402, `Repealing rule #${rule.id} costs ${cost} points; ${displayName(account)} has ${points}.`);
+
+    const text = renderRule(rule.templateId, rule.params);
+    const jobId = randomUUID();
+    this.repealing.add(ruleId);
+    const chain = await this.chain.repealRule(
+      { jobId, account, ruleId },
+      () => { this.repealing.delete(ruleId); this.strike(ruleId, account, cost); },
+      () => { this.repealing.delete(ruleId); }, // the rule stays in force; the player may try again
+    );
+    return { status: 200, body: { jobId, ruleId, text, cost, chain } };
   }
 
   async propose(body: unknown): Promise<Answer<ProposeAnswer>> {

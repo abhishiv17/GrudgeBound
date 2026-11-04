@@ -400,6 +400,30 @@ void UGbApiSubsystem::ProposeRule(const FString& TemplateId, const TMap<FString,
 	});
 }
 
+void UGbApiSubsystem::RepealRule(int32 ChainRuleId)
+{
+	const FString Account = GetDefault<UGbSettings>()->PlayerAccount;
+	if (Account.TrimStartAndEnd().IsEmpty())
+	{
+		OnError.Broadcast(TEXT("rules/repeal"), 400, TEXT("Set Project Settings > Grudgebound > Player Account first."));
+		return;
+	}
+	Send(TEXT("POST"), TEXT("/rules/repeal"), GbJson::RepealBody(Account, ChainRuleId), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			if (Status == 0) SetOnline(false);
+			OnError.Broadcast(TEXT("rules/repeal"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		const FGbRuleVerdict V = GbJson::Repeal(O);
+		OnRuleRepeal.Broadcast(V);
+		if (V.Chain.Status == TEXT("pending")) PollChain(TEXT("rule"), V.JobId, 40);
+		else OnRuleReceipt.Broadcast(V.JobId, V.Chain);
+	});
+}
+
 void UGbApiSubsystem::AbandonBattle()
 {
 	BattleId.Reset();

@@ -947,10 +947,29 @@ void UGbRulesWidget::BuildTree()
 	ActiveScroll->AddChild(ActiveList);
 	AddRow(Col, Sized(ActiveScroll, 0.f, 120.f));
 
-	AddRow(Col, MakeText(TEXT("Propose a rule"), 14, C::Ink, true), 10.f);
-
 	UTextBlock* Ignored = nullptr;
 	auto Arrow = [this, &Ignored](const TCHAR* Label) { return MakeButton(Label, Ignored, C::Stone); };
+
+	// Repeal row: Strike  < #3 >  [Repeal (100 pts)]
+	UHorizontalBox* Strike = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	UButton* PrevR = Arrow(TEXT("<"));
+	UButton* NextR = Arrow(TEXT(">"));
+	PrevR->OnClicked.AddDynamic(this, &UGbRulesWidget::HandlePrevRepeal);
+	NextR->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleNextRepeal);
+	AddCol(Strike, Sized(MakeText(TEXT("Strike"), 13, Dim()), 60.f, 0.f), false);
+	AddCol(Strike, Sized(PrevR, 36.f, 32.f), false, 4.f);
+	RepealPick = MakeText(TEXT("-"), 14, C::Ink, true);
+	AddCol(Strike, Sized(RepealPick, 60.f, 0.f), false, 4.f);
+	AddCol(Strike, Sized(NextR, 36.f, 32.f), false, 8.f);
+	UTextBlock* RepealText = nullptr;
+	RepealButton = MakeButton(TEXT("Repeal"), RepealText, C::Stone);
+	RepealLabel = RepealText;
+	RepealButton->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleRepeal);
+	AddCol(Strike, Sized(RepealButton, 200.f, 32.f), false);
+	RepealRow = Strike;
+	AddRow(Col, Strike, 4.f);
+
+	AddRow(Col, MakeText(TEXT("Propose a rule"), 14, C::Ink, true), 10.f);
 
 	// Template row: < R8 >
 	UHorizontalBox* TemplateRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
@@ -1019,6 +1038,7 @@ void UGbRulesWidget::NativeConstruct()
 		A->OnRules.AddUniqueDynamic(this, &UGbRulesWidget::HandleRules);
 		A->OnRuleVerdict.AddUniqueDynamic(this, &UGbRulesWidget::HandleVerdict);
 		A->OnRuleReceipt.AddUniqueDynamic(this, &UGbRulesWidget::HandleRuleReceipt);
+		A->OnRuleRepeal.AddUniqueDynamic(this, &UGbRulesWidget::HandleRepealAnswer);
 		A->OnError.AddUniqueDynamic(this, &UGbRulesWidget::HandleApiError);
 	}
 }
@@ -1030,6 +1050,7 @@ void UGbRulesWidget::NativeDestruct()
 		A->OnRules.RemoveDynamic(this, &UGbRulesWidget::HandleRules);
 		A->OnRuleVerdict.RemoveDynamic(this, &UGbRulesWidget::HandleVerdict);
 		A->OnRuleReceipt.RemoveDynamic(this, &UGbRulesWidget::HandleRuleReceipt);
+		A->OnRuleRepeal.RemoveDynamic(this, &UGbRulesWidget::HandleRepealAnswer);
 		A->OnError.RemoveDynamic(this, &UGbRulesWidget::HandleApiError);
 	}
 	Super::NativeDestruct();
@@ -1043,6 +1064,13 @@ void UGbRulesWidget::Open()
 const FGbRuleTemplate* UGbRulesWidget::Current() const
 {
 	return Data.Templates.IsValidIndex(TemplateIndex) ? &Data.Templates[TemplateIndex] : nullptr;
+}
+
+TArray<const FGbActiveRule*> UGbRulesWidget::Repealable() const
+{
+	TArray<const FGbActiveRule*> Out;
+	for (const FGbActiveRule& R : Data.Active) if (R.ChainId >= 0) Out.Add(&R);
+	return Out;
 }
 
 void UGbRulesWidget::HandleRules(const FGbRulesOverview& Rules)
@@ -1100,6 +1128,46 @@ void UGbRulesWidget::Redraw()
 	if (T && T->bCruel) Text += TEXT("   (cruel: angers the Ward)");
 	Preview->SetText(FText::FromString(Text));
 	ProposeButton->SetIsEnabled(!bBusy && T && Data.bChain);
+
+	const TArray<const FGbActiveRule*> Strikable = Repealable();
+	RepealRow->SetVisibility(Data.bChain && Strikable.Num() > 0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Strikable.Num() > 0)
+	{
+		RepealIndex = FMath::Clamp(RepealIndex, 0, Strikable.Num() - 1);
+		const FGbActiveRule* R = Strikable[RepealIndex];
+		RepealPick->SetText(FText::FromString(FString::Printf(TEXT("#%d"), R->Id)));
+		RepealLabel->SetText(FText::FromString(FString::Printf(TEXT("Repeal (%d pts)"), R->RepealCost)));
+		const bool bAfford = Data.Points < 0 || Data.Points >= R->RepealCost;
+		RepealButton->SetIsEnabled(!bBusy && bAfford);
+	}
+}
+
+void UGbRulesWidget::StepRepeal(int32 Delta)
+{
+	const int32 N = Repealable().Num();
+	if (bBusy || N == 0) return;
+	RepealIndex = (RepealIndex + Delta + N) % N;
+	Redraw();
+}
+
+void UGbRulesWidget::HandleRepeal()
+{
+	const TArray<const FGbActiveRule*> Strikable = Repealable();
+	UGbApiSubsystem* A = Api();
+	if (bBusy || !A || !Strikable.IsValidIndex(RepealIndex)) return;
+	const FGbActiveRule* R = Strikable[RepealIndex];
+	PendingJob.Reset();
+	bPendingRepeal = true;
+	Status->SetText(FText::FromString(FString::Printf(TEXT("Asking the Rite to strike #%d..."), R->Id)));
+	SetBusy(true);
+	A->RepealRule(R->ChainId);
+}
+
+void UGbRulesWidget::HandleRepealAnswer(const FGbRuleVerdict& Answer)
+{
+	PendingJob = Answer.JobId;
+	bPendingRepeal = true;
+	Status->SetText(FText::FromString(FString::Printf(TEXT("Kessa: \"%s\" will be struck for %d points. Writing it on NEAR..."), *Answer.Text, Answer.Cost)));
 }
 
 void UGbRulesWidget::StepTemplate(int32 Delta)
@@ -1138,6 +1206,7 @@ void UGbRulesWidget::HandlePropose()
 		if (P.Options.IsValidIndex(Choice[i])) Params.Add(P.Key, P.Options[Choice[i]].Value);
 	}
 	PendingJob.Reset();
+	bPendingRepeal = false;
 	Status->SetText(FText::FromString(TEXT("Kessa is reading your rule...")));
 	SetBusy(true);
 	A->ProposeRule(T->Id, Params);
@@ -1155,6 +1224,16 @@ void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainRecei
 {
 	if (JobId != PendingJob) return;
 	PendingJob.Reset();
+	if (bPendingRepeal)
+	{
+		bPendingRepeal = false;
+		Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
+			? FString::Printf(TEXT("Struck from the Rite on NEAR %s (rule %d is repealed). (L to see it)"), *Receipt.Network, Receipt.RuleId)
+			: FString::Printf(TEXT("The ledger refused the repeal: %s"), *Receipt.Error)));
+		SetBusy(false);
+		Open();
+		return;
+	}
 	const FString Was = Status->GetText().ToString().Replace(TEXT("Writing it into the Rite on NEAR..."), TEXT("")).Replace(TEXT("Writing her verdict on NEAR"), TEXT("On NEAR"));
 	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
 		? FString::Printf(TEXT("%s  Recorded on NEAR %s as rule %d. (L to see it)"), *Was, *Receipt.Network, Receipt.RuleId)
@@ -1165,8 +1244,9 @@ void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainRecei
 
 void UGbRulesWidget::HandleApiError(const FString& What, int32 StatusCode, const FString& Message)
 {
-	if (What == TEXT("rules/propose"))
+	if (What == TEXT("rules/propose") || What == TEXT("rules/repeal"))
 	{
+		bPendingRepeal = false;
 		Status->SetText(FText::FromString(FString::Printf(TEXT("Kessa: %s"), *Message)));
 		SetBusy(false);
 	}
@@ -1176,6 +1256,8 @@ void UGbRulesWidget::HandleApiError(const FString& What, int32 StatusCode, const
 	}
 }
 
+void UGbRulesWidget::HandlePrevRepeal() { StepRepeal(-1); }
+void UGbRulesWidget::HandleNextRepeal() { StepRepeal(1); }
 void UGbRulesWidget::HandlePrevTemplate() { StepTemplate(-1); }
 void UGbRulesWidget::HandleNextTemplate() { StepTemplate(1); }
 void UGbRulesWidget::HandlePrev0() { StepParam(0, -1); }

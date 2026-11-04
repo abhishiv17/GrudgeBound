@@ -364,10 +364,15 @@ struct FGbActiveRule
 {
 	GENERATED_BODY()
 
+	/** Kessa's "#N" (the rule's number in the world). */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Id = 0;
+	/** The rule's id on the rite contract (what RepealRule takes); -1 for a rule only the simulation knows. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 ChainId = -1;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Author;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Cost = 0;
+	/** What striking it costs (twice its cost). */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 RepealCost = 0;
 };
 
 /** GET /rules?account=: everything the Rules panel draws. */

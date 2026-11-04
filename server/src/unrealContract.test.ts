@@ -5,7 +5,7 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { createWorld, summarize } from "@grudgebound/shared";
+import { createWorld, enactRule, summarize } from "@grudgebound/shared";
 import { BattleSessions, curseCatalog, type StartAnswer, type TurnAnswer } from "./battles";
 import { ChainWriter, type BattleRecord } from "./chain";
 import { rulesOverview } from "./rules";
@@ -118,8 +118,11 @@ describe("Unreal client contract", () => {
   });
 
   test("GET /rules has what GbJson::RulesOverview reads", async () => {
-    const o = await rulesOverview(createWorld(7), null, null);
+    const world = createWorld(7);
+    enactRule(world, { author: "a.gb.t", authorName: "A", templateId: "R8", params: { ward: "lantern" }, cost: 50 });
+    const o = await rulesOverview(world, null, null);
     hasKeys(o, ["chain", "cost", "points", "templates", "active"], "rules");
+    for (const r of o.active) hasKeys(r, ["id", "chainId", "text", "author", "cost", "repealCost"], "rules.active[]");
     for (const t of o.templates) {
       hasKeys(t, ["id", "text", "cruel", "params"], `rules.templates ${t.id}`);
       assert.ok(t.params.length <= 3, `${t.id}: the Unreal panel has 3 parameter rows`);

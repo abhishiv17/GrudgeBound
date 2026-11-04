@@ -360,6 +360,8 @@ namespace GbJson
 			Rule.Text = Str(A, TEXT("text"));
 			Rule.Author = Str(A, TEXT("author"));
 			Rule.Cost = Int(A, TEXT("cost"));
+			Rule.ChainId = Int(A, TEXT("chainId"), -1);
+			Rule.RepealCost = Int(A, TEXT("repealCost"), Rule.Cost * 2);
 			R.Active.Add(Rule);
 		}
 		return R;
@@ -443,6 +445,26 @@ namespace GbJson
 		V.Cost = Int(O, TEXT("cost"));
 		V.Chain = ChainReceipt(Obj(O, TEXT("chain")));
 		return V;
+	}
+
+	FGbRuleVerdict Repeal(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbRuleVerdict V;
+		V.JobId = Str(O, TEXT("jobId"));
+		V.bAccepted = true;
+		V.Text = Str(O, TEXT("text"));
+		V.Cost = Int(O, TEXT("cost"));
+		V.Chain = ChainReceipt(Obj(O, TEXT("chain")));
+		V.Chain.RuleId = Int(O, TEXT("ruleId"), V.Chain.RuleId);
+		return V;
+	}
+
+	FString RepealBody(const FString& Account, int32 ChainRuleId)
+	{
+		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+		O->SetStringField(TEXT("account"), Account.TrimStartAndEnd().ToLower());
+		O->SetNumberField(TEXT("ruleId"), ChainRuleId);
+		return Write(O);
 	}
 
 	FString ProposeBody(const FString& Account, const FString& TemplateId, const TMap<FString, FString>& Params)
