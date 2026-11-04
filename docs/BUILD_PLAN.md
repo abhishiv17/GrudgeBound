@@ -157,6 +157,8 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 - [ ] AI agents trade and propose rules through their own NEAR accounts.
 - [ ] The Observatory shows Grudge, prices and rules over time.
 - [ ] Vows are sworn and settled by the `rite` contract.
+- [ ] The Satchel holds talismans and supplies; binding uses up a blank talisman; supplies are bought from the Broker with Ember.
+- [ ] A talisman's ink (HP) carries over between battles and is restored by the Mender (Ember) or by resting overnight in your room (free).
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
@@ -166,7 +168,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P3-C4 | Must | Vow stake, keep and break through `rite` | C | | ⬜ |
 | P3-G1 | Must | Sign-in screen with no wallet words on it | G | | ⬜ |
 | P3-G2 | Must | Vow Shrine swears real vows and shows the stake | G | | ⬜ |
-| P3-G3 | Should | Tide Ward map using the tide art set | G | | ⬜ |
+| P3-G3 | Should | Tide Ward map using the tide art set. Moved 5 Nov: becomes P4-U11 in Unreal | G | | ➡️ P4-U11 |
 | P3-G4 | Should | New player sprite (not the porcelain one, it looks like Link) | G | | ⬜ |
 | P3-A1 | Must | Agents act through their own accounts, guardrail on every action | A | | ⬜ |
 | P3-A2 | Must | Observatory page: Grudge, prices and rules over time, plus fast-forward | A | | ⬜ |
@@ -174,6 +176,11 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P3-U1 | Must | Sign-in from Unreal: the game opens the browser at our sign-in page and gets the session back (local callback), then plays as that account; no account settings in Project Settings | G | | ⬜ |
 | P3-U2 | Must | Chain words out of the game UI: "Sealed in the Rite's ledger" with a seal icon; L / the icon opens the explorer (the proof stays one key away, "players never notice the chain") | G | | ⬜ |
 | P3-U3 | Must | Unreal project in the repo: `.uproject`, `Source`, `Config`, `Content/Grudgebound` (Git LFS); template content from each developer's own engine (`setup-project.ps1 -TemplateContent`) | G | | ✅ 5 Nov |
+| P3-C5 | Must | Satchel on the server, kept per player: carried talismans (up to 5; the rest wait in the Case in your room), supplies (blank talisman, gilded talisman, Ink Salve), keepsakes (story items). Binding uses up a blank talisman; `GET /satchel` | C | | ⬜ |
+| P3-C6 | Must | Broker sells supplies for Ember at prices from `pricing.ts` (scarcity, demand, fear), with the merchant's reasoning in a tooltip; agents buy from the same stock, so a run on blank talismans raises the price for everyone | C | | ⬜ |
+| P3-C7 | Should | Supplies are NEP-245 fungible tokens in `items` beside Ember and the talismans (one contract holds all three kinds); fallback: the server keeps supplies and only the Ember spent goes on chain | C | | ⬜ |
+| P3-C8 | Must | Ink carries over: a talisman's ink stays low after a fight. The Mender restores it for Ember (price rises with the Ward's Sorrow; the reason shows); resting in your room restores it for free but the clock moves on to morning | C | | ⬜ |
+| P3-U4 | Must | Unreal Satchel panel (B): pockets for Talismans, Supplies, Keepsakes and the Ledger (Ember, points, debt); use a salve outside battle; choose your partner | G | | ⬜ |
 
 ---
 
@@ -187,6 +194,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 - [ ] Someone clones the repo on a second machine and runs it by following the README alone.
 - [ ] Unreal: a new player gets the intro, an objective on screen, and Chapters 1-3 on the demo seed.
 - [ ] Unreal: the Ward, the panels and the battle look like the concept art (CC0 assets, listed in the README).
+- [ ] Unreal: you walk through a door into the Counting House, the Mender's House, the Rite Hall and your room, and do that building's job inside.
 - [ ] A packaged Windows build on a GitHub Release plays against the hosted server.
 
 | ID | Pri | Task | Seat | Who | Status |
@@ -200,12 +208,15 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P4-U1 | Must | Story script: the player is a newcomer in debt whom Kessa takes in as a binder; the Rite, the Grudge and the four rivals (Vane, Silk, Fen, Rook-Ash) each get a face, a want and lines. Written first, reviewed by the lead | G | | ⬜ |
 | P4-U2 | Must | Intro: 3-4 illustrated paper panels before the Ward (skippable) | G | | ⬜ |
 | P4-U3 | Must | Chapters driven by the world's real events (demo seed 2): 1 Arrival (first bind, Kessa explains Grudge), 2 The Broker's Debt (day 3 bankruptcy, The Shuttered), 3 The Calamity (day 4; pass a rule, swear a vow or fight); objective line in the HUD | G | | ⬜ |
-| P4-U4 | Must | Night-market Ward from CC0 packs (Quaternius, Kenney, Poly Pizza): stalls, lanterns, banners, water, tall grass; lantern lighting, fog, colour grade; fits the 4 GB GPU | G | | ⬜ |
+| P4-U4 | Must | Lantern Ward becomes a district, not a test level: market street, gambling-den row, canal edge with the Tide docks gate, tall-grass lots, locked gates to Ash and Bone (Kessa says why). CC0 packs (Quaternius, Kenney, Poly Pizza); lantern lighting, fog, colour grade; fits the 4 GB GPU | G | | ⬜ |
 | P4-U5 | Must | Panels in the paper-and-ink style of the concept art: paper textures, ink frames, a pixel/brush font, open and close animations (HUD, Rite, shop, case, battle) | G | | ⬜ |
 | P4-U6 | Should | Battle staging: camera framing, the two curses on screen, hit flashes, the seal animation | G | | ⬜ |
 | P4-U7 | Should | Sound: footsteps, grass rustle, battle hits, seal, UI clicks, a night-market loop (CC0) | G | | ⬜ |
 | P4-U8 | Must | Packaged Windows build (Shipping) on a GitHub Release, pointed at the hosted server | G | | ⬜ |
 | P4-U9 | Should | Web client: title offers "Enter Hollowmere" (online) and "Practice run" (offline, nothing kept) | G | | ⬜ |
+| P4-U10 | Must | Buildings you can enter: a door fades to an interior and back. **Counting House** (the Broker: buy and sell talismans and supplies), **Mender's House** (restore ink), **Rite Hall** (Kessa: rules, vows, points; replaces opening the Rite with R alone), **your room** above the noodle stall (rest, the Talisman Case chest, the debt notice). Agents are seen inside when they trade | G | | ⬜ |
+| P4-U11 | Should | Tide Ward in Unreal (docks, warehouses, smugglers), a smaller second level loaded from the Lantern canal gate; only after G3, and only if P4-U4 and P4-U10 are done | G | | ⬜ |
+| P4-U12 | Should | Townsfolk you can talk to: a few CC0 characters with lines that change with the Ward's Grudge and the chapter | G | | ⬜ |
 
 ---
 
@@ -229,6 +240,16 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 ---
 
+## Our own game, not a copy
+
+We use genre ideas (turn-based fights, binding what you defeat, a shop, a place to heal, a bag, buildings you can enter). Ideas and mechanics are free to use; names, characters, art, music, sounds and screen layouts are not. So:
+
+- **Our words only:** curse, talisman, bind, seal, ink, Ember, Grudge, the Rite, Ward, Satchel, Mender, Counting House. Never Pokémon terms or close copies (no "Poké-", "trainer", "Center", "Mart", "wild X appeared", "evolve", "party").
+- **Our look:** the paper-and-ink style guide; no red-and-white capture ball, no red-roofed healing building, no nurse with a healing jingle, no copies of known battle or bag screen layouts. Talismans are paper charms, not balls.
+- **Our systems differ on purpose:** healing costs Ember or time (an economy sink), the shop's prices move with the world, curses carry emotions (Rage, Sorrow, Dread) instead of elemental types, and rules made by players and agents change the town.
+- **Assets:** CC0 or our own only, every pack listed in the README with its licence; sounds and music CC0 or synthesized by us.
+- Check new text against this list before it goes in the game.
+
 ## Cut (not in this hackathon)
 
 - Mainnet deploy, NEAR Intents, anything cross-chain
@@ -250,6 +271,8 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | Judges can't build an Unreal project (and the AI screening can't either, Q-017) | Packaged Windows build on a GitHub Release (P4-U8) + demo video; web client, `npm test`, `npm run sim` and `npm run replay` run from the README | 12 Nov | open |
 | The Unreal build is online-only: if the hosted server is down, it can't play | Host until 25 Nov and check daily; the video shows the full loop; the web client's practice run works with no server | 11 Nov | open |
 | Email sign-in from inside Unreal (browser hand-off) takes too long | Same fallback as the web: a guest account the server makes, kept on the PC; no wallet words | 7 Nov | open |
+| Satchel, supplies and ink carry-over add three systems to a full Phase 3 (freeze 8 Nov) | Server first (P3-C5, C6, C8), Unreal panel next; P3-C7 on-chain supplies is the first to drop; interiors are level work and can go on after the freeze | 8 Nov | open |
+| The game looks or reads like a copy of Pokémon | Follow "Our own game, not a copy"; review the intro, the buildings and the battle screen against it before the video | 12 Nov | open |
 | An asset pack's licence doesn't allow a public repo | CC0 or our own assets only; every pack and its licence listed in the README | ongoing | open |
 | Unreal assets fill the Git LFS quota, or two people edit one map | No Starter Content; commit at milestones only; announce or `git lfs lock` before editing a map/Blueprint | ongoing | open |
 
@@ -276,6 +299,8 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 5 Nov | Lantern Ward grows into a district with buildings you can enter (Counting House, Mender's House, Rite Hall, your room), a Satchel, supplies bought with Ember, and ink that carries over between fights; Tide Ward moves to Unreal as a Should after G3; Ash and Bone stay locked | Lead wants the depth of the classic monster-binding games; each building is also an Ember sink or source, so the NEAR economy is what the player walks through |
+| 5 Nov | Healing is not free: the Mender charges Ember (price follows Sorrow) or you rest and lose the night | Makes Ember matter and keeps our design apart from the free healing building of other games |
 | 5 Nov | Phase 3 pulled forward: G3 and the feature freeze on 8 Nov (was 10 Nov); Phase 4 (look, story) starts 6 Nov alongside it | Leaves 4 days for the Unreal look, story, packaging and video instead of 2 |
 | 5 Nov | Story: the player is a newcomer in debt whom Kessa takes in as a binder; three chapters trigger on the world's real events (demo seed 2: bankruptcy day 3, Calamity day 4, rule war day 5), with an objective line in the HUD | The loop worked but the game had no reason to play; the simulation already writes the drama, so the story frames it instead of adding systems |
 | 5 Nov | Chain words stay out of the game UI ("Sealed in the Rite's ledger" + seal icon); the explorer link is one key away | Track bonus: "players never notice the chain"; the video still shows the proof |
@@ -302,6 +327,7 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
+| 5 Nov | Buildings, Satchel, supplies and ink carry-over planned (P3-C5..C8, P3-U4, P4-U10..U12); Lantern Ward as a district; Tide Ward to Unreal; originality guardrails | | branch `client/P1-U1-unreal-client` |
 | 5 Nov | Unreal project committed (Git LFS, template content kept out); decisions on Unreal, story, modes, assets; Phase 3 to 8 Nov and Phase 4 look-and-story tasks | | branch `client/P1-U1-unreal-client` |
 | 3 Nov | First Unreal build on UE 5.8.4: project created, plugin compiles (2 fixes), LanternWard level script; walk, encounter, battle and bind work in the editor | | branch `client/P1-U1-unreal-client` |
 | 2 Nov | Unreal client plugin (API subsystem, Lantern Ward greybox, tall grass, HUD, encounter, battle screen, Talisman Case), `GET /curses`, Unreal contract test, `setup-project.ps1`, UE 5.8 + VS 2026 pinned; 44 tests | | branch `client/P1-U1-unreal-client` |
