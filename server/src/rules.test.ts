@@ -2,7 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { createWorld } from "@grudgebound/shared";
 import { ChainWriter, type ChainOps } from "./chain";
-import { ChainRules, displayName, rulesOverview, templateCatalog, type ProposeAnswer } from "./rules";
+import { ChainRules, displayName, rulesOverview, templateCatalog, type ProposeAnswer, type RepealAnswer } from "./rules";
 
 const CFG = { network: "testnet", itemsContract: "items.gb.testnet", riteContract: "rite.gb.testnet", guestAccount: "guest.gb.testnet" };
 const AFREEN = "afreen.gb.testnet";
@@ -26,6 +26,14 @@ function fakeRite(points: Record<string, number> = { [AFREEN]: 120 }) {
     async relay(player, _c, method, args) {
       await new Promise((r) => setTimeout(r, 2));
       calls.push(`${player} ${method}`);
+      if (method === "repeal_rule") {
+        const rule = rules[args.rule_id as number];
+        if (!rule || rule.status !== "Active") throw new Error("rule is not in force");
+        if ((points[player] ?? 0) < rule.cost * 2) throw new Error("not enough points");
+        points[player] = (points[player] ?? 0) - rule.cost * 2;
+        rule.status = "Repealed";
+        return { hash: `h${calls.length}`, result: null };
+      }
       const c = cost();
       points[player] = (points[player] ?? 0) - c;
       rules.push({ id: rules.length, template_id: args.template_id as string, params: args.params as string, author: player, cost: c, status: "Pending" });
@@ -114,6 +122,60 @@ describe("rules through the rite contract", () => {
     assert.equal(await rules.syncFromChain(), 1);
     assert.equal(await rules.syncFromChain(), 0, "a second sync adds nothing");
     assert.equal(world.rules.length, 1);
+  });
+
+  test("a repeal is relayed for the player, costs twice the rule, and takes the rule out of the world", async () => {
+    const { world, rite, rules } = setup({ [AFREEN]: 200 });
+    await rules.propose({ account: AFREEN, ...PVP_BAN });
+    await settle();
+    assert.equal(rite.points[AFREEN], 150);
+    const o = await rulesOverview(world, null, AFREEN, rules);
+    assert.deepEqual(o.active.map((r) => [r.chainId, r.repealCost]), [[0, 100]]);
+
+    const r = await rules.repeal({ account: AFREEN, ruleId: "0" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const a = r.body as RepealAnswer;
+    assert.equal(a.cost, 100);
+    assert.equal(a.text, "No PvP in Lantern Ward");
+    assert.equal((await rules.repeal({ account: AFREEN, ruleId: 0 })).status, 409, "no second repeal while one is on its way");
+    await settle();
+    assert.equal(world.rules.length, 0);
+    assert.equal(rite.rules[0]!.status, "Repealed");
+    assert.equal(rite.points[AFREEN], 50);
+    assert.match(world.events.at(-1)!.text, /Afreen paid 100 points\. Rule #1 is struck/);
+    assert.deepEqual(rite.calls.slice(-1), [`${AFREEN} repeal_rule`]);
+    assert.equal((await rules.repeal({ account: AFREEN, ruleId: 0 })).status, 404, "already gone");
+  });
+
+  test("repeal refusals, and a failed repeal leaves the rule in force", async () => {
+    const { world, rite, chain, rules } = setup({ [AFREEN]: 120 });
+    await rules.propose({ account: AFREEN, ...PVP_BAN });
+    await settle();
+    const poor = await rules.repeal({ account: AFREEN, ruleId: 0 });
+    assert.equal(poor.status, 402);
+    assert.match((poor.body as { error: string }).error, /costs 100 points; Afreen has 70/);
+    assert.equal((await rules.repeal({ account: "bob.testnet", ruleId: 0 })).status, 403);
+    assert.equal((await rules.repeal({ account: AFREEN, ruleId: -1 })).status, 400);
+    assert.equal((await rules.repeal({ account: AFREEN, ruleId: 9 })).status, 404);
+
+    rite.points[AFREEN] = 500;
+    rite.rules[0]!.status = "Rejected"; // the contract will refuse
+    const r = await rules.repeal({ account: AFREEN, ruleId: 0 });
+    await settle();
+    assert.equal(chain.ruleReceipt((r.body as RepealAnswer).jobId)!.status, "failed");
+    assert.equal(world.rules.length, 1, "still in force in the world");
+    rite.rules[0]!.status = "Active";
+    assert.equal((await rules.repeal({ account: AFREEN, ruleId: 0 })).status, 200, "may try again");
+  });
+
+  test("a rule repealed on chain by someone else leaves the world on the next sync", async () => {
+    const { world, rite, rules } = setup();
+    await rules.propose({ account: AFREEN, ...PVP_BAN });
+    await settle();
+    rite.rules[0]!.status = "Repealed";
+    await rules.syncFromChain();
+    assert.equal(world.rules.length, 0);
+    assert.match(world.events.at(-1)!.text, /struck from the Rite/);
   });
 
   test("number parameters sent as text are stored as numbers", async () => {

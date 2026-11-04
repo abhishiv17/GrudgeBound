@@ -98,7 +98,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Battle")
 	FGbBattleView GetBattleView() const { return BattleView; }
 
-	// ------------------------------------------------------------ rules (GET /rules, POST /rules/propose)
+	// ------------------------------------------------------------ rules (GET /rules, POST /rules/propose, /rules/repeal)
 
 	/** Templates, rules in force, cost and your points. Answer: OnRules (or OnError "rules"). */
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
@@ -110,6 +110,13 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
 	void ProposeRule(const FString& TemplateId, const TMap<FString, FString>& Params);
+
+	/**
+	 * Repeal a rule in force (ChainRuleId = FGbActiveRule::ChainId) for its RepealCost, as your Player Account.
+	 * Answer: OnRuleRepeal, then OnRuleReceipt once NEAR has struck it. Refusals come as OnError "rules/repeal".
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Rules")
+	void RepealRule(int32 ChainRuleId);
 
 	// ------------------------------------------------------------ player (GET /player)
 
@@ -178,7 +185,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
 	FGbRuleVerdictEvent OnRuleVerdict;
 
-	/** A proposal's NEAR receipt is final (BattleId holds the proposal's job id). */
+	/** POST /rules/repeal was taken: the rule, the points it costs, the pending receipt. */
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
+	FGbRuleVerdictEvent OnRuleRepeal;
+
+	/** A proposal's (or repeal's) NEAR receipt is final (BattleId holds the job id). */
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Rules")
 	FGbChainReceiptEvent OnRuleReceipt;
 

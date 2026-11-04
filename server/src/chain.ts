@@ -70,7 +70,7 @@ export interface BattleRecord {
 }
 
 export interface ChainTx {
-  kind: "mint" | "points" | "propose" | "resolve" | "pay" | "hand-over";
+  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over";
   hash: string;
   url: string;
 }
@@ -348,6 +348,31 @@ export class ChainWriter {
         receipt.status = "failed";
         receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         console.warn(`[chain] rule ${p.jobId}: ${receipt.error}`);
+      }
+    });
+    return this.settle(work, receipt, waitMs);
+  }
+
+  /**
+   * The player repeals a rule in force through the relayer (their points pay twice the rule's cost on chain).
+   * `onRepealed` runs once the contract has taken it out of force, `onFailed` if it refused.
+   */
+  repealRule(
+    p: { jobId: string; account: string; ruleId: number }, onRepealed: () => void, onFailed: () => void = () => {}, waitMs = 0,
+  ): Promise<ChainReceipt> {
+    const receipt: ChainReceipt = { status: "pending", network: this.cfg.network, account: p.account, txs: [], ruleId: p.ruleId };
+    this.remember(`rule:${p.jobId}`, receipt);
+    const work = this.enqueue(async () => {
+      try {
+        const r = await this.relay(p.account, this.cfg.riteContract, "repeal_rule", { rule_id: p.ruleId });
+        receipt.txs.push({ kind: "repeal", hash: r.hash, url: explorerTxUrl(this.cfg.network, r.hash) });
+        receipt.status = "done";
+        onRepealed();
+      } catch (e) {
+        receipt.status = "failed";
+        receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+        console.warn(`[chain] repeal ${p.jobId}: ${receipt.error}`);
+        onFailed();
       }
     });
     return this.settle(work, receipt, waitMs);

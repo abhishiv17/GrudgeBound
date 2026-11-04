@@ -592,6 +592,24 @@ export function enactRule(
   return rule;
 }
 
+/**
+ * Takes a rule out of force (the server calls it once the rite contract has repealed it; the repealer paid there).
+ * Kessa announces it, and repealing a cruel rule eases the dread it caused in the Wards it touched.
+ */
+export function repealRule(world: World, ruleId: number, r: { by: string; byName: string; cost: number }): Rule | null {
+  const i = world.rules.findIndex((x) => x.id === ruleId);
+  if (i < 0) return null;
+  const rule = world.rules.splice(i, 1)[0]!;
+  const text = renderRule(rule.templateId, rule.params);
+  log(world, { type: "rule-repealed", actor: r.by, text: `Kessa: "${r.byName} paid ${r.cost} points. Rule #${rule.id} is struck from the Rite: ${text}."` });
+  if (isCruel(rule.templateId, rule.params)) {
+    for (const w of wardsTouched(rule.params)) {
+      world.wards[w].grudge = removeGrudge(world.wards[w].grudge, GRUDGE_SINKS.cruelRuleRepealed, GRUDGE_SOURCES.cruelRulePassed.emotion);
+    }
+  }
+  return rule;
+}
+
 function endOfDay(world: World) {
   for (const m of world.merchants) {
     m.items = m.items.map(rollDay);

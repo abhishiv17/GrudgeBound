@@ -76,6 +76,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Player")
 	int32 GetEmber() const;
 
+	/**
+	 * The talismans in your case. Once the chain has answered, only the starter, talismans on NEAR and ones still
+	 * being minted are shown: Phase-1 binds and binds whose NEAR write failed stay in the save but out of sight.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Player")
 	TArray<FGbTalisman> GetTalismans() const;
 
@@ -140,6 +144,18 @@ private:
 
 	/** Trades waiting for their NEAR receipt. */
 	TMap<FString, FGbTrade> PendingTrades;
+
+	/** Battle ids and trade job ids still settling on NEAR, with when they started (FPlatformTime::Seconds). */
+	TMap<FString, double> Settling;
+
+	/** Longest a mint or trade may hold back the talisman list (its receipt may never come: server restart, poll gave up). */
+	static constexpr double SettleTimeoutSeconds = 90.0;
+
+	/** True while a mint or trade is settling; forgets ones older than SettleTimeoutSeconds. */
+	bool IsSettling();
+
+	/** See GetTalismans. */
+	bool IsShown(const FGbTalisman& T) const;
 
 	UFUNCTION()
 	void HandlePlayerView(const FGbPlayerView& View);

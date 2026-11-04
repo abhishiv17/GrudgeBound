@@ -4,6 +4,7 @@
 #include "GbSettings.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
+#include "HAL/PlatformTime.h"
 
 const TCHAR* UGbPlayerSubsystem::StarterSpecies = TEXT("cinder-grin");
 const TCHAR* UGbPlayerSubsystem::StarterOmen = TEXT("whisper");
@@ -45,9 +46,8 @@ void UGbPlayerSubsystem::HandlePlayerView(const FGbPlayerView& View)
 
 	// While a mint or trade is still settling, a token may be on chain before its receipt reaches us: matching it
 	// now would add it twice. Points and Ember are safe to take; the talisman list waits for the next refresh.
-	const bool bSettling = PendingTrades.Num() > 0
-		|| Data->Talismans.ContainsByPredicate([](const FGbTalisman& T) { return !T.BattleId.IsEmpty() && T.ChainTokenId.IsEmpty(); });
-	if (!bSettling)
+	// (A bind whose NEAR write failed no longer counts: it settled, as a local-only talisman, hidden from the case.)
+	if (!IsSettling())
 	{
 		TSet<FString> OnChain;
 		for (const FGbChainTalisman& C : View.Talismans)
@@ -69,12 +69,32 @@ void UGbPlayerSubsystem::HandlePlayerView(const FGbPlayerView& View)
 		// Gone from the chain (sold or traded away): gone from the case. The starter and unminted talismans stay.
 		Data->Talismans.RemoveAll([&OnChain](const FGbTalisman& T) { return !T.ChainTokenId.IsEmpty() && !OnChain.Contains(T.ChainTokenId); });
 		if (Data->Talismans.Num() == 0) MakeFresh();
-		if (!Data->Talismans.ContainsByPredicate([this](const FGbTalisman& T) { return T.Id == Data->PartnerId; }))
+		if (!Data->Talismans.ContainsByPredicate([this](const FGbTalisman& T) { return T.Id == Data->PartnerId && IsShown(T); }))
 		{
-			Data->PartnerId = Data->Talismans[0].Id;
+			const FGbTalisman* First = Data->Talismans.FindByPredicate([this](const FGbTalisman& T) { return IsShown(T); });
+			Data->PartnerId = First ? First->Id : FString(StarterId);
 		}
 	}
 	Save();
+}
+
+bool UGbPlayerSubsystem::IsSettling()
+{
+	const double Now = FPlatformTime::Seconds();
+	for (auto It = Settling.CreateIterator(); It; ++It)
+	{
+		if (Now - It.Value() > SettleTimeoutSeconds)
+		{
+			PendingTrades.Remove(It.Key());
+			It.RemoveCurrent();
+		}
+	}
+	return Settling.Num() > 0;
+}
+
+bool UGbPlayerSubsystem::IsShown(const FGbTalisman& T) const
+{
+	return !bOnChain || T.Id == StarterId || !T.ChainTokenId.IsEmpty() || (!T.BattleId.IsEmpty() && Settling.Contains(T.BattleId));
 }
 
 void UGbPlayerSubsystem::MakeFresh()
@@ -125,7 +145,12 @@ int32 UGbPlayerSubsystem::GetEmber() const
 
 TArray<FGbTalisman> UGbPlayerSubsystem::GetTalismans() const
 {
-	return Data ? Data->Talismans : TArray<FGbTalisman>();
+	TArray<FGbTalisman> Out;
+	if (Data)
+	{
+		for (const FGbTalisman& T : Data->Talismans) if (IsShown(T)) Out.Add(T);
+	}
+	return Out;
 }
 
 FGbTalisman UGbPlayerSubsystem::GetPartner() const
@@ -134,9 +159,12 @@ FGbTalisman UGbPlayerSubsystem::GetPartner() const
 	{
 		for (const FGbTalisman& T : Data->Talismans)
 		{
-			if (T.Id == Data->PartnerId) return T;
+			if (T.Id == Data->PartnerId && IsShown(T)) return T;
 		}
-		if (Data->Talismans.Num() > 0) return Data->Talismans[0];
+		for (const FGbTalisman& T : Data->Talismans)
+		{
+			if (IsShown(T)) return T;
+		}
 	}
 	FGbTalisman Starter;
 	Starter.Id = StarterId;
@@ -148,7 +176,7 @@ FGbTalisman UGbPlayerSubsystem::GetPartner() const
 void UGbPlayerSubsystem::SetPartner(const FString& TalismanId)
 {
 	if (!Data || Data->PartnerId == TalismanId) return;
-	if (!Data->Talismans.ContainsByPredicate([&](const FGbTalisman& T) { return T.Id == TalismanId; })) return;
+	if (!Data->Talismans.ContainsByPredicate([&](const FGbTalisman& T) { return T.Id == TalismanId && IsShown(T); })) return;
 	Data->PartnerId = TalismanId;
 	Save();
 }
@@ -227,6 +255,7 @@ void UGbPlayerSubsystem::HandleBattleTurn(const FGbBattleTurn& Turn)
 			}
 		}
 		Data->Talismans.Add(NewTalisman);
+		if (Turn.bHasChain && Turn.Chain.Status == TEXT("pending")) Settling.Add(Turn.BattleId, FPlatformTime::Seconds());
 	}
 
 	Save();
@@ -243,11 +272,13 @@ void UGbPlayerSubsystem::HandleShop(const FGbShop& Shop)
 void UGbPlayerSubsystem::HandleTrade(const FGbTrade& Trade)
 {
 	PendingTrades.Add(Trade.JobId, Trade);
+	Settling.Add(Trade.JobId, FPlatformTime::Seconds());
 }
 
 void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
 {
 	FGbTrade Trade;
+	Settling.Remove(JobId);
 	if (!PendingTrades.RemoveAndCopyValue(JobId, Trade) || !Data || Receipt.Status != TEXT("done")) return;
 	if (Trade.bBuy)
 	{
@@ -282,7 +313,18 @@ void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChain
 
 void UGbPlayerSubsystem::HandleChainReceipt(const FString& BattleId, const FGbChainReceipt& Receipt)
 {
-	if (!Data || Receipt.Status != TEXT("done") || Receipt.TokenId.IsEmpty()) return;
+	// Done or failed, the mint has settled: a failed one stays a local-only talisman (hidden once on chain).
+	const bool bWasSettling = Settling.Remove(BattleId) > 0;
+	if (!Data) return;
+	if (Receipt.Status != TEXT("done") || Receipt.TokenId.IsEmpty())
+	{
+		if (bWasSettling)
+		{
+			Save(); // the case redraws without it
+			RefreshFromChain();
+		}
+		return;
+	}
 	for (FGbTalisman& T : Data->Talismans)
 	{
 		if (T.BattleId == BattleId)
