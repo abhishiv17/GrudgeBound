@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1.0",
+	"FriendlyName": "Grudgebound Client",
+	"Description": "Talks to the Grudgebound game server (world state, town log, server-run battles) and provides the Phase 1 greybox: Lantern Ward layout, tall-grass encounters, HUD, battle screen and Talisman Case.",
+	"Category": "Grudgebound",
+	"CreatedBy": "Grudgebound team",
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "GrudgeboundClient",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

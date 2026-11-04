@@ -1,12 +1,12 @@
 /**
  * Fast-forward: simulate N in-game days and print how the economy moved.
  *
- *   npm run sim                        -> 7 days, seed 42
+ *   npm run sim                        -> 7 days, the demo seed (DEMO_SEED)
  *   npm run sim -- --days 3 --seed 7
  *   npm run sim -- --events           -> also print every notable event
  *   npm run sim -- --json             -> machine-readable daily summaries
  */
-import { createWorld, createRng, step, summarize, TICKS_PER_DAY, type WorldSummary } from "@grudgebound/shared";
+import { createWorld, createRng, step, summarize, DEMO_SEED, TICKS_PER_DAY, type WorldSummary } from "@grudgebound/shared";
 
 function arg(name: string, fallback: number): number {
   const i = process.argv.indexOf(`--${name}`);
@@ -16,7 +16,7 @@ function arg(name: string, fallback: number): number {
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
 const days = arg("days", 7);
-const seed = arg("seed", 42);
+const seed = arg("seed", DEMO_SEED);
 const showEvents = flag("events");
 const asJson = flag("json");
 

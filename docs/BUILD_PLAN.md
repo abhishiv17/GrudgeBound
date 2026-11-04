@@ -33,8 +33,8 @@ The lead (Abhishek) decides every submission field and approves anything public:
 | Phase | Dates | Goal | Gate | Status |
 |---|---|---|---|---|
 | [0. Foundation](#phase-0--foundation) | 1 Nov | Repo, engine, simulator, agent loop, first client | none | ✅ |
-| [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | 🟡 2 items left |
-| [2. On testnet](#phase-2--on-testnet) | 5-7 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | ⬜ |
+| [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | ✅ |
+| [2. On testnet](#phase-2--on-testnet) | 5-7 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | 🟡 started 4 Nov |
 | [3. Accounts, agents, live world](#phase-3--accounts-agents-live-world) | 7-10 Nov | Email sign-in, agents with wallets, Observatory | G3 · 10 Nov (feature freeze) | ⬜ |
 | [4. Polish, hosting, video](#phase-4--polish-hosting-video) | 11-12 Nov | Hosted demo, recorded video, fresh-clone test | G4 · 12 Nov | ⬜ |
 | [5. Ship](#phase-5--ship) | 13-14 Nov | Repo public, X post, submission | G5 · 14 Nov 12:00 UTC | ⬜ |
@@ -90,7 +90,7 @@ Everything until the feature freeze must show up in this video. If a task doesn'
 - [x] `items` and `rite` compile to wasm.
 - [x] `npm test` (30 tests), `npm run typecheck` and `npm run build` pass. (Not committed yet: commit at the milestone.)
 
-**Left before G1:** run the contract unit tests (P1-C3) and add the NEAR AI key (P1-A1).
+**G1 passed on 4 Nov.** Nothing left in Phase 1.
 
 **Unreal client (from 2 Nov).** The web loop above is done and stays as the fallback demo. The same loop is now rebuilt in
 Unreal Engine 5 on a teammate's RTX 3050 laptop; steps in [`UNREAL_SETUP.md`](UNREAL_SETUP.md). Target: U1-U4 by 4 Nov,
@@ -100,22 +100,23 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 |---|---|---|---|---|---|
 | P1-C1 | Must | Install Rust and the wasm target; write the steps in `contracts/README.md`. Done natively (Windows GNU toolchain, no admin, no WSL). cargo-near moves to Phase 2 | C | | ✅ |
 | P1-C2 | Must | Compile `items` and `rite` to wasm (324 KB and 374 KB) | C | | ✅ |
-| P1-C3 | Must | Contract unit tests: mint, transfer, purse, points, propose/resolve/repeal rule, vow keep/break. 17 written; **not run yet**: Windows GNU toolchain can't build the test deps, so run in Docker, WSL2 or Linux (`contracts/README.md`) | C | | 🟡 |
+| P1-C3 | Must | Contract unit tests: mint, transfer, purse, points, propose/resolve/repeal rule, vow keep/break. **17/17 pass** on Windows with the MSVC Rust toolchain (`contracts/README.md`) | C | | ✅ |
 | P1-C4 | Should | Server: `POST /battle` replays the battle from seed + actions, refuses repeats and fakes, then drains Grudge and returns points | C | | ✅ |
 | P1-G1 | Must | Encounter dialog (Fight / Slip away) starts `BattleScene`; the result returns to `WardScene` | G | | ✅ |
 | P1-G2 | Must | Bind result becomes a talisman card in the Talisman Case (T); pick your partner there; exorcise gives points | G | | ✅ |
 | P1-G3 | Must | Your points and Ember shown in the HUD and used by the Rules panel (`client/lib/playerStore.ts`) | G | | ✅ |
-| P1-G4 | Should | Kessa banner and Grudge meter react to bankruptcies and scams from the feed (bankruptcies, Calamities and battle results announced; scams not yet) | G | | 🟡 |
-| P1-A1 | Must | NEAR AI Cloud key (claim credits, Q-000); agents choose through the LLM, fallback still works. Waiting for the key in `.env` | A | | 🟡 |
+| P1-G4 | Should | Kessa banner and Grudge meter react to bankruptcies and scams from the feed (bankruptcies, Calamities, scams and battle results announced) | G | | ✅ |
+| P1-A1 | Must | NEAR AI Cloud key (claim credits, Q-000); agents choose through the LLM, fallback still works. Done: `anthropic/claude-haiku-5-5` on `cloud-api.near.ai/v1`, 6/6 calls through the LLM in `npm run agent:demo` | A | | ✅ |
 | P1-A2 | Must | Merchant price tooltips ready for the shop screen: `GET /shop?merchant=broker` on the server | A | | ✅ |
 | P1-A3 | Should | Points for battles: bind or exorcise 5 / 20 / 80 by omen, times R1 bonus rules; fleeing or losing gives 0 (`capturePoints` in shared) | A | | ✅ |
 | P1-C5 | Must | Server runs battles turn by turn for the Unreal client: `POST /battle/start` (server picks the curse and a secret seed), `POST /battle/turn` (move in; events, log lines and view out; points and seed at the end). `server/src/battles.ts`, 10 tests | C | | ✅ |
-| P1-U1 | Must | Install Unreal 5 + Visual Studio on the laptop; create `unreal/Grudgebound` (C++ Top Down template); write the engine version in `UNREAL_SETUP.md` | G | | ⬜ |
-| P1-U2 | Must | Lantern Ward greybox: ground, houses as blocks, tall grass, the player walks | G | | ⬜ |
-| P1-U3 | Must | `GrudgeboundApi` C++ class (`/health`, `/state`, `/events`); HUD shows the Ward's Grudge and Kessa's latest line | G | | ⬜ |
-| P1-U4 | Must | Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away) | G | | ⬜ |
-| P1-U5 | Must | Battle screen on the server's turn API (P1-C5): attack, ward, seal, flee; result back to the Ward | G | | ⬜ |
-| P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD | G | | ⬜ |
+| P1-U1 | Must | Install Unreal 5 + Visual Studio on the laptop; create `unreal/Grudgebound` (C++ Top Down template); write the engine version in `UNREAL_SETUP.md`. **UE 5.8.4 + VS Community 2026 (MSVC 14.51)** on the HP Victus; project at `unreal/GrudgeBound` | G | | ✅ |
+| P1-U2 | Must | Lantern Ward greybox: ground, houses as blocks, tall grass, the player walks. `AGbWardGreybox`; level `/Game/Grudgebound/LanternWard` made by `unreal/tools/make-level.ps1`; click-to-walk works | G | | ✅ |
+| P1-U3 | Must | `GrudgeboundApi` C++ class (`/health`, `/state`, `/events`); HUD shows the Ward's Grudge and Kessa's latest line. `UGbApiSubsystem`, `UGbHudWidget`; seen live (day/hour, Grudge bars, town events) | G | | ✅ |
+| P1-U4 | Must | Walking through tall grass calls `POST /battle/start` and shows the encounter (Fight / Slip away). Both buttons tested in Unreal | G | | ✅ |
+| P1-U5 | Must | Battle screen on the server's turn API (P1-C5): attack, ward, seal, flee; result back to the Ward. Played to a bind in Unreal (+10 points) | G | | ✅ |
+| P1-U6 | Must | Talisman Case, partner choice, points and Ember in the HUD. Points and Ember update after a bind; the Talisman Case (T) lists the new talisman and the partner (checked in the editor, 4 Nov) | G | | ✅ |
+| P1-C6 | Should | `GET /curses`: names and looks of every curse for the Unreal Talisman Case (no stats), 1 test | C | | ✅ |
 
 ---
 
@@ -130,20 +131,20 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
-| P2-C1 | Must | Testnet accounts: game master, `items`, `rite`, relayer (funded from the faucet) | C | | ⬜ |
-| P2-C2 | Must | Deploy `items` and `rite`; account names in `.env.example` | C | | ⬜ |
-| P2-C3 | Must | Relayer endpoint in the server: signed delegate action in, gas paid by us (NEP-366) | C | | ⬜ |
-| P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points | C | | ⬜ |
-| P2-C5 | Must | Rule propose / resolve / repeal through `rite`; server reads rules in force from the contract | C | | ⬜ |
-| P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | ⬜ |
-| P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | ⬜ |
-| P2-G2 | Must | Rules panel sends proposals to the server and shows Kessa's verdict and the explorer link | G | | ⬜ |
-| P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | ⬜ |
-| P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | ⬜ |
-| P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | ⬜ |
-| P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | ⬜ |
-| P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | ⬜ |
-| P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | ⬜ |
+| P2-C1 | Must | Testnet accounts: game master, `items`, `rite`, relayer (funded from the faucet). Done 4 Nov: see `contracts/README.md` | C | | ✅ |
+| P2-C2 | Must | Deploy `items` and `rite`; account names in `.env.example`. Done 4 Nov with cargo-near 0.22 (`--no-abi` on Windows); mint and battle smoke-tested | C | | ✅ |
+| P2-C3 | Must | Relayer endpoint in the server: signed delegate action in, gas paid by us (NEP-366). Relayer works on testnet: `relayer.grudgebound.testnet` sends players' delegate actions and pays the gas (`chain.ts` relay). For now the server signs for its demo players; an endpoint taking client-signed delegates comes with player keys (Phase 3) | C | | 🟡 |
+| P2-C4 | Must | Battle result → contract call: bind mints a talisman, exorcise adds points. Server done and checked on testnet (`server/src/chain.ts`); Unreal shows the token id, L opens the explorer. Left: see it in the editor | C | | 🟡 |
+| P2-C5 | Must | Rule propose / resolve / repeal through `rite`; server reads rules in force from the contract. Done 4 Nov: `POST /rules/propose` (relayed for the player, resolved by Kessa), rules loaded on start (`server/src/rules.ts`). Seen on testnet: Afreen's R8 accepted, Akshay's contradicting R1 rejected and refunded. Repeal not wired yet | C | | ✅ |
+| P2-C6 | Should | Server reads contract events (NEP-297) into `/events` | C | | 🟡 EVENT_JSON read from every tx the server sends (game + relayed) into /events with explorer links; verified on testnet 4 Nov. Block indexer for outside writes: Phase 3 |
+| P2-G1 | Must | Shop screen: merchant price, reason, buy and sell | G | | 🟡 server + Unreal (B) built, testnet buy/sell verified; in-editor check at end of P2 |
+| P2-G2 | Must | Rules panel sends proposals to the server and shows Kessa's verdict and the explorer link. Built 4 Nov in Unreal: R opens the Rite (rules in force, cost, your points, rule builder); Kessa's verdict at once, then "Recorded on NEAR as rule N (L to see it)". `GET /rules` feeds it. Editor check at the end of P2 | G | | 🟡 |
+| P2-G3 | Should | Talisman card shows its on-chain ID and purse | G | | 🟡 Unreal case shows NEAR tal-N and purse; in-editor check at end of P2 |
+| P2-A1 | Must | Tune Grudge so a 7-day run shows a rule war, a bankruptcy and a Calamity; pick the demo seed | A | | 🟡 NPC factions now contest rules (mercenary vs zealot over PvP, one public challenge a day); ambient Grudge 0.35 -> 0.4. 43% of seeds 1-200 show all three beats (`npm run sim:seeds`). Demo seed 2: bankruptcy d3, Calamity d4 in the same Ward, rule war d5 |
+| P2-A2 | Should | `npm run replay <seed>` re-checks any battle from its seed | A | | 🟡 server archives every paid battle (data/battles.jsonl); `npm run replay <seed|id>` replays it and checks the hash the rite contract logged; VERIFIED on testnet 4 Nov (seed 1499753501) |
+| P2-C7 | Must | Web client uses `/battle/start` + `/battle/turn` when the server is up (it still picks its own seed and curse for `POST /battle`, so a cheater could retry seeds or claim a rarer curse), then `POST /battle` is removed | C | | 🟡 web client fights through /battle/start + /battle/turn when the server is up (offline town still local); POST /battle removed; web check at end of P2 |
+| P2-G4 | Should | Player battles respect curfew rules (R2): no exorcising in a Ward when a curfew forbids it | G | | 🟡 server: both curfews block the fight, bind curfew refuses Seal, exorcising under curfew pays 0 and is logged; Unreal shows the warnings; in-editor check at end of P2 |
+| P2-G5 | Must | Talisman Case and points read from the chain instead of browser storage | G | | 🟡 GET /player + items `talismans_of` view (upgraded on testnet 4 Nov); Unreal case reads it; in-editor check at end of P2 |
 
 ---
 
@@ -223,8 +224,8 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 | Risk | Fallback | Decide by | Status |
 |---|---|---|---|
-| Contracts have never compiled; Rust on Windows is slow to set up | Build in WSL. If `rite` doesn't compile by 4 Nov: items, points and rules on chain; vows on the server, logged as events | 4 Nov | open |
-| NEAR AI Cloud credits run out or are slow | Scripted fallback exists; limit calls per tick; claim the $10 NEAR Builders credits | 2 Nov | open |
+| Contracts have never compiled; Rust on Windows is slow to set up | Build in WSL. If `rite` doesn't compile by 4 Nov: items, points and rules on chain; vows on the server, logged as events | 4 Nov | closed (17/17 tests pass on Windows, 3 Nov) |
+| NEAR AI Cloud credits run out or are slow | Scripted fallback exists; limit calls per tick; Haiku 5.5 is ~$0.0003 a call (~1–2 s) | 2 Nov | mitigated |
 | Calamities are rare, so the demo may show none | Tune Grudge gain; pick a demo seed that reaches one | 6 Nov | open |
 | Email login takes longer than planned | Guest sign-in via server-made sub-accounts, still no wallet popup | 8 Nov | open |
 | Too many Wards for 14 days | Lantern only, Tide second, the rest locked | 9 Nov | open |
@@ -239,7 +240,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 - [ ] Who takes which seat?
 - [ ] Which email-login option? (decided after the P3-C1 spike)
 - [ ] Where do we host the server (the Unreal build runs on the judge's PC and needs a reachable server URL)?
-- [ ] Which Unreal 5.x version do we pin?
+- [x] Which Unreal 5.x version do we pin? **5.8** (newest hotfix), with Visual Studio Community 2026.
 - [ ] Tracks besides `games`?
 - [ ] Daily check-in time?
 
@@ -257,6 +258,8 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 2 Nov | Unreal client code lives in a plugin (`unreal/Plugins/GrudgeboundClient`) with its UI built in C++ | Written before the engine was installed, without touching template files; works with no widget assets; Blueprint widgets can replace the screens in the art pass |
+| 2 Nov | Pin Unreal Engine 5.8 and Visual Studio Community 2026; Lumen, Nanite and virtual shadow maps off | Newest 5.x, out since June with hotfixes; VS 2026 is Epic's pick for 5.8; the build laptop's GPU has 4 GB |
 | 2 Nov | Game client moves to Unreal Engine 5 (built on a teammate's RTX 3050 laptop); server, shared, agents and contracts unchanged; web client kept as fallback until the Unreal loop works | Team choice for a richer game; the fallback protects the NEAR deadline |
 | 2 Nov | Server runs battles turn by turn for the Unreal client (P1-C5) instead of a C++ copy of the resolver | One copy of the battle rules; the server makes the seed |
 | 1 Nov | Battle resolver moved to `shared/` | The server replays every reported battle with the same code the client fights with |
@@ -274,6 +277,8 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
+| 3 Nov | First Unreal build on UE 5.8.4: project created, plugin compiles (2 fixes), LanternWard level script; walk, encounter, battle and bind work in the editor | | branch `client/P1-U1-unreal-client` |
+| 2 Nov | Unreal client plugin (API subsystem, Lantern Ward greybox, tall grass, HUD, encounter, battle screen, Talisman Case), `GET /curses`, Unreal contract test, `setup-project.ps1`, UE 5.8 + VS 2026 pinned; 44 tests | | branch `client/P1-U1-unreal-client` |
 | 1 Nov | Server-run battles (`/battle/start`, `/battle/turn`) for the Unreal client; encounter roll and battle log text moved to `shared/`; 40 tests | | |
 | 1 Nov | Phase 1 core loop: fight from the Ward, bind, Talisman Case, points and Ember in the HUD; server `POST /battle` replay check and `GET /shop`; contracts compile, 17 contract tests written; Unreal setup guide | | branch `phase-1/core-loop-and-unreal-setup` |
 | 1 Nov | Paper-and-ink design system, title screen, React HUD, Rules panel, Vow Shrine; Lantern Ward lighting | | #2 |

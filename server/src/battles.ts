@@ -3,7 +3,8 @@
  * (the Unreal client). The server picks the curse from the Ward's Grudge, makes the seed, and resolves
  * every turn with the shared resolver. The client only sends moves and shows what happened.
  *
- *   POST /battle/start  { ward, playerCurse?, by? }  -> the curse met, the battle view, the intro line
+ *   POST /battle/start  { ward, playerCurse?, by?, account? } -> the curse met, the battle view, the intro line
+ *                       (account: the NEAR account that gets the talisman and points, see chain.ts)
  *   POST /battle/turn   { battleId, action }         -> this turn's events and log lines, the new view;
  *                                                       when the battle ends: outcome, points, seed
  *
@@ -14,12 +15,13 @@
  */
 import { randomInt, randomUUID } from "node:crypto";
 import {
-  DEFAULT_PLAYER_CURSE, WARDS,
+  CURSES, DEFAULT_PLAYER_CURSE, WARDS,
   actionLabel, canUse, createBattle, createRng, curseById, describeEvent, fleeChance, introLine,
-  recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
+  curfewText, recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
   type BattleEvent, type BattleState, type Combatant, type Omen, type Outcome, type PlayerAction,
   type Rng, type WardId, type World,
 } from "@grudgebound/shared";
+import { isAccountId } from "./chain";
 
 /** A battle nobody has touched for this long is dropped (the player walked away). */
 export const BATTLE_IDLE_MS = 15 * 60_000;
@@ -56,6 +58,8 @@ export interface StartAnswer {
   matchup: "advantage" | "disadvantage" | "even";
   view: BattleView;
   lines: string[];
+  /** Curfews (R2) in force here right now, as rule text: "exorcise is forbidden in Lantern Ward during the night". */
+  curfews: string[];
 }
 
 export interface TurnAnswer {
@@ -69,6 +73,12 @@ export interface TurnAnswer {
   points?: number;
   seed?: number;
   actions?: PlayerAction[];
+  /** Only when the battle has ended: the NEAR account named at /battle/start, if any. */
+  account?: string;
+  /** Only when the battle has ended: the curfew the ending broke (points were 0). */
+  curfew?: string;
+  /** Only when the battle has ended: where it was fought. */
+  ward?: WardId;
 }
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
@@ -77,6 +87,7 @@ interface Session {
   id: string;
   ward: WardId;
   by: string;
+  account?: string;
   seed: number;
   wildId: string;
   omen: Omen;
@@ -91,8 +102,6 @@ export interface BattleSessionOptions {
   now?: () => number;
   newSeed?: () => number;
   newId?: () => string;
-  /** Battles already counted ("seed:wild:playerCurse"), shared with POST /battle so nothing counts twice. */
-  seen?: Set<string>;
 }
 
 function side(c: Combatant): SideView {
@@ -139,13 +148,11 @@ export class BattleSessions {
   private readonly now: () => number;
   private readonly newSeed: () => number;
   private readonly newId: () => string;
-  readonly seen: Set<string>;
 
   constructor(private readonly world: World, opts: BattleSessionOptions = {}) {
     this.now = opts.now ?? Date.now;
     this.newSeed = opts.newSeed ?? (() => randomInt(0, 0x1_0000_0000));
     this.newId = opts.newId ?? randomUUID;
-    this.seen = opts.seen ?? new Set();
   }
 
   get openCount(): number {
@@ -159,6 +166,12 @@ export class BattleSessions {
     const playerCurse = b.playerCurse === undefined ? DEFAULT_PLAYER_CURSE : b.playerCurse;
     if (typeof playerCurse !== "string" || !isCurse(playerCurse)) return fail(400, "playerCurse must be a curse id");
     const by = typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 40) : "A newcomer";
+    if (b.account !== undefined && !isAccountId(b.account)) return fail(400, "account must be a NEAR account id");
+    const account = b.account as string | undefined;
+
+    const noExorcise = curfewText(this.world, "exorcise", ward as WardId);
+    const noBind = curfewText(this.world, "bind", ward as WardId);
+    if (noExorcise && noBind) return fail(409, `Curfew: "${noExorcise}" and "${noBind}". Come back when it lifts.`);
 
     this.sweep();
     if (this.open.size >= MAX_OPEN_BATTLES) return fail(503, "too many battles in progress, try again shortly");
@@ -168,11 +181,10 @@ export class BattleSessions {
     const wild = rollEncounter(this.world.wards[ward as WardId].grudge, createRng((seed ^ 0x9e3779b9) >>> 0));
     const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse });
     const s: Session = {
-      id: this.newId(), ward: ward as WardId, by, seed, wildId: wild.id, omen: wild.omen, playerCurse,
+      id: this.newId(), ward: ward as WardId, by, account, seed, wildId: wild.id, omen: wild.omen, playerCurse,
       rng: createRng(seed), state, actions: [], lastSeen: this.now(),
     };
     this.open.set(s.id, s);
-    this.seen.add(`${seed}:${wild.id}:${playerCurse}`);
 
     const m = typeMultiplier(state.player.emotion, state.wild.emotion);
     return ok({
@@ -181,7 +193,12 @@ export class BattleSessions {
       wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: wild.omen },
       matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
       view: battleView(state),
-      lines: [introLine(state)],
+      lines: [
+        introLine(state),
+        ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
+        ...(noBind ? [`Kessa: "Curfew: ${noBind}. Drive it off, don't seal it."`] : []),
+      ],
+      curfews: [noExorcise, noBind].filter((x): x is string => x !== null),
     });
   }
 
@@ -193,6 +210,8 @@ export class BattleSessions {
     const action = parseAction(b.action);
     if (!action) return fail(400, "unknown action");
     if (!canUse(s.state, action)) return fail(409, `you can't ${actionLabel(action)} right now`);
+    const noBind = action.kind === "seal" ? curfewText(this.world, "bind", s.ward) : null;
+    if (noBind) return fail(409, `Curfew: "${noBind}". You can't seal it here now.`);
 
     const t = resolveTurn(s.state, action, s.rng);
     s.state = t.state;
@@ -211,6 +230,11 @@ export class BattleSessions {
     if (outcome) {
       this.open.delete(s.id);
       answer.outcome = outcome;
+      const curfew = outcome === "bound" || outcome === "won" ? curfewText(this.world, outcome === "bound" ? "bind" : "exorcise", s.ward) : null;
+      if (curfew) {
+        answer.curfew = curfew;
+        answer.lines.push(`Kessa: "That broke the curfew (${curfew}). The Rite pays nothing for it."`);
+      }
       answer.points = outcome === "bound" || outcome === "won"
         ? recordCapture(this.world, {
             ward: s.ward, speciesId: s.wildId, omen: s.omen, verb: outcome === "bound" ? "bind" : "exorcise", by: s.by,
@@ -218,6 +242,8 @@ export class BattleSessions {
         : 0;
       answer.seed = s.seed;
       answer.actions = s.actions;
+      answer.ward = s.ward;
+      if (s.account) answer.account = s.account;
     }
     return ok(answer);
   }
@@ -227,6 +253,27 @@ export class BattleSessions {
     const cutoff = this.now() - BATTLE_IDLE_MS;
     for (const [id, s] of this.open) if (s.lastSeen < cutoff) this.open.delete(id);
   }
+}
+
+export interface CurseEntry {
+  id: string;
+  name: string;
+  emotion: Combatant["emotion"];
+  omen: Omen;
+  home: WardId;
+  bornFrom: string;
+  signatureMove: { name: string; effect: string };
+}
+
+/**
+ * GET /curses: names and looks of every curse, for clients without a copy of the game data
+ * (the Unreal Talisman Case shows names from it). Stats stay on the server with the battle rules.
+ */
+export function curseCatalog(): CurseEntry[] {
+  return CURSES.map((c) => ({
+    id: c.id, name: c.name, emotion: c.emotion, omen: c.omen, home: c.home, bornFrom: c.bornFrom,
+    signatureMove: { ...c.signatureMove },
+  }));
 }
 
 function isCurse(id: string): boolean {

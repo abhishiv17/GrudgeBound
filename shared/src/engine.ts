@@ -57,6 +57,8 @@ export interface Participant {
   ember: number;
   /** Species ids of bound curses (talismans). */
   talismans: string[];
+  /** Day of this participant's last rejected proposal: one public challenge a day, no spam. */
+  rejectedDay?: number;
 }
 
 export interface GameEvent {
@@ -67,6 +69,8 @@ export interface GameEvent {
   ward?: WardId;
   actor?: string;
   text: string;
+  /** A link for the event (e.g. the NEAR transaction behind a "chain" event). */
+  url?: string;
 }
 
 export interface World {
@@ -85,9 +89,15 @@ export interface World {
 // Tunables (AI & Economy seat: tune these with `npm run sim`)
 // ---------------------------------------------------------------------------
 
+/**
+ * The world seed the demo runs on (P2-A1). Over 7 days: the Fence goes bankrupt (day 3), a Calamity rises in
+ * the same Ward (day 4), and a mercenary challenges a PvP ban, which Kessa rejects (day 5): see npm run sim:seeds.
+ */
+export const DEMO_SEED = 2;
+
 export const TUNING = {
   /** Background emotion from ordinary town life, per tick, toward each Ward's leaning. */
-  ambientGrudgePerTick: 0.35,
+  ambientGrudgePerTick: 0.4,
   spawnChancePerTick: 0.6,
   maxWildPerWard: 8,
   /** Chance a participant acts in a given tick. */
@@ -172,11 +182,22 @@ function activeRules(world: World, templateId: string): Rule[] {
 /** The parts of a rule the helpers below need: works on World rules and on WorldSummary rules alike. */
 export type RuleLike = Pick<Rule, "templateId" | "params">;
 
-/** Is `action` forbidden in `ward` at `tick` by a curfew (R2) in `rules`? */
-export function curfewForbids(rules: readonly RuleLike[], action: string, ward: WardId, tick: number): boolean {
-  return rules.some(
+/** The curfew (R2) in `rules` that forbids `action` in `ward` at `tick`, if any. */
+export function curfewRule<R extends RuleLike>(rules: readonly R[], action: string, ward: WardId, tick: number): R | undefined {
+  return rules.find(
     (r) => r.templateId === "R2" && r.params.action === action && r.params.ward === ward && (r.params.time === "night") === isNight(tick),
   );
+}
+
+/** Is `action` forbidden in `ward` at `tick` by a curfew (R2) in `rules`? */
+export function curfewForbids(rules: readonly RuleLike[], action: string, ward: WardId, tick: number): boolean {
+  return curfewRule(rules, action, ward, tick) !== undefined;
+}
+
+/** "Kessa's curfew text" for the rule forbidding `action` in `ward` right now, or null. */
+export function curfewText(world: World, action: string, ward: WardId): string | null {
+  const r = curfewRule(world.rules, action, ward, world.tick);
+  return r ? renderRule(r.templateId, r.params) : null;
 }
 
 /** Points multiplier from bonus rules (R1: "[action] in [Ward] gives x[m] points") in `rules`. */
@@ -249,10 +270,20 @@ export function desiredRule(world: World, me: Participant, rng: Rng): { template
     case "schemer": return rng.chance(0.5)
       ? { templateId: "R3", params: { ward: me.ward, amount: 5, payee: "author" } }
       : { templateId: "R7", params: { percent: 8, payee: "author" } };
-    case "zealot": return { templateId: "R8", params: { ward: me.ward } };
-    case "mercenary": return rng.chance(0.5)
-      ? { templateId: "R1", params: { action: "pvp", ward: me.ward, multiplier: "2" } }
-      : { templateId: "R5", params: { target: "the points leader", amount: 20 } };
+    case "zealot": {
+      // The rule war: where someone pays for PvP, the zealot moves to ban it.
+      const rewarded = world.rules.filter((r) => r.templateId === "R1" && r.params.action === "pvp");
+      if (rewarded.length && rng.chance(0.6)) return { templateId: "R8", params: { ward: String(rng.pick(rewarded).params.ward) } };
+      return { templateId: "R8", params: { ward: me.ward } };
+    }
+    case "mercenary": {
+      // ...and where PvP is banned, the mercenary demands double points for it.
+      const banned = world.rules.filter((r) => r.templateId === "R8");
+      if (banned.length && rng.chance(0.6)) return { templateId: "R1", params: { action: "pvp", ward: String(rng.pick(banned).params.ward), multiplier: "2" } };
+      return rng.chance(0.5)
+        ? { templateId: "R1", params: { action: "pvp", ward: me.ward, multiplier: "2" } }
+        : { templateId: "R5", params: { target: "the points leader", amount: 20 } };
+    }
     case "gambler": return { templateId: "R1", params: { action: "bind", ward: rng.pick(WARDS), multiplier: "2" } };
     case "player": return rng.chance(0.5)
       ? { templateId: "R8", params: { ward: "lantern" } }
@@ -263,8 +294,13 @@ export function desiredRule(world: World, me: Participant, rng: Rng): { template
 export const scriptedPolicy: Policy = (world, me, options, rng) => {
   if (me.points >= ruleCost(world.rules.length) && rng.chance(TUNING.proposeChance)) {
     const want = desiredRule(world, me, rng);
-    // Agents only propose rules the Arbiter would accept (no spam of duplicates).
-    if (want && arbiterCheck(want.templateId, want.params, world.rules).accepted) return { type: "proposeRule", ...want };
+    const verdict = want ? arbiterCheck(want.templateId, want.params, world.rules) : null;
+    if (want && verdict?.accepted) return { type: "proposeRule", ...want };
+    // A rule that contradicts one in force is a public challenge (Kessa rejects it, at no cost): at most one a day
+    // per participant. Duplicates and rules over the cap are never proposed.
+    if (want && verdict && !verdict.accepted && verdict.reason.startsWith("Contradicts") && me.rejectedDay !== dayOf(world.tick)) {
+      return { type: "proposeRule", ...want };
+    }
   }
   const w = WEIGHTS[me.personality];
   return rng.weighted(options, (o) => {
@@ -287,7 +323,8 @@ export const scriptedPolicy: Policy = (world, me, options, rng) => {
 // The tick
 // ---------------------------------------------------------------------------
 
-function log(world: World, e: Omit<GameEvent, "tick" | "day" | "hour">) {
+/** Adds a line to the town log (Kessa's banner shows the newest). */
+export function log(world: World, e: Omit<GameEvent, "tick" | "day" | "hour">) {
   world.events.push({ tick: world.tick, day: dayOf(world.tick), hour: hourOf(world.tick), ...e });
   if (world.events.length > TUNING.maxEvents) world.events.splice(0, world.events.length - TUNING.maxEvents);
 }
@@ -318,8 +355,17 @@ export interface CaptureReport {
  */
 export function recordCapture(world: World, c: CaptureReport): number {
   const sp = curseById(c.speciesId);
-  const points = capturePoints(world.rules, c.verb, c.ward, c.omen);
+  const curfew = curfewText(world, c.verb, c.ward);
   drainCapture(world, c.ward, sp);
+  if (curfew) {
+    // Players can still fight under a curfew; the Rite just won't pay for what it forbids.
+    log(world, {
+      type: c.verb, ward: c.ward, actor: c.by,
+      text: `${c.by} ${c.verb === "bind" ? "bound" : "exorcised"} ${sp.name} in ${wardName(c.ward)} against the curfew ("${curfew}"): the Rite pays nothing.`,
+    });
+    return 0;
+  }
+  const points = capturePoints(world.rules, c.verb, c.ward, c.omen);
   log(world, {
     type: c.verb, ward: c.ward, actor: c.by,
     text: `${c.by} ${c.verb === "bind" ? "bound" : "exorcised"} ${sp.name} in ${wardName(c.ward)} (+${points} points).`,
@@ -497,7 +543,8 @@ function act(world: World, me: Participant, action: ParticipantAction, rng: Rng)
 }
 
 /** Applies R7 trade taxes to a sale; returns what the seller keeps. */
-function payTradeTax(world: World, amount: number): number {
+/** Applies trade-tax rules (R7) to an Ember payment; returns what the seller keeps. */
+export function payTradeTax(world: World, amount: number): number {
   let kept = amount;
   for (const r of activeRules(world, "R7")) {
     const tax = Math.floor((amount * Number(r.params.percent)) / 100);
@@ -516,19 +563,33 @@ export function proposeRule(world: World, me: Participant, templateId: string, p
   const verdict = arbiterCheck(templateId, params, world.rules);
   const text = renderRule(templateId, params);
   if (!verdict.accepted) {
+    me.rejectedDay = dayOf(world.tick);
     log(world, { type: "rule-rejected", actor: me.id, text: `Kessa rejects ${me.name}'s rule "${text}": ${verdict.reason}` });
     return false;
   }
   me.points -= cost;
-  const rule: Rule = { id: world.nextRuleId++, templateId, params, author: me.id, cost, addedAtTick: world.tick };
+  enactRule(world, { author: me.id, authorName: me.name, templateId, params, cost });
+  return true;
+}
+
+/**
+ * Puts a rule the Arbiter accepted into force: Kessa announces it, and a cruel rule angers the Wards it touches.
+ * Used by proposeRule and by the server for rules passed on the rite contract (whose points were paid on chain).
+ */
+export function enactRule(
+  world: World,
+  r: { author: string; authorName: string; templateId: string; params: RuleParams; cost: number },
+): Rule {
+  const rule: Rule = { id: world.nextRuleId++, templateId: r.templateId, params: r.params, author: r.author, cost: r.cost, addedAtTick: world.tick };
   world.rules.push(rule);
-  log(world, { type: "rule-added", actor: me.id, text: `Kessa: "${me.name} spent ${cost} points. New rule #${rule.id}: ${text}."` });
-  if (verdict.cruel) {
-    for (const w of wardsTouched(params)) {
+  const text = renderRule(r.templateId, r.params);
+  log(world, { type: "rule-added", actor: r.author, text: `Kessa: "${r.authorName} spent ${r.cost} points. New rule #${rule.id}: ${text}."` });
+  if (isCruel(r.templateId, r.params)) {
+    for (const w of wardsTouched(r.params)) {
       world.wards[w].grudge = addGrudge(world.wards[w].grudge, GRUDGE_SOURCES.cruelRulePassed.emotion, GRUDGE_SOURCES.cruelRulePassed.amount);
     }
   }
-  return true;
+  return rule;
 }
 
 function endOfDay(world: World) {

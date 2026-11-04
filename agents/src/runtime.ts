@@ -72,9 +72,13 @@ export async function decide(world: World, me: Participant, rng: Rng, llm: LlmCo
     const idx = Number(json.choice);
     const action = options[idx];
     // Guardrail: only options the engine offered are accepted.
-    if (!Number.isInteger(idx) || !action) return fallback();
+    if (!Number.isInteger(idx) || !action) {
+      if (process.env.NEAR_AI_DEBUG) console.warn(`[llm] ${me.name}: option ${String(json.choice)} not offered`);
+      return fallback();
+    }
     return { action, reason: String(json.reason ?? "").slice(0, 200), source: "llm" };
-  } catch {
+  } catch (err) {
+    if (process.env.NEAR_AI_DEBUG) console.warn(`[llm] ${me.name}: ${String(err).slice(0, 300)}`);
     return fallback();
   }
 }

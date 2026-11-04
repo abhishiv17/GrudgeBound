@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern Ward Greybox Preview</title>
+<!--
+  Browser preview of the Unreal greybox (unreal/Plugins/GrudgeboundClient), for looking at the layout before
+  the engine is installed. NOT Unreal: same blocks, colours, camera angle and screens as AGbWardGreybox and the
+  C++ widgets, drawn with three.js. Talks to the real game server exactly like UGbApiSubsystem.
+
+  Open it with the server running:  npm run server   then double-click this file.
+  Click to walk (like the Top Down template), or WASD. T = Talisman Case.
+-->
+<style>
+  :root {
+    --ink: #1a1726; --paper: #f3e9d2; --gold: #d9a532; --crimson: #b0153a;
+    --rage: #c8402a; --sorrow: #2b6cb0; --dread: #6b46c1; --leaf: #4f8a3c; --stone: #e6d6b2;
+    --ui: "Segoe UI", Roboto, system-ui, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0f0e16; font-family: var(--ui); color: var(--ink); }
+  canvas { display: block; }
+  .panel { position: fixed; background: var(--paper); padding: 10px 14px; }
+  .ink { background: rgba(26, 23, 38, .92); color: var(--paper); }
+  #hud { top: 24px; left: 24px; width: 300px; pointer-events: none; }
+  #hud h1 { font-size: 18px; margin: 0 0 4px; font-weight: 700; }
+  .row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0; }
+  .row b { width: 82px; }
+  .bar { flex: 1; height: 12px; background: #d7c9a8; }
+  .bar i { display: block; height: 100%; width: 0; }
+  #stats { font-weight: 700; font-size: 14px; margin-top: 8px; }
+  #server { font-size: 12px; margin-top: 6px; }
+  #hint { top: 24px; right: 24px; font-weight: 700; font-size: 13px; padding: 6px 10px; }
+  #kessa { bottom: 24px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100vw - 48px)); text-align: center; font-size: 16px; box-sizing: border-box; }
+  #tag { bottom: 24px; right: 24px; font-size: 11px; padding: 4px 8px; opacity: .8; }
+  .modal { position: fixed; inset: 0; display: grid; place-items: center; }
+  .modal.dim { background: rgba(26, 23, 38, .8); }
+  .card { background: var(--paper); padding: 18px 24px; width: min(720px, calc(100vw - 48px)); box-sizing: border-box; }
+  .card.small { width: min(460px, calc(100vw - 48px)); }
+  .card h2 { margin: 0 0 6px; font-size: 22px; }
+  .buttons { display: flex; gap: 10px; margin-top: 8px; }
+  button { flex: 1; height: 44px; border: 0; font: 700 15px var(--ui); color: var(--ink); background: var(--stone); cursor: pointer; }
+  button.gold { background: var(--gold); }
+  button.crimson { background: var(--crimson); color: var(--paper); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible { outline: 3px solid var(--sorrow); outline-offset: 2px; }
+  .side { display: flex; gap: 12px; align-items: baseline; margin-top: 6px; }
+  .side .name { font-size: 20px; font-weight: 700; }
+  .side .tags { font-size: 14px; font-weight: 700; }
+  .hp { display: flex; gap: 10px; align-items: center; margin: 2px 0 6px; font-weight: 700; font-size: 14px; }
+  .hp .bar { height: 16px; }
+  .hp span { width: 80px; }
+  #log { background: var(--stone); padding: 8px 12px; height: 150px; margin: 8px 0; font-size: 14px; overflow: hidden; }
+  #log p { margin: 1px 0; opacity: .65; }
+  #log p:last-child { opacity: 1; font-weight: 700; }
+  #problem { color: var(--crimson); font-weight: 700; font-size: 13px; }
+  #end { padding: 10px 14px; margin-top: 8px; }
+  #end p { font-size: 18px; font-weight: 700; margin: 0 0 8px; }
+  .tal { display: flex; gap: 10px; align-items: center; background: var(--stone); padding: 6px 10px; margin: 4px 0; }
+  .tal div { flex: 1; }
+  .tal strong { font-size: 16px; display: block; }
+  .tal small { font-size: 12px; }
+  .tal button { flex: 0 0 150px; height: 36px; }
+  #list { max-height: 360px; overflow: auto; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="hud" class="panel">
+  <h1 id="ward">Lantern Ward</h1>
+  <div id="grudge" class="row" style="margin-bottom:4px">Grudge -- / 100</div>
+  <div class="row" style="color:var(--rage)"><b id="rageT">Rage 0</b><div class="bar"><i id="rageB" style="background:var(--rage)"></i></div></div>
+  <div class="row" style="color:var(--sorrow)"><b id="sorrowT">Sorrow 0</b><div class="bar"><i id="sorrowB" style="background:var(--sorrow)"></i></div></div>
+  <div class="row" style="color:var(--dread)"><b id="dreadT">Dread 0</b><div class="bar"><i id="dreadB" style="background:var(--dread)"></i></div></div>
+  <div id="stats"></div>
+  <div id="partner" class="row"></div>
+  <div id="server">Server: connecting...</div>
+</div>
+<div id="hint" class="panel ink">T &nbsp;Talisman Case</div>
+<div id="kessa" class="panel ink">Kessa: Welcome to Hollowmere. Mind the tall grass after dark.</div>
+<div id="tag" class="panel ink">Browser preview of the Unreal greybox, not Unreal</div>
+
+<div id="encounter" class="modal" hidden>
+  <div class="card small">
+    <h2 style="color:var(--crimson)">A curse stirs in the tall grass!</h2>
+    <p id="intro" style="font-size:16px;margin:6px 0"></p>
+    <p id="matchup" style="font-weight:700;font-size:14px;margin:6px 0"></p>
+    <p id="lore" style="font-size:13px;margin:2px 0 12px"></p>
+    <div class="buttons"><button id="fight" class="gold">Fight!</button><button id="slip">Slip away</button></div>
+  </div>
+</div>
+
+<div id="battle" class="modal dim" hidden>
+  <div class="card">
+    <div class="side"><span class="name" id="wName"></span><span class="tags" id="wTags"></span></div>
+    <div class="hp"><div class="bar"><i id="wBar"></i></div><span id="wHp"></span></div>
+    <div class="side"><span class="name" id="pName"></span><span class="tags" id="pTags"></span></div>
+    <div class="hp"><div class="bar"><i id="pBar"></i></div><span id="pHp"></span></div>
+    <div id="log"></div>
+    <div id="problem" hidden></div>
+    <div id="actions">
+      <div class="buttons"><button id="aAttack" class="gold">Attack</button><button id="aWard">Ward</button><button id="aSalve">Salve</button></div>
+      <div class="buttons"><button id="aSeal" class="crimson">Seal</button><button id="aGilded" class="gold">Gilded Seal</button><button id="aFlee">Flee</button></div>
+    </div>
+    <div id="end" class="ink" hidden><p id="endText"></p><div class="buttons"><button id="back" class="gold">Back to the Ward</button></div></div>
+  </div>
+</div>
+
+<div id="case" class="modal" hidden>
+  <div class="card" style="width:min(560px, calc(100vw - 48px))">
+    <h2>Talisman Case</h2>
+    <p id="record" style="font-size:13px;margin:2px 0 8px"></p>
+    <div id="list"></div>
+    <div class="buttons" style="margin-top:10px"><button id="closeCase">Close (T)</button></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script>
+"use strict";
+// ---------------------------------------------------------------- settings (UGbSettings defaults)
+const SERVER = new URLSearchParams(location.search).get("server") || "http://localhost:8787";
+const WARD = "lantern", PLAYER_NAME = "A newcomer";
+const CHANCE_PER_METRE = 0.12, GRACE_METRES = 3, POLL_MS = 2000;
+const COLS = 44, ROWS = 30;
+const C = {
+  ink: 0x1a1726, paper: 0xf3e9d2, gold: 0xd9a532, crimson: 0xb0153a, lantern: 0xf7c35c, grass: 0x7c9a4c,
+  tall: 0x507b36, stone: 0xe6d6b2, stoneDark: 0xb09a70, mortar: 0xa48c63, water: 0x2e97a3, wood: 0x7a4e2e,
+  woodDark: 0x4a2e1e, teal: 0x3a7ca5, leaf: 0x4f8a3c,
+};
+const $ = (id) => document.getElementById(id);
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
+const emotionColor = (e) => ({ rage: "var(--rage)", sorrow: "var(--sorrow)", dread: "var(--dread)" })[e] || "var(--ink)";
+
+// ---------------------------------------------------------------- scene
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b2233);
+scene.fog = new THREE.Fog(0x1b2233, 30, 70);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
+scene.add(new THREE.HemisphereLight(0xcfd8ff, 0x3b3020, 0.75));
+const sun = new THREE.DirectionalLight(0xffe8c4, 0.9);
+sun.position.set(-14, 26, -10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 80 });
+scene.add(sun);
+
+// Tile (col, row) -> world. Row 0 is the north wall (far from the camera), like Unreal's +X.
+const tx = (col) => col - COLS / 2, tz = (row) => row - ROWS / 2;
+const boxGeo = new THREE.BoxGeometry(1, 1, 1), cylGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 16), sphGeo = new THREE.SphereGeometry(0.5, 16, 12);
+const solid = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+const mat = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+/** Same signature as AGbWardGreybox::Block: tiles [col, col+w) x [row, row+h), bottom and height in cm. */
+function block(color, col, row, w, h, bottomCm, heightCm, { geo = boxGeo, blocks = false, shadow = true } = {}) {
+  const m = new THREE.Mesh(geo, mat(color));
+  m.scale.set(w, heightCm / 100, h);
+  m.position.set(tx(col + w / 2), (bottomCm + heightCm / 2) / 100, tz(row + h / 2));
+  m.castShadow = shadow; m.receiveShadow = true;
+  scene.add(m);
+  if (blocks) for (let r = Math.floor(row); r < Math.ceil(row + h); r++) for (let c = Math.floor(col); c < Math.ceil(col + w); c++) if (solid[r]) solid[r][c] = true;
+  return m;
+}
+
+// --- ground, harbour pit, pier
+block(C.grass, 0, 0, COLS, 24, -20, 20, { shadow: false });
+block(C.grass, 20, 24, 3, 5, -20, 20, { shadow: false });
+block(C.water, 0, 24, COLS, 6, -90, 20, { shadow: false });
+for (let r = 24; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (!(c >= 20 && c <= 22 && r <= 28)) solid[r][c] = true;
+block(C.stoneDark, 0, 24, 20, 1, -70, 120, { blocks: true });
+block(C.stoneDark, 23, 24, COLS - 23, 1, -70, 120, { blocks: true });
+block(C.stoneDark, 19.8, 25, 0.2, 4, 0, 50); block(C.stoneDark, 23, 25, 0.2, 4, 0, 50); block(C.stoneDark, 20, 28.8, 3, 0.2, 0, 50);
+solid[29][20] = solid[29][21] = solid[29][22] = true;
+// --- streets, plaza
+block(C.stone, 1, 12, COLS - 2, 3, 0, 1, { shadow: false });
+block(C.stone, 20, 1, 3, 23, 0, 1, { shadow: false });
+block(C.stoneDark, 16, 9, 11, 9, 0, 2, { shadow: false });
+block(C.gold, 19, 12, 5, 3, 0, 3, { shadow: false });
+block(C.crimson, 20, 11, 3, 1, 0, 3, { shadow: false });
+block(C.paper, 21.1, 10.4, 0.8, 0.2, 0, 200, { blocks: true });
+block(C.teal, 17, 15, 2, 2, 0, 70, { geo: cylGeo, blocks: true });
+for (const [c, r] of [[16, 9], [26, 9], [16, 17], [26, 17]]) block(C.leaf, c + 0.1, r + 0.1, 0.8, 0.8, 0, 90, { geo: sphGeo, blocks: true });
+for (const [c, r] of [[18, 9], [24, 9]]) { block(C.woodDark, c + 0.4, r + 0.4, 0.2, 0.2, 0, 300, { geo: cylGeo, blocks: true }); block(C.crimson, c + 0.5, r + 0.25, 0.6, 0.05, 140, 140); }
+block(C.wood, 25.1, 16.1, 0.8, 0.8, 0, 80, { blocks: true });
+// --- stalls and lanterns
+const lights = [];
+for (let x = 3; x < COLS - 3; x += 4) {
+  if (x >= 14 && x <= 27) continue;
+  for (const y of [11, 15]) {
+    block(C.wood, x, y + 0.15, 2, 0.7, 0, 110, { blocks: true });
+    block(C.crimson, x - 0.1, y - 0.05, 2.2, 1.1, 200, 8);
+    block(C.woodDark, x + 0.05, y + 0.45, 0.1, 0.1, 0, 200, { geo: cylGeo });
+    block(C.woodDark, x + 1.85, y + 0.45, 0.1, 0.1, 0, 200, { geo: cylGeo });
+    block(C.woodDark, x + 2.45, y + 0.45, 0.1, 0.1, 0, 240, { geo: cylGeo, blocks: true });
+    const lamp = block(C.lantern, x + 2.3, y + 0.3, 0.4, 0.4, 230, 40, { geo: sphGeo, shadow: false });
+    lamp.material = new THREE.MeshBasicMaterial({ color: C.lantern });
+    lights.push(lamp.position);
+  }
+}
+for (const p of lights.filter((_, i) => i % 2 === 0)) { const l = new THREE.PointLight(0xffc46b, 0.6, 6); l.position.copy(p); scene.add(l); }
+// --- houses (greybox only)
+for (const [c, r, w, h] of [[13, 2, 5, 5], [25, 2, 5, 5], [15, 19, 4, 4], [24, 19, 5, 4]]) {
+  block(C.paper, c, r, w, h, 0, 300, { blocks: true });
+  block(C.ink, c - 0.2, r - 0.2, w + 0.4, h + 0.4, 300, 30);
+}
+// --- walls with banners
+block(C.mortar, 0, 0, COLS, 1, 0, 300, { blocks: true });
+block(C.mortar, 0, 0, 1, 24, 0, 300, { blocks: true });
+block(C.mortar, COLS - 1, 0, 1, 24, 0, 300, { blocks: true });
+for (let x = 3; x < COLS; x += 6) block(C.crimson, x + 0.2, 1.0, 0.6, 0.05, 80, 180);
+// --- tall grass (same patches and blade sizes as the C++)
+const PATCHES = [[3, 3, 9, 6], [31, 3, 9, 6], [4, 18, 10, 4], [30, 18, 10, 4]];
+let seed = 1234; const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const coneGeo = new THREE.ConeGeometry(0.5, 1, 6);
+const blades = new THREE.InstancedMesh(coneGeo, mat(C.tall), PATCHES.reduce((n, p) => n + p[2] * p[3] * 4, 0));
+let bi = 0; const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+for (const [c, r, w, h] of PATCHES) {
+  block(new THREE.Color(C.tall).multiplyScalar(0.8), c, r, w, h, 0, 1.5, { shadow: false });
+  for (let i = 0; i < w * h * 4; i++) {
+    const height = 0.35 + rand() * 0.25, width = 0.06 + rand() * 0.04;
+    e.set((rand() - 0.5) * 0.4, rand() * 6.28, (rand() - 0.5) * 0.4); q.setFromEuler(e);
+    m4.compose(new THREE.Vector3(tx(c + rand() * w), height / 2, tz(r + rand() * h)), q, new THREE.Vector3(width, height, width));
+    blades.setMatrixAt(bi++, m4);
+  }
+}
+scene.add(blades);
+const inGrass = (p) => PATCHES.some(([c, r, w, h]) => p.x >= tx(c) && p.x <= tx(c + w) && p.z >= tz(r) && p.z <= tz(r + h));
+
+// --- player (a capsule standing in for the template's mannequin)
+const player = new THREE.Group();
+const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.2, 16), mat(C.crimson)); body.position.y = 0.9; body.castShadow = true;
+const head = new THREE.Mesh(sphGeo, mat(C.paper)); head.scale.setScalar(0.5); head.position.y = 1.75; head.castShadow = true;
+const nose = new THREE.Mesh(boxGeo, mat(C.ink)); nose.scale.set(0.12, 0.12, 0.2); nose.position.set(0, 1.75, -0.28);
+player.add(body, head, nose);
+player.position.set(tx(21.5), 0, tz(13.5));
+scene.add(player);
+const marker = new THREE.Mesh(new THREE.RingGeometry(0.25, 0.35, 24), new THREE.MeshBasicMaterial({ color: C.gold }));
+marker.rotation.x = -Math.PI / 2; marker.visible = false; scene.add(marker);
+
+// Top Down template camera: boom pitched 60 degrees down, ~14 m arm.
+const CAM_OFFSET = new THREE.Vector3(0, 14 * Math.sin(Math.PI / 3), 14 * Math.cos(Math.PI / 3));
+function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener("resize", resize); resize();
+
+// ---------------------------------------------------------------- movement (click to walk, or WASD)
+let target = null; const keys = new Set(); let uiOpen = null;
+const ray = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+renderer.domElement.addEventListener("pointerdown", (ev) => {
+  if (uiOpen || ev.button !== 0) return;
+  ray.setFromCamera(new THREE.Vector2((ev.clientX / innerWidth) * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1), camera);
+  const hit = new THREE.Vector3();
+  if (ray.ray.intersectPlane(groundPlane, hit)) {
+    path = findPath(player.position, hit);
+    target = path.length ? path.shift() : null;
+    marker.position.set(hit.x, 0.03, hit.z); marker.visible = !!target;
+  }
+});
+
+// Grid A* around solid tiles, standing in for the nav mesh the Top Down template walks on.
+let path = [];
+function findPath(from, to) {
+  const cell = (p) => [Math.floor(p.x + COLS / 2), Math.floor(p.z + ROWS / 2)];
+  const [sc, sr] = cell(from), [gc, gr] = cell(to);
+  const free = (c, r) => r >= 0 && r < ROWS && c >= 0 && c < COLS && !solid[r][c];
+  if (!free(gc, gr)) return [];
+  const key = (c, r) => r * COLS + c, open = [[sc, sr]], came = new Map(), g = new Map([[key(sc, sr), 0]]);
+  const h = (c, r) => Math.hypot(c - gc, r - gr);
+  while (open.length) {
+    open.sort((a, b) => (g.get(key(...a)) + h(...a)) - (g.get(key(...b)) + h(...b)));
+    const [c, r] = open.shift();
+    if (c === gc && r === gr) {
+      const out = [new THREE.Vector3(to.x, 0, to.z)];
+      let k = key(c, r);
+      while (came.has(k)) { k = came.get(k); const pc = k % COLS, pr = Math.floor(k / COLS); out.unshift(new THREE.Vector3(pc - COLS / 2 + 0.5, 0, pr - ROWS / 2 + 0.5)); }
+      out.shift(); // the start cell
+      return out;
+    }
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const nc = c + dc, nr = r + dr;
+      if (!free(nc, nr) || (dc && dr && (!free(c + dc, r) || !free(c, r + dr)))) continue; // no corner cutting
+      const ng = g.get(key(c, r)) + Math.hypot(dc, dr), nk = key(nc, nr);
+      if (ng < (g.has(nk) ? g.get(nk) : Infinity)) { g.set(nk, ng); came.set(nk, key(c, r)); if (!open.some(([a, b]) => a === nc && b === nr)) open.push([nc, nr]); }
+    }
+  }
+  return [];
+}
+addEventListener("keydown", (ev) => {
+  if (ev.key === "t" || ev.key === "T") { toggleCase(); return; }
+  keys.add(ev.key.toLowerCase());
+});
+addEventListener("keyup", (ev) => keys.delete(ev.key.toLowerCase()));
+const blocked = (x, z) => {
+  for (const [dx, dz] of [[0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
+    const c = Math.floor(x + dx + COLS / 2), r = Math.floor(z + dz + ROWS / 2);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS || solid[r][c]) return true;
+  }
+  return false;
+};
+const SPEED = 6; // m/s (template walk speed 600 cm/s)
+let walked = 0, grace = 0;
+function move(dt) {
+  if (uiOpen) return;
+  const dir = new THREE.Vector3();
+  if (keys.has("w") || keys.has("arrowup")) dir.z -= 1;
+  if (keys.has("s") || keys.has("arrowdown")) dir.z += 1;
+  if (keys.has("a") || keys.has("arrowleft")) dir.x -= 1;
+  if (keys.has("d") || keys.has("arrowright")) dir.x += 1;
+  if (dir.lengthSq()) { target = null; path = []; marker.visible = false; }
+  else if (target) {
+    dir.set(target.x - player.position.x, 0, target.z - player.position.z);
+    if (dir.length() < 0.15) {
+      target = path.length ? path.shift() : null;
+      if (!target) marker.visible = false;
+      return;
+    }
+  } else return;
+  dir.normalize().multiplyScalar(SPEED * dt);
+  const nx = player.position.x + dir.x, nz = player.position.z + dir.z;
+  const before = player.position.clone();
+  if (!blocked(nx, player.position.z)) player.position.x = nx;
+  if (!blocked(player.position.x, nz)) player.position.z = nz;
+  const step = before.distanceTo(player.position);
+  if (step < 1e-4) { target = null; marker.visible = false; return; }
+  player.rotation.y = Math.atan2(-dir.x, -dir.z);
+  // UGbTallGrassComponent: roll once per metre walked in tall grass, 3 safe metres after a battle.
+  if (!inGrass(player.position) || battleOpen || busy) return;
+  walked += step;
+  while (walked >= 1) {
+    walked -= 1;
+    if (grace > 0) { grace--; continue; }
+    if (Math.random() < CHANCE_PER_METRE) { walked = 0; startBattle(); return; }
+  }
+}
+
+// ---------------------------------------------------------------- server (UGbApiSubsystem)
+let online = false, state = null, lastTick = -1, seenAtLast = new Set(), curses = {};
+let battleId = null, battleOpen = false, busy = false, pending = null, lastView = null, logLines = [];
+async function call(method, path, body) {
+  try {
+    const r = await fetch(SERVER + path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    const text = await r.text();
+    let json = null; try { json = JSON.parse(text); } catch {}
+    return { status: r.status, json };
+  } catch { return { status: 0, json: null }; }
+}
+function setOnline(v) { online = v; renderHud(); }
+function say(line) { if (line) { $("kessa").textContent = line; } }
+async function poll() {
+  const s = await call("GET", "/state");
+  if (s.status === 200 && s.json) { state = s.json; setOnline(true); } else setOnline(false);
+  const since = lastTick < 0 ? -1 : lastTick - 1;
+  const ev = await call("GET", "/events?since=" + since);
+  if (ev.status === 200 && Array.isArray(ev.json)) {
+    const fresh = [];
+    for (const e of ev.json) {
+      if (e.tick < lastTick || (e.tick === lastTick && seenAtLast.has(e.text))) continue;
+      if (e.tick > lastTick) { lastTick = e.tick; seenAtLast = new Set(); }
+      seenAtLast.add(e.text); fresh.push(e);
+    }
+    if (fresh.length) say(fresh[fresh.length - 1].text);
+  }
+  if (!Object.keys(curses).length) {
+    const c = await call("GET", "/curses");
+    if (c.status === 200 && Array.isArray(c.json)) for (const x of c.json) curses[x.id] = x;
+  }
+  renderHud();
+}
+const curse = (id) => curses[id] || { id, name: id, emotion: "", omen: "" };
+
+// ---------------------------------------------------------------- player (UGbPlayerSubsystem; kept in this browser)
+const KEY = "grudgebound.unrealPreview.player";
+const fresh = () => ({ points: 0, ember: 60, talismans: [{ id: "tal-starter", speciesId: "cinder-grin", omen: "whisper", boundDay: -1, seed: -1, wins: 0 }], partnerId: "tal-starter", next: 1, won: 0, bound: 0, fled: 0, lost: 0 });
+let me = fresh();
+try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && saved.talismans && saved.talismans.length) me = saved; } catch {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(me)); } catch {} renderHud(); };
+const partner = () => me.talismans.find((t) => t.id === me.partnerId) || me.talismans[0];
+
+// ---------------------------------------------------------------- HUD
+function renderHud() {
+  const w = state && state.wards.find((x) => x.id === WARD);
+  const time = state ? `Day ${state.day}  ${String(state.hour).padStart(2, "0")}:00 ${state.night ? "(night)" : "(day)"}` : "Day -  --:--";
+  $("ward").textContent = `${w ? w.name : "Lantern Ward"}   ${time}`;
+  $("grudge").textContent = w ? `Grudge ${Math.round(w.total)} / 100   (${w.wild} curses roaming)` : "Grudge -- / 100";
+  for (const k of ["rage", "sorrow", "dread"]) {
+    const v = w ? w.grudge[k] : 0;
+    $(k + "T").textContent = `${cap(k)} ${Math.round(v)}`;
+    $(k + "B").style.width = Math.min(100, v) + "%";
+  }
+  $("stats").textContent = `Points ${me.points}    Ember ${me.ember}    Rules ${state ? state.rules.length : 0} / 10`;
+  const p = partner(), pc = curse(p.speciesId);
+  $("partner").textContent = `Partner: ${pc.name} (${pc.emotion ? cap(pc.emotion) : p.omen})`;
+  $("server").textContent = online ? `Server online  (${SERVER}, tick ${state ? state.tick : 0})` : `Server offline: run  npm run server  (${SERVER})`;
+  $("server").style.color = online ? "var(--leaf)" : "var(--crimson)";
+}
+
+// ---------------------------------------------------------------- encounter and battle (AGbUiDirector + widgets)
+function show(id) {
+  uiOpen = id; target = null; marker.visible = false; keys.clear();
+  for (const m of ["encounter", "battle", "case"]) $(m).hidden = m !== id;
+  $("hud").hidden = id === "battle";
+}
+async function startBattle() {
+  busy = true;
+  const r = await call("POST", "/battle/start", { ward: WARD, playerCurse: partner().speciesId, by: PLAYER_NAME });
+  busy = false;
+  if (r.status !== 200 || !r.json) {
+    say(r.status === 0 ? "Something stirs in the grass... but the town is silent. (Game server not reachable.)" : `The grass goes still. (${(r.json && r.json.error) || r.status})`);
+    grace = GRACE_METRES; return;
+  }
+  const b = r.json; pending = b; battleId = b.battleId; battleOpen = true;
+  $("intro").textContent = b.lines[0] || `Wild ${b.wild.name}!`;
+  const P = b.view.player.name;
+  const mt = b.matchup === "advantage" ? `Your ${P} has the advantage.` : b.matchup === "disadvantage" ? `Careful: ${b.wild.name} resists your ${P}.` : `${P} vs ${b.wild.name}: even match.`;
+  $("matchup").textContent = `${cap(b.wild.emotion)} ${cap(b.wild.omen)}  |  ${mt}`;
+  $("matchup").style.color = emotionColor(b.wild.emotion);
+  const lore = curse(b.wild.id).bornFrom;
+  $("lore").textContent = lore ? `Born from ${lore}.` : "";
+  show("encounter"); $("fight").focus();
+}
+$("fight").onclick = () => {
+  logLines = []; $("end").hidden = true; $("problem").hidden = true; $("actions").hidden = false;
+  showView(pending.view); addLines(pending.lines); enable(true); show("battle");
+};
+$("slip").onclick = () => {
+  battleId = null; battleOpen = false; grace = GRACE_METRES;
+  say(`You slipped away from ${pending.wild.name}. It still haunts the tall grass.`); show(null);
+};
+function side(s, pre, k) {
+  $(k + "Name").textContent = pre + s.name;
+  $(k + "Tags").textContent = `${cap(s.emotion)}  ${cap(s.omen)}`; $(k + "Tags").style.color = emotionColor(s.emotion);
+  const f = Math.max(0, Math.min(1, s.hp / s.maxHp));
+  $(k + "Bar").style.width = f * 100 + "%"; $(k + "Bar").style.background = f > 0.5 ? "var(--leaf)" : f > 0.2 ? "var(--gold)" : "var(--crimson)";
+  $(k + "Hp").textContent = `${s.hp} / ${s.maxHp}`;
+}
+const pct = (x) => Math.round(Math.max(0, Math.min(1, x)) * 100) + "%";
+function showView(v) {
+  lastView = v; side(v.wild, "Wild ", "w"); side(v.player, "Your ", "p");
+  $("aSalve").textContent = `Salve (${v.items.salve})`;
+  $("aSeal").textContent = `Seal ${pct(v.chances.seal)}`;
+  $("aGilded").textContent = `Gilded Seal ${pct(v.chances.gildedSeal)} (${v.items.gilded})`;
+  $("aFlee").textContent = `Flee ${pct(v.chances.flee)}`;
+}
+function addLines(lines) {
+  logLines.push(...lines); logLines = logLines.slice(-6);
+  $("log").innerHTML = ""; for (const l of logLines) { const p = document.createElement("p"); p.textContent = l; $("log").append(p); }
+}
+function enable(on) {
+  const c = lastView ? lastView.canUse : {};
+  $("aAttack").disabled = !(on && c.attack); $("aWard").disabled = !(on && c.ward); $("aSalve").disabled = !(on && c.salve);
+  $("aSeal").disabled = !(on && c.seal); $("aGilded").disabled = !(on && c.gildedSeal); $("aFlee").disabled = !(on && c.flee);
+}
+async function act(action) {
+  if (!battleId || busy) return;
+  busy = true; enable(false);
+  const r = await call("POST", "/battle/turn", { battleId, action });
+  busy = false;
+  if (r.status !== 200 || !r.json) {
+    const over = r.status === 404;
+    $("problem").textContent = r.status === 0 ? "No answer from the server. Is  npm run server  running?" : (r.json && r.json.error) || "Error " + r.status;
+    $("problem").hidden = false;
+    if (over) { battleId = null; battleOpen = false; $("actions").hidden = true; $("endText").textContent = "The curse slipped back into the grass."; $("end").hidden = false; }
+    else enable(true);
+    return;
+  }
+  const t = r.json; $("problem").hidden = true; showView(t.view); addLines(t.lines);
+  if (t.outcome) { battleId = null; finish(t); } else enable(true);
+}
+function finish(t) {
+  const won = t.outcome === "won" || t.outcome === "bound";
+  me[t.outcome === "won" ? "won" : t.outcome] = (me[t.outcome === "won" ? "won" : t.outcome] || 0) + 1;
+  if (won) { me.points += Math.max(0, t.points || 0); const p = partner(); p.wins++; }
+  if (t.outcome === "bound") me.talismans.push({ id: "tal-" + me.next++, speciesId: t.view.wild.speciesId, omen: t.view.wild.omen, boundDay: state ? state.day : 1, seed: t.seed, wins: 0 });
+  save();
+  const W = t.view.wild.name;
+  $("endText").textContent = { bound: `Bound! ${W} is sealed into a talisman.  +${t.points} points`, won: `Exorcised! ${W} fades into ash.  +${t.points} points`,
+    fled: "You got away. The curse still haunts the tall grass.", lost: "Your partner is spent. You stagger back to the Ward." }[t.outcome] || "The battle is over.";
+  $("actions").hidden = true; $("end").hidden = false; $("back").focus();
+}
+$("aAttack").onclick = () => act({ kind: "attack" });
+$("aWard").onclick = () => act({ kind: "ward" });
+$("aSalve").onclick = () => act({ kind: "item", item: "salve" });
+$("aSeal").onclick = () => act({ kind: "seal" });
+$("aGilded").onclick = () => act({ kind: "seal", gilded: true });
+$("aFlee").onclick = () => act({ kind: "flee" });
+$("back").onclick = () => { battleOpen = false; grace = GRACE_METRES; poll(); show(null); };
+
+// ---------------------------------------------------------------- Talisman Case
+function toggleCase() {
+  if (uiOpen === "case") { show(null); return; }
+  if (uiOpen) return;
+  renderCase(); show("case");
+}
+function renderCase() {
+  $("record").textContent = `${me.talismans.length} talismans  |  bound ${me.bound || 0}, exorcised ${me.won || 0}, fled ${me.fled || 0}, lost ${me.lost || 0}  |  ${me.points} points`;
+  $("list").innerHTML = "";
+  for (const t of me.talismans) {
+    const c = curse(t.speciesId), row = document.createElement("div"); row.className = "tal";
+    const info = document.createElement("div");
+    const name = document.createElement("strong"); name.textContent = c.name; name.style.color = emotionColor(c.emotion);
+    const det = document.createElement("small");
+    det.textContent = `${cap(c.emotion)} ${cap(t.omen)}  |  ${t.boundDay < 0 ? "Kessa's gift" : "bound on day " + t.boundDay}  |  ${t.wins} wins`;
+    info.append(name, det);
+    const b = document.createElement("button"); b.className = "gold";
+    const isP = t.id === me.partnerId; b.textContent = isP ? "Partner" : "Make partner"; b.disabled = isP;
+    b.onclick = () => { me.partnerId = t.id; save(); renderCase(); };
+    row.append(info, b); $("list").append(row);
+  }
+}
+$("closeCase").onclick = () => show(null);
+
+// ---------------------------------------------------------------- loop
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  move(dt);
+  camera.position.copy(player.position).add(CAM_OFFSET);
+  camera.lookAt(player.position.x, 0.8, player.position.z);
+  marker.rotation.z += dt;
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+renderHud(); poll(); setInterval(poll, POLL_MS); frame();
+</script>
+</body>
+</html>

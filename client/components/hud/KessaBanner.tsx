@@ -12,6 +12,7 @@ const LABEL: Record<string, string> = {
   bankruptcy: "Bankruptcy",
   calamity: "Calamity",
   reopen: "Shop reopened",
+  scam: "Forged talisman",
   bound: "Bound",
   exorcised: "Exorcised",
   battle: "After the fight",
@@ -75,7 +76,7 @@ export default function KessaBanner({ className }: { className?: string }) {
     else setOpen(false);
   };
 
-  const isAlarm = current?.kind === "calamity" || current?.kind === "bankruptcy" || current?.kind === "rule-rejected";
+  const isAlarm = current?.kind === "calamity" || current?.kind === "bankruptcy" || current?.kind === "rule-rejected" || current?.kind === "scam";
 
   return (
     <div className={`kessa-scroll ${open && current ? "is-open" : ""} ${isAlarm ? "kessa-scroll--alarm" : ""} ${className ?? ""}`}>

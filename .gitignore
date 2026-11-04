@@ -44,9 +44,13 @@ unreal/**/Saved/
 unreal/**/DerivedDataCache/
 unreal/**/.vs/
 unreal/**/*.sln
+unreal/**/*.slnx
 unreal/**/*.VC.db
 unreal/**/*.opensdf
 unreal/**/*.sdf
 # packaged builds go on GitHub Releases, not in the repo
 unreal/**/Packaged/
 *.zip
+
+# runtime data (battle archive for npm run replay)
+data/

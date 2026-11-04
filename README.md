@@ -48,10 +48,11 @@ npm install
 | `shared/src/pricing.ts`: every price formula in one file, with plain-English reasons | Done |
 | Tick engine: Grudge, spawns, merchants, bankruptcies, AI rival policies, rules with costs and effects | First version, being tuned |
 | Fast-forward simulator (`npm run sim`) | Done (text output; Observatory charts planned) |
-| Game server: `/state`, `/events`, `/shop` (merchant price reasons), `POST /battle` (replays a battle before counting it), `/battle/start` + `/battle/turn` (server-run battles) | Working, in memory |
+| Game server: `/state`, `/events`, `/shop` (merchant price reasons), `/curses`, `POST /battle` (replays a battle before counting it), `/battle/start` + `/battle/turn` (server-run battles) | Working, in memory |
 | Agent runtime: observe, legal options, LLM choice, guardrail, scripted fallback | Done; not yet acting through NEAR wallets |
 | Game client (Next.js + Phaser): walkable Ward, tall-grass encounters, Grudge HUD, Kessa banner, Rules panel, Vow Shrine | Working; first art pass |
 | Battles and binding: encounter, turn-based battle, seal, talisman case, partner choice, points | Working; progress kept in the browser until sign-in |
+| Unreal Engine 5.8 client (`unreal/Plugins/GrudgeboundClient`): server API, Lantern Ward greybox, tall-grass encounters, HUD, battle screen, Talisman Case | Builds and plays on UE 5.8.4: walk, encounter, battle, bind (`docs/UNREAL_SETUP.md`) |
 | Contracts: `items` (NEP-245 shape) and `rite` (points, rules, vows) | Compile to wasm, unit tests written; **not deployed yet** |
 | Testnet deploy, relayer (meta transactions), binding mints a token | Planned (Phase 2, 5-7 Nov) |
 | Email login, agents with their own accounts, Observatory page | Planned (Phase 3, 7-10 Nov) |

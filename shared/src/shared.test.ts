@@ -8,7 +8,7 @@ import {
   pvpTake, ruleCost, arbiterCheck, renderRule, isCruel, type Rule,
   simulate, summarize,
   capturePoints, ruleMultiplier, curfewForbids, recordCapture, createWorld, totalGrudge as total,
-  createBattle, resolveTurn, replayBattle, type PlayerAction,
+  createBattle, resolveTurn, replayBattle, type PlayerAction, DEMO_SEED,
 } from "./index";
 
 describe("type triangle", () => {
@@ -155,5 +155,14 @@ describe("player captures", () => {
     assert.equal(replay.at(-1)!.state.outcome, state.outcome);
     const otherSeed = replayBattle(setup, 78, actions);
     assert.notDeepEqual(otherSeed.map((t) => t.events), replay.map((t) => t.events));
+  });
+});
+
+describe("the demo seed (P2-A1)", () => {
+  it("7 days on DEMO_SEED show a bankruptcy, then a Calamity, then a rule war", async () => {
+    const { scoreSeed } = await import("../../sim/src/seeds");
+    const r = scoreSeed(DEMO_SEED, 7);
+    assert.equal(r.complete, true, JSON.stringify(r));
+    assert.ok(r.firstBankruptcy! < r.firstCalamity! && r.firstCalamity! <= r.firstRuleWar!, `beats in order: ${JSON.stringify(r)}`);
   });
 });

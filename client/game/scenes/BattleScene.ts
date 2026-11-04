@@ -39,6 +39,8 @@ import { Frame, ensureGrain, iconTexture, kessaTexture } from "../battle/art";
 import { ActionMenu, BattleLog, HealthCard, textStyle, type MenuOption } from "../battle/ui";
 import { PaperTear, burst, damageNumber, hitFlash, sealRite, shake, slash, tween, wait } from "../battle/fx";
 import { C, hexToInt } from "../battle/pixels";
+import { syncState, type BattleView, type RemoteStart, type RemoteTurn } from "../battleClient";
+import { worldStore } from "../../lib/worldStore";
 
 export interface BattleData {
   /** Wild curse species id (see CURSES in @grudgebound/shared). */
@@ -52,6 +54,8 @@ export interface BattleData {
   reducedMotion?: boolean;
   /** Standalone test mode (?scene=battle): offer a rematch instead of stopping. */
   standalone?: boolean;
+  /** The server runs this battle (P2-C7): turns go to POST /battle/turn and its answer is what happened. */
+  remote?: RemoteStart;
 }
 
 export interface BattleResult {
@@ -62,6 +66,12 @@ export interface BattleResult {
   actions: PlayerAction[];
   wild: string;
   playerCurse: string;
+  /** Server battles: the server settled the points (0 under a curfew); the seed above is the one it revealed. */
+  remote?: boolean;
+  points?: number;
+  curfew?: string;
+  /** The server is still writing the result to NEAR. */
+  chainPending?: boolean;
 }
 
 export const BATTLE_END = "battle-end";
@@ -117,6 +127,9 @@ export class BattleScene extends Phaser.Scene {
   private hint!: Phaser.GameObjects.Text;
   private endConfirm?: () => void;
   private lastMain = 0;
+  /** Server battles: the server's latest view (its chances and allowed moves win over local guesses). */
+  private view?: BattleView;
+  private lastTurn?: RemoteTurn;
 
   constructor() {
     super("battle");
@@ -127,7 +140,12 @@ export class BattleScene extends Phaser.Scene {
     this.data0 = data && data.wild ? (data as BattleData) : (fromUrl ?? { wild: "weepwick", standalone: true });
     this.seed = (this.data0.seed ?? Date.now()) >>> 0;
     this.rng = createRng(this.seed);
-    this.state = createBattle({ wild: this.data0.wild, omen: this.data0.omen, playerCurse: this.data0.playerCurse });
+    const remote = this.data0.remote;
+    this.state = remote
+      ? syncState(createBattle({ wild: remote.wild.id, omen: remote.wild.omen, playerCurse: remote.view.player.speciesId }), remote.view)
+      : createBattle({ wild: this.data0.wild, omen: this.data0.omen, playerCurse: this.data0.playerCurse });
+    this.view = remote?.view;
+    this.lastTurn = undefined;
     this.actions = [];
     this.mode = "intro";
     this.endConfirm = undefined;
@@ -235,7 +253,7 @@ export class BattleScene extends Phaser.Scene {
         tween(this, { targets: this.player.holder, x: playerX, duration: 520, ease: "Back.easeOut", delay: 120 }),
       ]);
     }
-    await this.say(introLine(this.state));
+    for (const line of this.data0.remote?.lines ?? [introLine(this.state)]) await this.say(line);
     this.startPlayerTurn();
   }
 
@@ -248,7 +266,7 @@ export class BattleScene extends Phaser.Scene {
 
   private mainOptions(): MenuOption[] {
     const s = this.state;
-    const seal = sealChance(s.wild);
+    const seal = this.view?.chances.seal ?? sealChance(s.wild);
     const itemsLeft = s.items.salve + s.items.gilded;
     return [
       { label: "Attack", icon: "attack", sub: `${EMOTION_INFO[s.player.emotion].label} strike`, enabled: true },
@@ -262,8 +280,8 @@ export class BattleScene extends Phaser.Scene {
     const s = this.state;
     return [
       { label: "Ink Salve", icon: "salve", sub: `x${s.items.salve} · heal 40%`, enabled: s.items.salve > 0 && s.player.hp < s.player.maxHp },
-      { label: "Gilded Seal", icon: "gilded", sub: `x${s.items.gilded} · ${pct(sealChance(s.wild, true))}`, enabled: s.items.gilded > 0 && sealChance(s.wild, true) > 0 },
-      { label: "Slip Away", icon: "flee", sub: `flee ${pct(fleeChance(s))}`, enabled: true },
+      { label: "Gilded Seal", icon: "gilded", sub: `x${s.items.gilded} · ${pct(this.view?.chances.gildedSeal ?? sealChance(s.wild, true))}`, enabled: this.view ? this.view.canUse.gildedSeal : s.items.gilded > 0 && sealChance(s.wild, true) > 0 },
+      { label: "Slip Away", icon: "flee", sub: `flee ${pct(this.view?.chances.flee ?? fleeChance(s))}`, enabled: true },
       { label: "Back", icon: "back", sub: "Esc", enabled: true },
     ];
   }
@@ -297,6 +315,7 @@ export class BattleScene extends Phaser.Scene {
 
   private async takeTurn(action: PlayerAction) {
     if (!canUse(this.state, action)) return;
+    if (this.data0.remote) return this.takeRemoteTurn(this.data0.remote.battleId, action);
     this.mode = "busy";
     this.menu.setActive(false);
     this.hint.setText("");
@@ -307,6 +326,32 @@ export class BattleScene extends Phaser.Scene {
     for (const e of events) await this.play(e, before);
     this.clearWards();
     if (state.outcome) return this.finish(state.outcome);
+    this.startPlayerTurn();
+  }
+
+  /** The server resolves the turn; the scene animates what it says happened. */
+  private async takeRemoteTurn(battleId: string, action: PlayerAction) {
+    this.mode = "busy";
+    this.menu.setActive(false);
+    this.hint.setText("");
+    const r = await worldStore.battleTurn(battleId, action);
+    if (!r.ok) {
+      // 409: not allowed now (a curfew forbids sealing); the turn isn't spent. 404: the battle expired.
+      await this.say(r.status === 409 ? r.error : `The town lost the thread of this fight (${r.error}).`);
+      if (r.status === 404) return this.finish("fled");
+      return this.startPlayerTurn();
+    }
+    const t = r.body;
+    this.actions.push(action);
+    const before = this.state;
+    this.state = syncState(this.state, t.view);
+    this.view = t.view;
+    this.lastTurn = t;
+    for (const e of t.events) await this.play(e, before);
+    // Words beyond the events (Kessa on a broken curfew).
+    for (const line of t.lines.slice(t.events.length)) await this.say(line);
+    this.clearWards();
+    if (t.outcome) return this.finish(t.outcome);
     this.startPlayerTurn();
   }
 
@@ -426,9 +471,11 @@ export class BattleScene extends Phaser.Scene {
     this.log.showCaret(false);
     this.hint.setText("");
     await this.tear.close();
+    const t = this.lastTurn;
     const result: BattleResult = {
-      outcome, seed: this.seed, log: [...this.log.all], actions: [...this.actions],
+      outcome, seed: t?.seed ?? this.seed, log: [...this.log.all], actions: [...this.actions],
       wild: this.state.wild.speciesId, playerCurse: this.state.player.speciesId,
+      ...(this.data0.remote ? { remote: true, points: t?.points ?? 0, curfew: t?.curfew, chainPending: t?.chain?.status === "pending" } : {}),
     };
     // keep the action list readable in the dev console
     if (process.env.NODE_ENV !== "production") console.info("[battle]", outcome, this.seed, this.actions.map(actionLabel).join(", "));
