@@ -41,11 +41,12 @@ features are planned. The existing web game remains in the repository; the Obser
 | [1. Core loop offline](#phase-1--core-loop-offline) | 1-4 Nov | Grass, battle, bind, talisman, points, all in the browser. Contracts compile. | G1 · 4 Nov | ✅ |
 | [2. On testnet](#phase-2--on-testnet) | 4-5 Nov | Binding mints a real token; rules go through the rite contract; we pay the gas | G2 · 7 Nov | ✅ G2 passed 5 Nov (Rite panel check in Unreal left) |
 | [3. Accounts, agents, live world](#phase-3--accounts-agents-live-world) | 5-8 Nov | Email sign-in (from Unreal too), agents with wallets, vows, Observatory | G3 · 8 Nov (feature freeze) | 🟡 started 5 Nov |
-| [4. Look, story, hosting, video](#phase-4--look-story-hosting-video) | 6-12 Nov (starts alongside Phase 3) | Unreal looks like a real game and tells a story; hosted server, packaged build, video | G4 · 12 Nov | ⬜ |
+| [4. Look, story, hosting, video](#phase-4--look-story-hosting-video) | 6-12 Nov (starts alongside Phase 3) | Unreal looks like a real game and tells a story; hosted server, packaged build, video | G4 · 12 Nov | 🟡 story implementation started |
 | [5. Ship](#phase-5--ship) | 13-14 Nov | Repo public, X post, submission | G5 · 14 Nov 12:00 UTC | ⬜ |
 
 ### Recovery checkpoint · 7 Nov
 
+- **Latest local work:** Phase 4 story draft, four illustrated native intro panels (skippable, I to replay), per-account/server story saves, HUD objectives and real-event chapters implemented on `main`. The Ninth Bell co-op source prototype is also present. Unreal editor build and 8/8 native checks pass (5 story/intro, 3 co-op logic); all four intro previews reviewed. Lead/script review and full Play-mode acceptance remain (`STORY.md`); the co-op map has not been generated or tested with host/client (`THE_NINTH_BELL.md`). New story/co-op work is uncommitted and has not been pushed.
 - **Phase 3 work since recovery:** Unreal Vow Shrine (V) and authenticated backend stake/settlement implemented; 108 tests and type checks pass, and the Unreal editor target compiles. Real testnet stake return and release/burn verified for the existing Unreal demo account. See [`VOWS.md`](VOWS.md) for proof, controls and acceptance checks. The gameplay power bonuses and Oathbreaker duration remain open; the Shrine advertises only the implemented stake bonus.
 - **Where we stopped:** P3-C1 / P3-G1 / P3-U1 (email sign-in and Unreal sessions). The 6 Nov changes were still uncommitted on `client/P1-U1-unreal-client`; GitHub remained at `71ee3ea` when this audit started.
 - **Verified today:** `npm test` **100/100**, `npm run typecheck`, the web production build, and the Unreal Development Editor target all pass. The Unreal target is up to date with the local C++ changes. Added a regression test and fix so simultaneous browser approvals cannot replace the player during native account provisioning. The restricted build environment crashed bundled .NET before compilation; the same Unreal build succeeded outside it.
@@ -67,8 +68,9 @@ Everything until the feature freeze must show up in this video. If a task doesn'
 | 1:30 | The AI Talisman Broker quotes a price and says why. | NPCs with wallets and reasons | P1-A2, P2-G1 |
 | 1:55 | Spend points on a rule. Kessa rejects a contradiction, then accepts a fixed one. Prices change for everyone. | Rules enforced by contract | P2-C5, P2-G2 |
 | 2:25 | Swear a vow and stake on it. | Stakes kept or burned by contract | P3-G2, P3-C4 |
-| 2:40 | Observatory: 7 days fast-forwarded. Rules added by agents, a bankruptcy, a Calamity. | An economy that evolves without a dev patch | P2-A1, P3-A2 |
-| 2:55 | Repo link and hosted demo link. | Next step | P4-C1 |
+| 2:40 | The Ninth Bell: two players hold the seal anchors together, then strike The Unwritten in the shared opening. | Co-op story level, host-authoritative multiplayer | P4-U13 |
+| 2:55 | Observatory: 7 days fast-forwarded. Rules added by agents, a bankruptcy, a Calamity. | An economy that evolves without a dev patch | P2-A1, P3-A2 |
+| 3:05 | Repo link and hosted demo link. | Next step | P4-C1 |
 
 ---
 
@@ -210,6 +212,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 - [ ] Unreal: a new player gets the intro, an objective on screen, and Chapters 1-3 on the demo seed.
 - [ ] Unreal: the Ward, the panels and the battle look like the concept art (CC0 assets, listed in the README).
 - [ ] Unreal: you walk through a door into the Counting House, the Mender's House, the Rite Hall and your room, and do that building's job inside.
+- [ ] Unreal: two players on LAN finish The Ninth Bell together: clues, the two-anchor ritual, the boss and the ending vote (`THE_NINTH_BELL.md`).
 - [ ] A packaged Windows build on a GitHub Release plays against the hosted server.
 
 | ID | Pri | Task | Seat | Who | Status |
@@ -220,9 +223,9 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P4-G2 | Should | Sound, phone controls, transitions | G | | ⬜ |
 | P4-A1 | Must | README for judges: "do X, see Y" steps, Q-005 disclosures, NEAR features used | A | | ⬜ |
 | P4-A2 | Must | Draft the X post: problem first, one full moment, NEAR's role, tags @NEARProtocol #NEARHackathon | A | | ⬜ |
-| P4-U1 | Must | Story script: the player is a newcomer in debt whom Kessa takes in as a binder; the Rite, the Grudge and the four rivals (Vane, Silk, Fen, Rook-Ash) each get a face, a want and lines. Written first, reviewed by the lead | G | | ⬜ |
-| P4-U2 | Must | Intro: 3-4 illustrated paper panels before the Ward (skippable) | G | | ⬜ |
-| P4-U3 | Must | Chapters driven by the world's real events (demo seed 2): 1 Arrival (first bind, Kessa explains Grudge), 2 The Broker's Debt (day 3 bankruptcy, The Shuttered), 3 The Calamity (day 4; pass a rule, swear a vow or fight); objective line in the HUD | G | | ⬜ |
+| P4-U1 | Must | Story script: newcomer in debt, Kessa's offer, the Rite/Grudge and briefs for Vane, Silk, Fen and Rook & Ash. Draft written in `STORY.md`, implemented as the intro; lead review remains | G | | 🟡 |
+| P4-U2 | Must | Native skippable four-panel paper intro with procedural ink illustrations, Next / Enter / Space, Skip / Escape, I to replay. Completion is per account and server. Editor build and native rendering/navigation check pass; all four previews inspected. Full Play-mode acceptance remains (`STORY.md`) | G | | 🟡 |
+| P4-U3 | Must | Native story subsystem and HUD objective: Arrival → real bankruptcy → actual Calamity; debt acknowledgement and own confirmed battle/rule/vow response. Separate per-player story save. Native checks pass for chapter order, actual facts, save serialization/isolation and confirmed actions; full Play-mode acceptance remains (`STORY.md`) | G | | 🟡 |
 | P4-U4 | Must | Lantern Ward becomes a district, not a test level: market street, gambling-den row, canal edge with the Tide docks gate, tall-grass lots, locked gates to Ash and Bone (Kessa says why). CC0 packs (Quaternius, Kenney, Poly Pizza); lantern lighting, fog, colour grade; fits the 4 GB GPU | G | | ⬜ |
 | P4-U5 | Must | Panels in the paper-and-ink style of the concept art: paper textures, ink frames, a pixel/brush font, open and close animations (HUD, Rite, shop, case, battle) | G | | ⬜ |
 | P4-U6 | Should | Battle staging: camera framing, the two curses on screen, hit flashes, the seal animation | G | | ⬜ |
@@ -232,6 +235,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P4-U10 | Must | Buildings you can enter: a door fades to an interior and back. **Counting House** (the Broker: buy and sell talismans and supplies), **Mender's House** (restore ink), **Rite Hall** (Kessa: rules, vows, points; replaces opening the Rite with R alone), **your room** above the noodle stall (rest, the Talisman Case chest, the debt notice). Agents are seen inside when they trade | G | | ⬜ |
 | P4-U11 | Should | Tide Ward in Unreal (docks, warehouses, smugglers), a smaller second level loaded from the Lantern canal gate; only after G3, and only if P4-U4 and P4-U10 are done | G | | ⬜ |
 | P4-U12 | Should | Townsfolk you can talk to: a few CC0 characters with lines that change with the Ward's Grudge and the chapter | G | | ⬜ |
+| P4-U13 | Must | **The Ninth Bell**, a 2-4 player co-op story level in Bone Ward's sealed Bell Quarter: shared clues, a two-anchor ritual, The Unwritten boss fight with revives, and a party vote between two endings. LAN/direct-IP, host-authoritative, no wallet rewards and no link to the live economy. Proxy art first. Script: [`THE_NINTH_BELL.md`](THE_NINTH_BELL.md) | G | | 🟡 |
 
 ---
 
@@ -302,7 +306,7 @@ We use genre ideas (turn-based fights, binding what you defeat, a shop, a place 
 
 ## Working agreements
 
-- One branch per task: `seat/ID-short-name` (e.g. `client/P1-G1-battle-from-ward`). Merge by PR; another seat reviews.
+- **User instruction, 7 Nov:** sole-developer workflow on local `main` only. Do not push changes unless the user later explicitly requests it. Existing Unreal/Phase 3 milestones were fast-forwarded into local main; origin/main is unchanged. New work remains local for review.
 - Main always runs: `npm test`, `npm run typecheck`, `npm run build` pass before merging.
 - 15-minute check-in once a day: what merged, what's blocked, is the next gate on track.
 - Never commit `.env`, keys or the submission payload. PDFs in `docs/` are git-ignored on purpose.
@@ -314,6 +318,9 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 7 Nov | The Ninth Bell co-op level (P4-U13) is a Must and joins the demo video (now about 3:05). The video needs two clients on LAN | Lead's choice: a coordinated co-op climax shows the town's stakes better than solo play. Schedule risk: the remaining Musts (Satchel, district, interiors, packaging, hosting, video) are unchanged, so some Should work will slip |
+| 7 Nov | Story canon: Kessa was once a human binder, and her name is the Ninth Bell's missing seal. In Ending A she gives up her name and memories but keeps her voice, so she stays the Rite's referee. The Ninth Bell takes place in Bone Ward's sealed Bell Quarter, not a new district; its minor curses are Ninefold Shades | Keeps exactly four Wards and keeps the referee who speaks in Lantern Ward consistent with both endings |
+| 7 Nov | Continue on local main only; do not push. Defer the listed remaining Phase 3 systems and work on the parallel Phase 4 Unreal story flow | User is the sole developer and explicitly requested local main; the deferred items remain visible rather than being marked complete |
 | 7 Nov | User selected encrypted server-held signing for player accounts on testnet; enabled locally and in the example configuration. Player-held signing is outside the chosen demo flow | Keeps Unreal's no-wallet experience; the implementation rejects this option on mainnet |
 | 7 Nov | Final game delivery is Unreal Windows. Keep the required Node game backend and browser email handoff; stop new web-game feature work. Observatory becomes an Unreal panel; web sprite/mode tasks are cut | User confirmed that players should receive the Unreal version; backend services support that game rather than a second client |
 | 6 Nov | Unreal/browser sign-in uses email codes and a device-secret polling handoff; a local callback listener is unnecessary. Testnet server custody is implemented behind an explicit option, not enabled; the key-custody decision remains open | Gives Unreal an authenticated session without putting it in a URL; isolates the remaining custody choice from the implemented authentication flow |

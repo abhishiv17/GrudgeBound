@@ -105,6 +105,12 @@ Back in the Ward the points and the talisman show up (press **T**). The HUD says
 **V** opens the native Vow Shrine (stake points, keep or release a promise; needs testnet signing).
 Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Broker, **R** the Rite,
 **L** the latest ledger proof and **F10** signs out while in the Ward.
+First entry now shows a four-panel arrival story. **Enter/Space** turns a page, **Escape** skips it, and
+**I** replays it from the Ward. The HUD keeps the current chapter and objective visible; story flags are
+saved separately per account and server. Script and chapter triggers: [`STORY.md`](STORY.md).
+The Ninth Bell is a separate co-op source prototype, not the current entry map. Its map has not yet been
+generated, and the draft generation/launch helpers have not been validated. Build and native logic checks
+pass; host/client play-through is still open. See [`THE_NINTH_BELL.md`](THE_NINTH_BELL.md).
 For faster world ticks while testing: `TICK_MS=3000 npm run server` (PowerShell: `$env:TICK_MS=3000; npm run server`).
 
 **Before the engine is installed:** `unreal/tools/greybox-preview.html` is a browser preview of the same greybox

@@ -62,6 +62,8 @@ npm install
 | Testnet deploy, relayer (meta transactions), binding mints a token | G2 passed 5 Nov; remaining Rite-panel editor check recorded in the build plan |
 | Email login and Unreal sessions | Encrypted testnet signing selected; new identity provisioning/bind/sale/restart/logout verified through the native HTTP flow. Real-mail and editor acceptance remain (`docs/SIGN_IN.md`). |
 | Native Unreal Vow Shrine (V) | Built; real testnet stake/return/burn verified. Native play-through and power modifiers remain (`docs/VOWS.md`). |
+| Native arrival story and chapter objective (I to replay) | Local Phase 4 implementation: four illustrated panels, per-player story history and real-event chapters. Editor build and 5 native checks pass; previews inspected. Script review and Play-mode acceptance remain (`docs/STORY.md`). |
+| The Ninth Bell, 2–4 player co-op | Local source prototype: shared clues, ritual, boss, revives and ending vote. Editor build and 3 co-op logic checks pass; map generation and host/client play-through remain open (`docs/THE_NINTH_BELL.md`). |
 | Agent accounts, native Unreal Observatory, Satchel/supplies and ink carry-over | Remaining Phase 3 work; feature freeze 8 Nov |
 
 ## How NEAR is used (planned, being built)
