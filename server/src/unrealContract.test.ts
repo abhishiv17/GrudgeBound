@@ -11,6 +11,7 @@ import { ChainWriter, type BattleRecord } from "./chain";
 import { rulesOverview } from "./rules";
 import { Shop } from "./shop";
 import { playerView } from "./player";
+import { Satchels } from "./satchel";
 
 const VIEW = ["turn", "outcome", "player", "wild", "items", "chances", "canUse"];
 const SIDE = ["speciesId", "name", "emotion", "omen", "hp", "maxHp"];
@@ -34,6 +35,40 @@ function checkView(v: unknown, where: string) {
 }
 
 describe("Unreal client contract", () => {
+  test("Satchel JSON for T-6: token id pockets, counts, ink, balances, carry and personal rest", async () => {
+    const world = createWorld(7);
+    const chain = new ChainWriter({ network: "testnet", itemsContract: "items.gb.t", riteContract: "rite.gb.t", guestAccount: "guest.gb.t" }, {
+      view: async (_c, method) => method === "get_points" ? 5 : method === "mt_balance_of" ? "60"
+        : { talismans: [{ token_id: "tal-1", owner: "a.gb.t", meta: { species: "hushmoth", emotion: "dread", omen: "whisper", level: 1, wins: 0 }, purse: "0" }], next_index: null },
+    });
+    const satchels = new Satchels(world, chain);
+    const view = await satchels.view("a.gb.t");
+    hasKeys(view, ["carried", "case", "supplies", "keepsakes", "ink", "ember", "points"], "satchel");
+    assert.deepEqual(view.supplies, { blank: 0, gilded: 0, salve: 0 });
+    assert.deepEqual(view.keepsakes, []); assert.equal(view.ember, 60); assert.equal(view.points, 5);
+    assert.ok(view.carried.every((id) => typeof id === "string")); assert.ok(view.case.every((id) => typeof id === "string"));
+    hasKeys(view.ink["tal-1"], ["hp", "maxHp"], "satchel.ink[tokenId]");
+    assert.equal(view.ink["tal-1"]!.hp, view.ink["tal-1"]!.maxHp);
+    const carried = await satchels.carry("a.gb.t", "tal-1", false);
+    assert.ok(carried.case.includes("tal-1")); assert.ok(!carried.carried.includes("tal-1"));
+    const tick = world.tick, rest = await satchels.rest("a.gb.t");
+    hasKeys(rest, ["personalTick", "hour", "ink"], "rest"); assert.equal(world.tick, tick);
+  });
+
+  test("supply purchases retain legacy trade fields and add itemId without claiming a minted token", async () => {
+    const world = createWorld(7);
+    const chain = new ChainWriter({ network: "testnet", itemsContract: "items.gb.t", riteContract: "rite.gb.t", guestAccount: "guest.gb.t" }, {
+      relay: async () => ({ hash: "paid", result: null }),
+      view: async () => "60",
+    });
+    const shop = new Shop(world, chain, "gb.t", () => true);
+    const r = await shop.buy({ account: "a.gb.t", merchant: "broker", itemId: "ink-salve" });
+    assert.equal(r.status, 200);
+    hasKeys(r.body, ["jobId", "price", "text", "speciesId", "omen", "itemId", "chain"], "supply trade");
+    const trade = r.body as import("./shop").TradeAnswer;
+    assert.equal(trade.itemId, "ink-salve"); assert.equal(trade.speciesId, ""); assert.equal(trade.omen, "");
+  });
+
   test("GET /state has what UGbApiSubsystem parses", () => {
     const s = summarize(createWorld(7)) as unknown as Record<string, unknown>;
     hasKeys(s, ["tick", "day", "hour", "night", "wards", "merchants", "leaderboard", "rules", "burnedEmber"], "state");

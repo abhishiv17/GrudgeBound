@@ -11,7 +11,7 @@
  * The seed stays secret until the battle ends: a client that knew it could simulate each move ahead
  * and only Seal when the roll would succeed. At the end it is returned so anyone can replay the battle.
  *
- * Trust today: playerCurse is taken as sent. Phase 2 checks it against the player's talismans on chain.
+ * The HTTP route resolves a carried, owned partner and its saved ink before starting a session.
  */
 import { randomInt, randomUUID } from "node:crypto";
 import {
@@ -22,6 +22,7 @@ import {
   type Rng, type WardId, type World,
 } from "@grudgebound/shared";
 import { isAccountId } from "./chain";
+import { Satchels, type Partner } from "./satchel";
 
 /** A battle nobody has touched for this long is dropped (the player walked away). */
 export const BATTLE_IDLE_MS = 15 * 60_000;
@@ -44,7 +45,7 @@ export interface BattleView {
   outcome: Outcome | null;
   player: SideView;
   wild: SideView;
-  items: BattleState["items"];
+  items: BattleState["items"] & { blank?: number };
   /** Chances shown on the buttons, 0-1. */
   chances: { seal: number; gildedSeal: number; flee: number };
   canUse: { attack: boolean; ward: boolean; seal: boolean; gildedSeal: boolean; salve: boolean; flee: boolean };
@@ -79,6 +80,7 @@ export interface TurnAnswer {
   curfew?: string;
   /** Only when the battle has ended: where it was fought. */
   ward?: WardId;
+  initial?: { playerHp: number; items: BattleState["items"] };
 }
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
@@ -96,6 +98,8 @@ interface Session {
   state: BattleState;
   actions: PlayerAction[];
   lastSeen: number;
+  partnerTokenId?: string;
+  initial?: TurnAnswer["initial"];
 }
 
 export interface BattleContext { account?: string; ward: WardId; omen: Omen }
@@ -118,6 +122,7 @@ export interface BattleSessionOptions {
   now?: () => number;
   newSeed?: () => number;
   newId?: () => string;
+  satchels?: Satchels;
 }
 
 function side(c: Combatant): SideView {
@@ -164,11 +169,13 @@ export class BattleSessions {
   private readonly now: () => number;
   private readonly newSeed: () => number;
   private readonly newId: () => string;
+  private readonly satchels?: Satchels;
 
   constructor(private readonly world: World, opts: BattleSessionOptions = {}) {
     this.now = opts.now ?? Date.now;
     this.newSeed = opts.newSeed ?? (() => randomInt(0, 0x1_0000_0000));
     this.newId = opts.newId ?? randomUUID;
+    this.satchels = opts.satchels;
   }
 
   get openCount(): number {
@@ -179,11 +186,28 @@ export class BattleSessions {
     for (const [id, s] of this.open) if (s.account === account) this.open.delete(id);
   }
 
-  start(body: unknown, guard?: BattleGuard): Answer<StartAnswer> {
+  hasAccount(account: string): boolean {
+    this.sweep();
+    return [...this.open.values()].some((s) => s.account === account);
+  }
+
+  private view(s: Session, guard?: BattleGuard): BattleView {
+    const view = guardedView(s.state, s, guard);
+    if (s.account && this.satchels) {
+      const supplies = this.satchels.supplies(s.account);
+      view.items = { salve: supplies.salve, gilded: supplies.gilded, blank: supplies.blank };
+      if (!supplies.blank) view.canUse.seal = false;
+      if (!supplies.gilded) view.canUse.gildedSeal = false;
+      if (!supplies.salve) view.canUse.salve = false;
+    }
+    return view;
+  }
+
+  start(body: unknown, guard?: BattleGuard, partner?: Partner): Answer<StartAnswer> {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const ward = b.ward;
     if (typeof ward !== "string" || !(WARDS as readonly string[]).includes(ward)) return fail(400, "unknown ward");
-    const playerCurse = b.playerCurse === undefined ? DEFAULT_PLAYER_CURSE : b.playerCurse;
+    const playerCurse = partner?.speciesId ?? (b.playerCurse === undefined ? DEFAULT_PLAYER_CURSE : b.playerCurse);
     if (typeof playerCurse !== "string" || !isCurse(playerCurse)) return fail(400, "playerCurse must be a curse id");
     const by = typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 40) : "A newcomer";
     if (b.account !== undefined && !isAccountId(b.account)) return fail(400, "account must be a NEAR account id");
@@ -194,6 +218,11 @@ export class BattleSessions {
     if (noExorcise && noBind) return fail(409, `Curfew: "${noExorcise}" and "${noBind}". Come back when it lifts.`);
 
     this.sweep();
+    if (account && this.satchels) {
+      if (this.hasAccount(account)) return fail(409, "Finish or leave your current battle first.");
+      if (!partner) return fail(400, "Choose a partner from your Satchel.");
+      if (partner.hp <= 0) return fail(409, "Visit the Mender or rest");
+    }
     if (this.open.size >= MAX_OPEN_BATTLES) return fail(503, "too many battles in progress, try again shortly");
 
     const seed = this.newSeed();
@@ -201,10 +230,13 @@ export class BattleSessions {
     const wild = rollEncounter(this.world.wards[ward as WardId].grudge, createRng((seed ^ 0x9e3779b9) >>> 0));
     const refusal = guard?.({ account, ward: ward as WardId, omen: wild.omen });
     if (refusal) return fail(409, refusal);
-    const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse });
+    const supplies = account && this.satchels ? this.satchels.supplies(account) : undefined;
+    const initial = supplies && partner ? { playerHp: partner.hp, items: { gilded: supplies.gilded, salve: supplies.salve } } : undefined;
+    const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse, ...initial });
     const s: Session = {
       id: this.newId(), ward: ward as WardId, by, account, seed, wildId: wild.id, omen: wild.omen, playerCurse,
       rng: createRng(seed), state, actions: [], lastSeen: this.now(),
+      partnerTokenId: partner?.tokenId, initial,
     };
     this.open.set(s.id, s);
 
@@ -214,7 +246,7 @@ export class BattleSessions {
       ward: s.ward,
       wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: wild.omen },
       matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
-      view: guardedView(state, s, guard),
+      view: this.view(s, guard),
       lines: [
         introLine(state),
         ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
@@ -236,11 +268,14 @@ export class BattleSessions {
     if (!action) return fail(400, "unknown action");
     const refusal = guard?.(s, action);
     if (refusal) return fail(409, refusal);
+    const resourceError = s.account && this.satchels?.resourceError(s.account, action);
+    if (resourceError) return fail(409, resourceError);
     if (!canUse(s.state, action)) return fail(409, `you can't ${actionLabel(action)} right now`);
     const noBind = action.kind === "seal" ? curfewText(this.world, "bind", s.ward) : null;
     if (noBind) return fail(409, `Curfew: "${noBind}". You can't seal it here now.`);
 
     const t = resolveTurn(s.state, action, s.rng);
+    if (s.account && s.partnerTokenId && this.satchels) this.satchels.applyTurn(s.account, s.partnerTokenId, s.id, action, t.state);
     s.state = t.state;
     s.actions.push(action);
     s.lastSeen = this.now();
@@ -249,7 +284,7 @@ export class BattleSessions {
       action: actionLabel(action),
       events: t.events,
       lines: t.events.map((e) => describeEvent(e, t.state)),
-      view: guardedView(t.state, s, guard),
+      view: this.view(s, guard),
       outcome: t.state.outcome,
     };
 
@@ -270,6 +305,7 @@ export class BattleSessions {
       answer.seed = s.seed;
       answer.actions = s.actions;
       answer.ward = s.ward;
+      if (s.initial) answer.initial = s.initial;
       if (s.account) answer.account = s.account;
     }
     return ok(answer);

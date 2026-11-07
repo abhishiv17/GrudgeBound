@@ -116,7 +116,7 @@ describe("player shop", () => {
     const poor = await shop.buy({ account: AFREEN, merchant: "broker", itemId: "talisman-rage" });
     assert.equal(poor.status, 402);
     assert.match((poor.body as { error: string }).error, /Rage talismans cost \d+ Ember; Afreen has 5/);
-    assert.equal((await shop.buy({ account: AFREEN, merchant: "broker", itemId: "binding-seal" })).status, 400);
+    assert.equal((await shop.buy({ account: AFREEN, merchant: "broker", itemId: "binding-seal" })).status, 402);
     assert.equal((await shop.buy({ account: AFREEN, merchant: "nobody", itemId: "talisman-rage" })).status, 404);
     assert.equal((await shop.buy({ account: "bob.testnet", merchant: "broker", itemId: "talisman-rage" })).status, 403);
     assert.equal((await shop.sell({ account: AFREEN, merchant: "broker", tokenId: "tal-9" })).status, 403);

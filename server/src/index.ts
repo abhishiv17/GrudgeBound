@@ -16,7 +16,9 @@
  *   GET /chain?battle=ID -> that battle's on-chain receipt (talisman id, tx links); without ?battle: the contracts in use
  *                           Both battle routes answer with `chain` when a binding or exorcism is written to NEAR (chain.ts)
  *   GET /curses          -> every curse's id, name, emotion, omen, home Ward and signature move (no stats)
- *   POST /shop/buy, /shop/sell -> a player trades talismans for Ember on chain (see shop.ts); GET /chain?shop=ID
+ *   POST /shop/buy, /shop/sell -> talismans and server-held supplies for Ember (see shop.ts); GET /chain?shop=ID
+ *   GET /satchel, POST /satchel/carry, /satchel/salve -> the signed-in player's pockets and persistent ink
+ *   POST /mender/restore, /rest -> paid ink restoration or free rest to the player's next morning
  *   GET /shop?merchant=broker&account=A -> also A's Ember on chain and what the merchant pays per talisman
  *   GET /shop?merchant=broker -> that merchant's prices, each with a one-line reason in the merchant's voice
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
@@ -27,10 +29,10 @@
  * Next: agents with their own NEAR accounts, vows.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { dirname, join, resolve } from "node:path";
 import {
   createWorld, createRng, step, summarize, log,
   DEFAULT_REAL_MS_PER_TICK, DEMO_SEED,
-  DEFAULT_PLAYER_CURSE,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
 import { BattleSessions, curseCatalog, type TurnAnswer } from "./battles";
@@ -44,6 +46,7 @@ import { AuthError, AuthService, authStoreFromEnv, emailDelivery, playerBody } f
 import { authRoute, sessionToken } from "./authHttp";
 import { playerKeyResolver, playerProvisioner } from "./playerAccounts";
 import { Vows } from "./vows";
+import { STARTER_KIT, Satchels } from "./satchel";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -78,8 +81,6 @@ function send(res: ServerResponse, status: number, body: unknown) {
 }
 
 const MAX_BODY_BYTES = 16 * 1024;
-/** Seeds already counted, so the same battle cannot be reported twice (shared by both battle routes). */
-const battles = new BattleSessions(world);
 
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -123,8 +124,13 @@ chain?.onEvents((events) => {
   }
 });
 const canSignFor = (a: string) => !!chainCfg && (chainCfg.playerKey?.(a) ?? custodialKey(chainCfg, a)) !== undefined;
+const satchels = new Satchels(world, chain, {
+  file: process.env.SATCHEL_STORE_PATH || join(dirname(resolve(process.env.AUTH_STORE_PATH || "data/auth.enc")), "satchels.json"),
+  gameAccount: chainCfg?.gameAccount, canSignFor, starterKit: STARTER_KIT,
+});
+const battles = new BattleSessions(world, { satchels });
 const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
-const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor) : null;
+const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor, undefined, satchels) : null;
 const vows = new Vows(world, chain, canSignFor, TICK_MS);
 let vowsSweeping = false;
 function sweepVows() {
@@ -137,8 +143,12 @@ function sweepVows() {
 
 /** After a battle route answers 200 with a binding or exorcism: write it on chain and add the receipt. */
 async function withChain<T extends object>(body: T, record: BattleRecord | null): Promise<T> {
-  if (!chain || !record || record.points <= 0) return body;
-  return { ...body, chain: await chain.record(record) };
+  if (!record) return body;
+  if (!chain || (record.points <= 0 && record.outcome !== "bound")) {
+    satchels.completeOfflineBinding(record.account, record.battleId);
+    return body;
+  }
+  return { ...body, chain: await chain.record(record, 0, (receipt) => satchels.settleBinding(record.account, record.battleId, receipt)) };
 }
 
 /** A binding or exorcism's replay record (also when the server runs off-chain: the archive keeps it). */
@@ -149,13 +159,14 @@ function recordFromTurn(t: TurnAnswer): BattleRecord | null {
     battleId: t.battleId, account: t.account ?? chain?.cfg.guestAccount ?? "guest", outcome: t.outcome, points: t.points ?? 0,
     seed: t.seed, actions: t.actions, wild: { speciesId: w.speciesId, emotion: w.emotion, omen: w.omen },
     playerCurse: t.view.player.speciesId,
+    ...(t.initial ? { initial: t.initial } : {}),
   };
 }
 
 const llm = llmConfigFromEnv();
 type ShopLine = Tooltip & { id: string; name: string; stock: number };
 /** Shop answers per merchant, recomputed once per tick (or after a trade) so prices stay live. */
-const shopCache = new Map<string, { tick: number; body: { items: ShopLine[] } & Record<string, unknown> }>();
+const shopCache = new Map<string, { tick: number; revision: string; body: { items: ShopLine[] } & Record<string, unknown> }>();
 /** The merchant's last AI-written line per item, with the price it was written for. */
 const aiLines = new Map<string, { price: number; text: string }>();
 /** Merchants whose AI lines are being written right now. */
@@ -170,7 +181,8 @@ async function shop(merchantId: string): Promise<{ status: number; body: unknown
   const m = world.merchants.find((x) => x.id === merchantId);
   if (!m) return { status: 404, body: { error: `no merchant "${merchantId}"`, merchants: world.merchants.map((x) => x.id) } };
   const hit = shopCache.get(m.id);
-  if (hit && hit.tick === world.tick) return { status: 200, body: hit.body };
+  const revision = JSON.stringify([m.closed, m.items, world.wards[m.ward].grudge]);
+  if (hit && hit.tick === world.tick && hit.revision === revision) return { status: 200, body: hit.body };
   const items: ShopLine[] = [];
   for (const item of m.items) {
     const t = await priceTooltip(world, m, item.id, null);
@@ -178,7 +190,7 @@ async function shop(merchantId: string): Promise<{ status: number; body: unknown
     items.push({ id: item.id, name: item.name, stock: item.stock, ...t, ...(said && said.price === t.price ? { text: said.text, source: "llm" as const } : {}) });
   }
   const body = { merchant: { id: m.id, name: m.name, ward: m.ward, closed: m.closed }, tick: world.tick, items };
-  shopCache.set(m.id, { tick: world.tick, body });
+  shopCache.set(m.id, { tick: world.tick, revision, body });
   if (llm && !writing.has(m.id) && items.some((i) => i.source !== "llm")) {
     writing.add(m.id);
     const tick = world.tick;
@@ -192,6 +204,20 @@ async function shop(merchantId: string): Promise<{ status: number; body: unknown
       .finally(() => writing.delete(m.id));
   }
   return { status: 200, body };
+}
+
+/** Serialize account mutations across awaits (ownership/Ember/vow reads), without holding the chain queue. */
+const playerActions = new Set<string>();
+async function playerAction<T>(account: string, action: () => Promise<T>): Promise<T> {
+  if (playerActions.has(account)) throw new AuthError(409, "Your previous action is still being checked. Try again.");
+  playerActions.add(account);
+  try { return await action(); } finally { playerActions.delete(account); }
+}
+function outsideBattle(account: string) {
+  if (battles.hasAccount(account)) throw new AuthError(409, "Finish or leave your current battle first.");
+  if (playerShop?.isTrading(account)) throw new AuthError(409, "Wait for your previous trade's receipt.");
+  if (satchels.isBinding(account)) throw new AuthError(409, "Wait for your binding's receipt before continuing.");
+  if (satchels.isRestoring(account)) throw new AuthError(409, "Wait for the Mender's receipt before continuing.");
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
@@ -213,33 +239,52 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
   if (req.method === "POST" && (url.pathname === "/vows/swear" || url.pathname === "/vows/release")) {
     const player = auth.authenticate(sessionToken(req));
-    const body = playerBody(await readJson(req), player);
-    const result = url.pathname === "/vows/swear" ? await vows.swear(player.account, body) : await vows.release(player.account, body.vowId);
-    // The Shrine is outside encounters. Old encounters (including a slipped-away one) cannot resume under changed vows.
-    battles.abandonAccount(player.account);
-    return send(res, 200, result);
+    return playerAction(player.account, async () => {
+      const body = playerBody(await readJson(req), player);
+      const result = url.pathname === "/vows/swear" ? await vows.swear(player.account, body) : await vows.release(player.account, body.vowId);
+      // The Shrine is outside encounters. Old encounters cannot resume under changed vows.
+      battles.abandonAccount(player.account);
+      return send(res, 200, result);
+    });
+  }
+  if (req.method === "GET" && url.pathname === "/satchel") {
+    const player = auth.authenticate(sessionToken(req));
+    if (url.searchParams.has("account") && url.searchParams.get("account") !== player.account) throw new AuthError(403, "You can only load your signed-in Satchel.");
+    return send(res, 200, await satchels.view(player.account));
+  }
+  if (req.method === "POST" && ["/satchel/carry", "/satchel/salve", "/mender/restore", "/rest"].includes(url.pathname)) {
+    const player = auth.authenticate(sessionToken(req));
+    return playerAction(player.account, async () => {
+      const body = playerBody(await readJson(req), player);
+      outsideBattle(player.account);
+      const result = url.pathname === "/satchel/carry" ? await satchels.carry(player.account, body.tokenId, body.carry)
+        : url.pathname === "/satchel/salve" ? await satchels.useSalve(player.account, body.tokenId)
+        : url.pathname === "/mender/restore" ? await satchels.restore(player.account, body.tokenId)
+        : await satchels.rest(player.account);
+      return send(res, 200, result);
+    });
   }
   if (req.method === "POST" && (url.pathname === "/battle/start" || url.pathname === "/battle/turn")) {
     const player = auth.authenticate(sessionToken(req));
-    const body = playerBody(await readJson(req), player);
-    const activeVows = await vows.snapshot(player.account);
-    const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
-    if (url.pathname === "/battle/start") {
-      if (chain && typeof body.playerCurse === "string" && body.playerCurse !== DEFAULT_PLAYER_CURSE) {
-        const owned = await chain.talismansOf(player.account);
-        if (!owned.some((t) => t.meta.species === body.playerCurse)) throw new AuthError(403, "Choose a partner from your own talismans.");
+    return playerAction(player.account, async () => {
+      const body = playerBody(await readJson(req), player);
+      const activeVows = await vows.snapshot(player.account);
+      const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
+      if (url.pathname === "/battle/start") {
+        outsideBattle(player.account);
+        const partner = await satchels.partner(player.account, body.tokenId, body.playerCurse);
+        const r = battles.start(body, vowGuard, partner);
+        return send(res, r.status, r.body);
       }
-      const r = battles.start(body, vowGuard);
-      return send(res, r.status, r.body);
-    }
-    const r = battles.turn(body, player.account, vowGuard);
-    if (r.status !== 200) return send(res, r.status, r.body);
-    const t = r.body as TurnAnswer;
-    const record = recordFromTurn(t);
-    if (record) {
-      try { archive.add(record, t.ward ?? "lantern"); } catch (e) { console.warn(`battle archive: ${(e as Error).message}`); }
-    }
-    return send(res, 200, await withChain(t, record));
+      const r = battles.turn(body, player.account, vowGuard);
+      if (r.status !== 200) return send(res, r.status, r.body);
+      const t = r.body as TurnAnswer;
+      const record = recordFromTurn(t);
+      if (record) {
+        try { archive.add(record, t.ward ?? "lantern"); } catch (e) { console.warn(`battle archive: ${(e as Error).message}`); }
+      }
+      return send(res, 200, await withChain(t, record));
+    });
   }
   if (req.method === "GET" && url.pathname === "/shop") {
     const merchantId = url.searchParams.get("merchant") ?? "broker";
@@ -252,16 +297,18 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
   if (req.method === "POST" && (url.pathname === "/shop/buy" || url.pathname === "/shop/sell")) {
     const player = auth.authenticate(sessionToken(req));
-    if (!playerShop) return send(res, 503, { error: "trades are settled on chain, and this server runs off-chain" });
-    const body = playerBody(await readJson(req), player);
-    const merchant = world.merchants.find((m) => m.id === body.merchant);
-    if (merchant) vows.assertTrade(await vows.snapshot(player.account), merchant.ward, url.pathname === "/shop/sell" ? body.tokenId : undefined);
-    const r = await (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body));
-    // Stock and demand just changed: the next GET /shop recomputes prices (and Kessa's tooltip lines).
-    const m = body.merchant;
-    if (r.status === 200 && typeof m === "string") shopCache.delete(m);
-    send(res, r.status, r.body);
-    return;
+    return playerAction(player.account, async () => {
+      outsideBattle(player.account);
+      if (!playerShop) return send(res, 503, { error: "trades are settled on chain, and this server runs off-chain" });
+      const body = playerBody(await readJson(req), player);
+      const merchant = world.merchants.find((m) => m.id === body.merchant);
+      if (merchant) vows.assertTrade(await vows.snapshot(player.account), merchant.ward, url.pathname === "/shop/sell" ? body.tokenId : undefined);
+      const r = await (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body));
+      // Stock and demand just changed: the next GET /shop recomputes prices (and Kessa's tooltip lines).
+      const m = body.merchant;
+      if (r.status === 200 && typeof m === "string") shopCache.delete(m);
+      return send(res, r.status, r.body);
+    });
   }
   if (req.method === "POST" && (url.pathname === "/rules/propose" || url.pathname === "/rules/repeal")) {
     const player = auth.authenticate(sessionToken(req));

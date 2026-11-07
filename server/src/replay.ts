@@ -29,7 +29,7 @@ export interface ReplayCheck {
 
 /** Replays an archived battle and compares it with what was recorded. Pure: no chain access. */
 export function checkBattle(b: ArchivedBattle): ReplayCheck {
-  const setup = { wild: b.wild.speciesId, omen: b.wild.omen, playerCurse: b.playerCurse };
+  const setup = { wild: b.wild.speciesId, omen: b.wild.omen, playerCurse: b.playerCurse, ...b.initial };
   const turns = replayBattle(setup, b.seed, b.actions);
   const lines = [introLine(createBattle(setup))];
   for (const t of turns) for (const e of t.events) lines.push(describeEvent(e, t.state));

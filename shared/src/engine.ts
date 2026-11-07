@@ -133,7 +133,8 @@ export function createWorld(seed: number): World {
 
   const merchants: Merchant[] = [
     { id: "broker", name: "the Talisman Broker", role: "broker", ward: "lantern", ember: 400, closed: false, lowDays: 0,
-      items: [...talismanItems(6), item("binding-seal", "Binding seals", 15, 10, true)] },
+      items: [...talismanItems(6), item("blank-talisman", "Blank talismans", 15, 10, true),
+        item("gilded-talisman", "Gilded talismans", 30, 4, true), item("ink-salve", "Ink Salves", 10, 12, false)] },
     { id: "apothecary", name: "the Apothecary", role: "apothecary", ward: "ash", ember: 300, closed: false, lowDays: 0,
       items: [item("salve", "Salves", 10, 12, false), item("ward-charm", "Ward charms", 20, 8, true), item("binding-seal", "Binding seals", 15, 8, true)] },
     { id: "fence", name: "the Fence", role: "fence", ward: "tide", ember: 160, closed: false, lowDays: 0,

@@ -128,13 +128,17 @@ export interface BattleSetup {
   omen?: Omen;
   playerCurse?: string;
   items?: Inventory;
+  /** Persisted partner ink; omitted for old/full-health replays. */
+  playerHp?: number;
 }
 
 export function createBattle(setup: BattleSetup): BattleState {
   const wild = curseById(setup.wild);
   const player = curseById(setup.playerCurse ?? defaultPlayerCurse(setup.wild));
+  const partner = makeCombatant(player);
+  if (setup.playerHp !== undefined) partner.hp = Math.max(0, Math.min(partner.maxHp, setup.playerHp));
   return {
-    player: makeCombatant(player),
+    player: partner,
     wild: makeCombatant(wild, setup.omen ?? wild.omen),
     items: { ...(setup.items ?? STARTING_ITEMS) },
     turn: 0,

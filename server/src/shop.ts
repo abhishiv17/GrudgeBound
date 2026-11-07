@@ -8,7 +8,7 @@
  *        and the game master pays the merchant's buy-back price in Ember (less any trade tax rule, R7).
  *   GET /chain?shop=<jobId> -> the receipt.
  *
- * Only talismans are traded with players for now; seals and salves are priced but not sold to players yet.
+ * Supplies use the same stock/price and Ember settlement; their counts are stored in the server Satchel.
  * Merchants are simulated (their purse is world.merchants[].ember); they get NEAR accounts in Phase 3.
  */
 import { randomUUID } from "node:crypto";
@@ -18,6 +18,7 @@ import {
 } from "@grudgebound/shared";
 import { isAccountId, type ChainReceipt, type ChainWriter } from "./chain";
 import { displayName } from "./rules";
+import { Satchels, supplyForItem } from "./satchel";
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
 
@@ -31,6 +32,8 @@ export interface TradeAnswer {
   speciesId: string;
   omen: string;
   chain: ChainReceipt;
+  /** Present for server-held supplies (speciesId/omen stay empty for the legacy trade parser). */
+  itemId?: string;
 }
 
 /** Extra numbers for the shop screen, merged into GET /shop. */
@@ -54,6 +57,8 @@ function ctxFor(world: World, m: Merchant) {
 }
 
 export class Shop {
+  private readonly pending = new Set<string>();
+  isTrading(account: string) { return this.pending.has(account); }
   constructor(
     private readonly world: World,
     private readonly chain: ChainWriter,
@@ -61,6 +66,7 @@ export class Shop {
     private readonly canSignFor: (account: string) => boolean,
     /** Picks the species a bought talisman holds (tests pass a fixed one). */
     private readonly pick: <T>(xs: readonly T[]) => T = (xs) => xs[Math.floor(Math.random() * xs.length)]!,
+    private readonly satchels: Satchels = new Satchels(world, chain),
   ) {}
 
   private merchant(id: unknown): Merchant | undefined {
@@ -90,52 +96,62 @@ export class Shop {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const account = this.checkAccount(b.account);
     if (typeof account !== "string") return account;
+    if (this.isTrading(account)) return fail(409, "Wait for your previous trade's receipt.");
     const m = this.merchant(b.merchant);
     if (!m) return fail(404, "no such merchant");
     if (m.closed) return fail(409, `${m.name} has shut up shop`);
-    const idx = m.items.findIndex((i) => i.id === b.itemId);
+    const itemId = m.id === "broker" && b.itemId === "binding-seal" ? "blank-talisman" : b.itemId;
+    const idx = m.items.findIndex((i) => i.id === itemId);
     const item = m.items[idx];
     if (!item) return fail(404, `${m.name} doesn't sell that`);
-    if (!item.id.startsWith("talisman-")) return fail(400, "only talismans are sold to players for now");
+    const supply = supplyForItem(item.id);
+    if (!item.id.startsWith("talisman-") && !supply) return fail(400, "that item is not sold to players");
     if (item.stock <= 0) return fail(409, `${m.name} is out of ${item.name.toLowerCase()}`);
 
     const price = quoteSellPrice(item, ctxFor(this.world, m)).price;
-    let ember: number;
-    try { ember = await this.chain.ember(account); } catch (e) { return fail(502, `could not read the items contract: ${(e as Error).message}`); }
-    if (ember < price) return fail(402, `${item.name} cost ${price} Ember; ${displayName(account)} has ${ember}.`);
-
     const emotion = item.id.slice("talisman-".length);
     const pool = CURSES.filter((c) => c.emotion === emotion && c.omen === "whisper");
-    if (!pool.length) return fail(500, `no ${emotion} curse to seal`);
-    const species = this.pick(pool);
+    if (!supply && !pool.length) return fail(500, `no ${emotion} curse to seal`);
+    const species = supply ? null : this.pick(pool);
 
     // The merchant's side changes now, so a second buyer sees the new price and stock.
+    this.pending.add(account);
     m.items[idx] = recordSale(item);
     m.ember += price;
+    const rollback = () => {
+      m.items[idx] = { ...m.items[idx]!, stock: m.items[idx]!.stock + 1, buys24h: Math.max(0, m.items[idx]!.buys24h - 1) };
+      m.ember -= price;
+      this.pending.delete(account);
+    };
+    let ember: number;
+    try { ember = await this.chain.ember(account); } catch (e) { rollback(); return fail(502, `could not read the items contract: ${(e as Error).message}`); }
+    if (ember < price) { rollback(); return fail(402, `${item.name} cost ${price} Ember; ${displayName(account)} has ${ember}.`); }
     const jobId = randomUUID();
-    const text = `${displayName(account)} bought a ${species.name} talisman from ${m.name} for ${price} Ember`;
+    const text = `${displayName(account)} bought ${species ? `a ${species.name} talisman` : item.name.toLowerCase()} from ${m.name} for ${price} Ember`;
     const chain = await this.chain.job("shop", jobId, account, async ({ call, relay, tx, receipt }) => {
       const paid = await relay(account, this.chain.cfg.itemsContract, "mt_transfer",
         { receiver_id: this.gameAccount, token_id: "ember", amount: String(price), memo: `buy ${item.id} from ${m.id}` }, ONE_YOCTO);
       tx("pay", paid.hash);
-      const meta = { species: species.id, emotion: species.emotion, omen: species.omen, level: 1, wins: 0 };
-      const minted = await call(this.chain.cfg.itemsContract, "mint_talisman", { to: account, meta });
-      receipt.tokenId = String(minted.result);
-      tx("mint", minted.hash);
+      if (species) {
+        const meta = { species: species.id, emotion: species.emotion, omen: species.omen, level: 1, wins: 0 };
+        const minted = await call(this.chain.cfg.itemsContract, "mint_talisman", { to: account, meta });
+        receipt.tokenId = String(minted.result);
+        tx("mint", minted.hash);
+      }
     }, () => {
-      log(this.world, { type: "trade", ward: m.ward, actor: account, text: `${text}.` });
-    }, () => {
-      // The chain refused: the merchant gets the talisman back on the shelf and returns the takings.
-      m.items[idx] = { ...m.items[idx]!, stock: m.items[idx]!.stock + 1 };
-      m.ember -= price;
-    });
-    return { status: 200, body: { jobId, price, text, speciesId: species.id, omen: species.omen, chain } };
+      try {
+        if (supply) this.satchels.addSupply(account, supply);
+        log(this.world, { type: "trade", ward: m.ward, actor: account, text: `${text}.` });
+      } finally { this.pending.delete(account); }
+    }, rollback);
+    return { status: 200, body: { jobId, price, text, speciesId: species?.id ?? "", omen: species?.omen ?? "", itemId: item.id, chain } };
   }
 
   async sell(body: unknown): Promise<Answer<TradeAnswer>> {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const account = this.checkAccount(b.account);
     if (typeof account !== "string") return account;
+    if (this.isTrading(account)) return fail(409, "Wait for your previous trade's receipt.");
     const m = this.merchant(b.merchant);
     if (!m) return fail(404, "no such merchant");
     if (m.closed) return fail(409, `${m.name} has shut up shop`);
@@ -146,12 +162,14 @@ export class Shop {
     try { tal = await this.chain.talisman(tokenId); } catch (e) { return fail(502, `could not read the items contract: ${(e as Error).message}`); }
     if (!tal) return fail(404, `no talisman ${tokenId}`);
     if (tal.owner !== account) return fail(403, `${tokenId} belongs to ${tal.owner}`);
+    if (this.isTrading(account)) return fail(409, "Wait for your previous trade's receipt.");
     const idx = m.items.findIndex((i) => i.id === `talisman-${tal.meta.emotion}`);
     const item = m.items[idx];
     if (!item) return fail(409, `${m.name} doesn't buy ${tal.meta.emotion} talismans`);
     const offer = quoteBuyPrice(item, ctxFor(this.world, m)).price;
     if (m.ember < offer) return fail(409, `${m.name} can't afford it today`);
 
+    this.pending.add(account);
     m.ember -= offer;
     m.items[idx] = recordPurchase(item);
     const paid = payTradeTax(this.world, offer);
@@ -171,8 +189,10 @@ export class Shop {
         tx("pay", sent.hash);
       }
     }, () => {
+      this.pending.delete(account);
       log(this.world, { type: "trade", ward: m.ward, actor: account, text: `${text}.` });
     }, () => {
+      this.pending.delete(account);
       m.ember += offer;
       m.items[idx] = { ...m.items[idx]!, stock: Math.max(0, m.items[idx]!.stock - 1) };
     });

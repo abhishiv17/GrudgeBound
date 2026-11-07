@@ -75,6 +75,7 @@ export interface BattleRecord {
   actions: PlayerAction[];
   wild: { speciesId: string; emotion: Combatant["emotion"]; omen: Omen };
   playerCurse: string;
+  initial?: { playerHp: number; items: { salve: number; gilded: number } };
 }
 
 export interface ChainTx {
@@ -158,8 +159,9 @@ export function explorerTxUrl(network: string, hash: string): string {
 }
 
 /** sha256 of everything needed to replay the battle, stored on chain with the result. */
-export function battleLogHash(r: Pick<BattleRecord, "seed" | "actions" | "wild" | "playerCurse">): string {
-  const log = JSON.stringify({ seed: r.seed, wild: r.wild.speciesId, omen: r.wild.omen, playerCurse: r.playerCurse, actions: r.actions });
+export function battleLogHash(r: Pick<BattleRecord, "seed" | "actions" | "wild" | "playerCurse" | "initial">): string {
+  const log = JSON.stringify({ seed: r.seed, wild: r.wild.speciesId, omen: r.wild.omen, playerCurse: r.playerCurse, actions: r.actions,
+    ...(r.initial ? { initial: r.initial } : {}) });
   return createHash("sha256").update(log).digest("hex");
 }
 
@@ -486,7 +488,7 @@ export class ChainWriter {
    * or "pending" (the writes carry on; GET /chain?battle=<id> shows the end state).
    * Each testnet transaction takes ~2.5 s, so the battle routes use waitMs = 0 and the client polls.
    */
-  record(r: BattleRecord, waitMs = 0): Promise<ChainReceipt> {
+  record(r: BattleRecord, waitMs = 0, onSettled: (receipt: ChainReceipt) => void = () => {}): Promise<ChainReceipt> {
     const receipt: ChainReceipt = { status: "pending", network: this.cfg.network, account: r.account, txs: [] };
     this.remember(r.battleId, receipt);
 
@@ -509,6 +511,8 @@ export class ChainWriter {
         receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         console.warn(`[chain] battle ${r.battleId}: ${receipt.error}`);
       }
+      // Includes partial settlement: tokenId is present if mint succeeded but the points write failed.
+      onSettled(receipt);
     });
     return this.settle(work, receipt, waitMs);
   }
