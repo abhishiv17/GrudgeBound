@@ -64,7 +64,8 @@ npm install
 | Native Unreal Vow Shrine (V) | Built; real testnet stake/return/burn verified. Native play-through and power modifiers remain (`docs/VOWS.md`). |
 | Native arrival story and chapter objective (I to replay) | Local Phase 4 implementation: four illustrated panels, per-player story history and real-event chapters. Editor build and 5 native checks pass; previews inspected. Script review and Play-mode acceptance remain (`docs/STORY.md`). |
 | The Ninth Bell, 2–4 player co-op | Local source prototype: shared clues, ritual, boss, revives and ending vote. Editor build and 3 co-op logic checks pass; map generation and host/client play-through remain open (`docs/THE_NINTH_BELL.md`). |
-| Agent accounts, native Unreal Observatory, Satchel/supplies and ink carry-over | Remaining Phase 3 work; feature freeze 8 Nov |
+| Satchel, supplies and ink carry-over (server) | Built: five carried talismans, Broker supplies shared with agents, ink that stays low after a fight, the Mender (Ember) and free rest. New players start with Kessa's kit (3 blank talismans, 1 Ink Salve). Native Satchel panel and live testnet checks remain |
+| Agent accounts, native Unreal Observatory, native Satchel panel | Remaining Phase 3 work; feature freeze 8 Nov |
 
 ## How NEAR is used (planned, being built)
 
