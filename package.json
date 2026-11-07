@@ -21,7 +21,7 @@
     "sim:seeds": "tsx sim/src/seeds.ts",
     "replay": "tsx --env-file-if-exists=.env server/src/replay.ts",
     "agent:demo": "tsx --env-file-if-exists=.env agents/src/demo.ts",
-    "test": "tsx --test shared/src/shared.test.ts client/game/battle/battle.test.ts client/game/battleClient.test.ts server/src/battles.test.ts server/src/chain.test.ts server/src/rules.test.ts server/src/shop.test.ts server/src/player.test.ts server/src/chainEvents.test.ts server/src/replay.test.ts server/src/unrealContract.test.ts",
+    "test": "tsx --test shared/src/shared.test.ts client/game/battle/battle.test.ts client/game/battleClient.test.ts server/src/battles.test.ts server/src/chain.test.ts server/src/rules.test.ts server/src/shop.test.ts server/src/player.test.ts server/src/chainEvents.test.ts server/src/replay.test.ts server/src/unrealContract.test.ts server/src/auth.test.ts server/src/authHttp.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {

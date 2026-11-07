@@ -39,6 +39,15 @@ The lead (Abhishek) decides every submission field and approves anything public:
 | [4. Look, story, hosting, video](#phase-4--look-story-hosting-video) | 6-12 Nov (starts alongside Phase 3) | Unreal looks like a real game and tells a story; hosted server, packaged build, video | G4 · 12 Nov | ⬜ |
 | [5. Ship](#phase-5--ship) | 13-14 Nov | Repo public, X post, submission | G5 · 14 Nov 12:00 UTC | ⬜ |
 
+### Recovery checkpoint · 7 Nov
+
+- **Where we stopped:** P3-C1 / P3-G1 / P3-U1 (email sign-in and Unreal sessions). The 6 Nov changes were still uncommitted on `client/P1-U1-unreal-client`; GitHub remained at `71ee3ea` when this audit started.
+- **Verified today:** `npm test` **100/100**, `npm run typecheck`, the web production build, and the Unreal Development Editor target all pass. The Unreal target is up to date with the local C++ changes. Added a regression test and fix so simultaneous browser approvals cannot replace the player during native account provisioning. The restricted build environment crashed bundled .NET before compilation; the same Unreal build succeeded outside it.
+- **Last unresolved acceptance check:** restart/resume and F10 logout with two email identities in Unreal. The signed-in save and the legacy shared save are separate; yesterday's inspection found 5 points / two talismans in the signed-in save and 70 points / six in the legacy save. Confirm the HUD and Case show the signed-in values after restarting; do not copy the shared save into another identity.
+- **Still needed for live sign-in:** verified Resend sender, an explicit custody choice, and a newly signed-in player's testnet bind, trade and rule proposal. Local console-code login does not complete this gate. See [`SIGN_IN.md`](SIGN_IN.md).
+- **Next implementation order:** finish sign-in acceptance and the remaining P2 Rite/curfew editor checks; agent accounts and live actions (P3-C2/A1), vows (P3-C3/C4/G2), Satchel/supplies/ink (P3-C5/C6/C8/U4), then Observatory (P3-A2). P3-C7 remains optional. Story and level work can proceed alongside these once assigned.
+- **Schedule:** G3 remains incomplete against the plan's **8 Nov feature freeze**. Phase 4's story, interiors, art, hosting, packaging and video are still open; its planned start was 6 Nov. A passing code checkpoint does not mean these gates have passed.
+
 ## The demo we are building towards (3 minutes)
 
 Everything until the feature freeze must show up in this video. If a task doesn't appear in it, it is a **Should** at most.
@@ -162,18 +171,18 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
-| P3-C1 | Must | Email sign-in. Start with a 2-hour spike; fallback: guest sign-in where the server creates a testnet sub-account and the key stays in the browser | C | | ⬜ |
+| P3-C1 | Must | Email sign-in: email codes, encrypted identity/session store, session-bound API actions and testnet account provisioning built 6 Nov. Resend sender configuration, key-custody decision and live testnet acceptance remain. Optional server-held keys require explicit `AUTH_KEY_MODE=server`; player-held signing is still open. Setup: `SIGN_IN.md` | C | | 🟡 |
 | P3-C2 | Must | One sub-account per agent, function-call key limited to our contracts, with a spend cap | C | | ⬜ |
-| P3-C3 | Must | Server writes binds, rules and vows on chain and serves the live state from it | C | | ⬜ |
+| P3-C3 | Must | Server writes binds, rules and vows on chain and serves the live state from it. Binds, points, ownership and rules already integrated in Phase 2; vows remain | C | | 🟡 |
 | P3-C4 | Must | Vow stake, keep and break through `rite` | C | | ⬜ |
-| P3-G1 | Must | Sign-in screen with no wallet words on it | G | | ⬜ |
+| P3-G1 | Must | Sign-in screen with no wallet words on it. `/sign-in` email/code page and HttpOnly-cookie gateway built 6 Nov; web production build passes. Local console-code sign-in reported working by the user (6 Nov). Real-mail acceptance remains | G | | 🟡 |
 | P3-G2 | Must | Vow Shrine swears real vows and shows the stake | G | | ⬜ |
 | P3-G3 | Should | Tide Ward map using the tide art set. Moved 5 Nov: becomes P4-U11 in Unreal | G | | ➡️ P4-U11 |
 | P3-G4 | Should | New player sprite (not the porcelain one, it looks like Link) | G | | ⬜ |
 | P3-A1 | Must | Agents act through their own accounts, guardrail on every action | A | | ⬜ |
 | P3-A2 | Must | Observatory page: Grudge, prices and rules over time, plus fast-forward | A | | ⬜ |
 | P3-A3 | Should | Rival dialogue lines from NEAR AI, shown by Kessa | A | | ⬜ |
-| P3-U1 | Must | Sign-in from Unreal: the game opens the browser at our sign-in page and gets the session back (local callback), then plays as that account; no account settings in Project Settings | G | | ⬜ |
+| P3-U1 | Must | Sign-in from Unreal: opens the browser, collects an approved session by polling with a separate private device secret, then plays as that account. No player account in Project Settings; Windows DPAPI remembers the session, F10 signs out, saves are per account. Editor target compiles; local browser-to-Unreal handoff reported working by the user (6 Nov). Manual resume/logout/isolation and real-mail/testnet acceptance remain (`SIGN_IN.md`) | G | | 🟡 |
 | P3-U2 | Must | Chain words out of the game UI: "Sealed in the Rite's ledger" with a seal icon; L / the icon opens the explorer (the proof stays one key away, "players never notice the chain") | G | | ⬜ |
 | P3-U3 | Must | Unreal project in the repo: `.uproject`, `Source`, `Config`, `Content/Grudgebound` (Git LFS); template content from each developer's own engine (`setup-project.ps1 -TemplateContent`) | G | | ✅ 5 Nov |
 | P3-C5 | Must | Satchel on the server, kept per player: carried talismans (up to 5; the rest wait in the Case in your room), supplies (blank talisman, gilded talisman, Ink Salve), keepsakes (story items). Binding uses up a blank talisman; `GET /satchel` | C | | ⬜ |
@@ -262,7 +271,7 @@ We use genre ideas (turn-based fights, binding what you defeat, a shop, a place 
 |---|---|---|---|
 | Contracts have never compiled; Rust on Windows is slow to set up | Build in WSL. If `rite` doesn't compile by 4 Nov: items, points and rules on chain; vows on the server, logged as events | 4 Nov | closed (17/17 tests pass on Windows, 3 Nov) |
 | NEAR AI Cloud credits run out or are slow | Scripted fallback exists; limit calls per tick; Haiku 5.5 is ~$0.0003 a call (~1–2 s) | 2 Nov | mitigated |
-| Calamities are rare, so the demo may show none | Tune Grudge gain; pick a demo seed that reaches one | 6 Nov | open |
+| Calamities are rare, so the demo may show none | Demo seed 2 reaches bankruptcy, a Calamity and a rule war; regression test checks the sequence | 6 Nov | mitigated (P2-A1; rechecked 7 Nov) |
 | Email login takes longer than planned | Guest sign-in via server-made sub-accounts, still no wallet popup | 8 Nov | open |
 | Too many Wards for 14 days | Lantern only, Tide second, the rest locked | 9 Nov | open |
 | Judges' AI screening can't run the project (Q-017) | Fresh-clone test; every README step is "do X, see Y" | 12 Nov | open |
@@ -279,7 +288,7 @@ We use genre ideas (turn-based fights, binding what you defeat, a shop, a place 
 ## Open questions
 
 - [ ] Who takes which seat?
-- [ ] Which email-login option? (decided after the P3-C1 spike)
+- [ ] Sign-in sender and custody choice: Resend email codes implemented; configure a verified sender. Player-held signing remains open; encrypted server-held signing exists as an explicit testnet-only option. See `SIGN_IN.md`.
 - [ ] Where do we host the server (the Unreal build runs on the judge's PC and needs a reachable server URL)?
 - [x] Which Unreal 5.x version do we pin? **5.8** (newest hotfix), with Visual Studio Community 2026.
 - [ ] Tracks besides `games`?
@@ -299,6 +308,7 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 6 Nov | Unreal/browser sign-in uses email codes and a device-secret polling handoff; a local callback listener is unnecessary. Testnet server custody is implemented behind an explicit option, not enabled; the key-custody decision remains open | Gives Unreal an authenticated session without putting it in a URL; isolates the remaining custody choice from the implemented authentication flow |
 | 5 Nov | Lantern Ward grows into a district with buildings you can enter (Counting House, Mender's House, Rite Hall, your room), a Satchel, supplies bought with Ember, and ink that carries over between fights; Tide Ward moves to Unreal as a Should after G3; Ash and Bone stay locked | Lead wants the depth of the classic monster-binding games; each building is also an Ember sink or source, so the NEAR economy is what the player walks through |
 | 5 Nov | Healing is not free: the Mender charges Ember (price follows Sorrow) or you rest and lose the night | Makes Ember matter and keeps our design apart from the free healing building of other games |
 | 5 Nov | Phase 3 pulled forward: G3 and the feature freeze on 8 Nov (was 10 Nov); Phase 4 (look, story) starts 6 Nov alongside it | Leaves 4 days for the Unreal look, story, packaging and video instead of 2 |

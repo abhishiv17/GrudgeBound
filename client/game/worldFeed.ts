@@ -15,9 +15,7 @@ import {
 } from "@grudgebound/shared";
 import { postReply, type RemoteStart, type RemoteTurn, type Reply } from "./battleClient";
 
-const SERVER = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:8787";
-/** NEAR account that gets this player's talismans and points (e.g. akshay.grudgebound.testnet); unset: the server's guest. */
-const ACCOUNT = process.env.NEXT_PUBLIC_PLAYER_ACCOUNT?.trim().toLowerCase() || undefined;
+const SERVER = "/api/game";
 const POLL_MS = 3000;
 const OFFLINE_TICK_MS = 2000;
 
@@ -70,7 +68,7 @@ export async function startWorldFeed(onUpdate: (s: WorldSummary) => void, onEven
         return { points: null, error: "the server runs its own battles" };
       },
       startBattle: (ward, playerCurse, by) =>
-        postReply<RemoteStart>(`${SERVER}/battle/start`, { ward, playerCurse, by, ...(ACCOUNT ? { account: ACCOUNT } : {}) }),
+        postReply<RemoteStart>(`${SERVER}/battle/start`, { ward, playerCurse, by }),
       battleTurn: (battleId, action) => postReply<RemoteTurn>(`${SERVER}/battle/turn`, { battleId, action }),
       stop: () => clearInterval(timer),
     };

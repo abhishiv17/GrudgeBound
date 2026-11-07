@@ -1,0 +1,11 @@
+.sign-in { min-height: 100svh; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at top, #443025, #1a1726 75%); color: #30251f; }
+.sign-in__paper { width: min(100%, 450px); padding: clamp(24px, 6vw, 44px); background: #eee0bd; border: 2px solid #9b7247; box-shadow: 10px 12px 0 #100e1766; }
+.sign-in__eyebrow { text-transform: uppercase; letter-spacing: .12em; font-size: .8rem; }
+.sign-in h1 { font-family: var(--font-display), monospace; font-size: 2.2rem; margin: 16px 0; }
+.sign-in p { line-height: 1.6; }
+.sign-in label { display: block; margin: 20px 0 8px; font-weight: bold; }
+.sign-in input { width: 100%; box-sizing: border-box; border: 2px solid #70553b; background: #fff8e5; color: #30251f; padding: 12px; font: inherit; }
+.sign-in input:focus-visible { outline: 3px solid #b76b37; outline-offset: 3px; }
+.sign-in input[autocomplete="one-time-code"] { letter-spacing: .35em; font-size: 1.4rem; }
+.sign-in .btn { display: block; width: 100%; margin-top: 12px; text-align: center; }
+.sign-in__error { color: #8c2d32; min-height: 1.6em; }

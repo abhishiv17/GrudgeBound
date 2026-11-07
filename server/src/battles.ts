@@ -202,11 +202,12 @@ export class BattleSessions {
     });
   }
 
-  turn(body: unknown): Answer<TurnAnswer> {
+  turn(body: unknown, authenticatedAccount?: string): Answer<TurnAnswer> {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     this.sweep();
     const s = typeof b.battleId === "string" ? this.open.get(b.battleId) : undefined;
     if (!s) return fail(404, "no battle with that id (it ended or expired)");
+    if (authenticatedAccount !== undefined && s.account !== authenticatedAccount) return fail(403, "this battle belongs to another player");
     const action = parseAction(b.action);
     if (!action) return fail(400, "unknown action");
     if (!canUse(s.state, action)) return fail(409, `you can't ${actionLabel(action)} right now`);

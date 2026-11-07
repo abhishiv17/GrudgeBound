@@ -126,6 +126,9 @@ public:
 	FGbTalismanBoundEvent OnTalismanBound;
 
 private:
+	UFUNCTION() void HandleSessionChanged();
+	FString ActiveAccount;
+	FString SaveSlot = TEXT("Grudgebound");
 	UFUNCTION()
 	void HandleBattleTurn(const FGbBattleTurn& Turn);
 

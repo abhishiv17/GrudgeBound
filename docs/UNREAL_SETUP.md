@@ -73,7 +73,8 @@ Everything is in `Source/GrudgeboundClient/`:
 | `AGbWardGreybox` | Lantern Ward from blocks, tile for tile from the web map (`client/game/tiles.ts`), 1 tile = 1 m: wall, harbour and pier, streets, plaza with the Rite board, stalls and lanterns, 4 houses, 4 tall-grass patches | U2 |
 | `UGbTallGrassComponent` / `AGbTallGrass` | Walking in tall grass rolls 12% per metre (3 safe metres after a battle), then calls `/battle/start` | U4 |
 | `UGbHudWidget` and friends | HUD (Ward, Grudge per emotion, points, Ember, partner, server status), Kessa's banner, encounter dialog (Fight / Slip away), battle screen, Talisman Case (**T**). Built in C++, no widget assets | U3-U6 |
-| `UGbSettings` | *Project Settings > Game > Grudgebound*: server URL, poll rate, player name, encounter chance | |
+| `UGbSettings` | *Project Settings > Game > Grudgebound*: server URL, poll rate, encounter chance; identity comes from sign-in | |
+| `UGbAuthSubsystem` | Browser email sign-in, session resume, sign-out, Windows DPAPI session storage | `docs/SIGN_IN.md` |
 
 **Make the Lantern Ward level (once):**
 
@@ -96,13 +97,17 @@ By hand:
 npm run server            # in the repo folder; http://localhost:8787
 ```
 
-Then press **Play** in Unreal. Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
+Also run `npm run dev` for the browser sign-in page. Configure email and signing using [`SIGN_IN.md`](SIGN_IN.md),
+or use its console-email/off-chain development mode. Press **Play** in Unreal, select **Sign in with email**,
+complete the browser page, and return to the game. Sessions resume automatically; F10 signs out in the Ward.
+Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
 Back in the Ward the points and the talisman show up (press **T**). The HUD says *Server offline* if the server isn't running.
 For faster world ticks while testing: `TICK_MS=3000 npm run server` (PowerShell: `$env:TICK_MS=3000; npm run server`).
 
 **Before the engine is installed:** `unreal/tools/greybox-preview.html` is a browser preview of the same greybox
 (same blocks, colours, camera angle and screens, drawn with three.js, not Unreal). With `npm run server` running,
-double-click it: click to walk, tall grass, battles and the Talisman Case all use the real server.
+double-click it for the visual preview. Its older standalone HTTP client does not implement sign-in; use the
+Unreal client or the web game for authenticated battles.
 
 The plugin's screens are plain paper-and-ink panels. For the art pass, turn off *Create Default Ui* in the settings
 and build Blueprint widgets on the same subsystem events.
@@ -110,6 +115,8 @@ and build Blueprint widgets on the same subsystem events.
 ## 5. Server API the Unreal client uses
 
 All JSON. Base URL `http://localhost:8787` (make it a setting so we can point it at the hosted server later).
+Player actions and `/player` require the session's Bearer token; `UGbApiSubsystem` adds it automatically.
+See [`SIGN_IN.md`](SIGN_IN.md) for the authentication routes and browser handoff.
 
 | Call | What it gives |
 |---|---|
@@ -145,6 +152,8 @@ comes back. Code: `server/src/battles.ts` (tests in `battles.test.ts`).
 |---|---|
 | 200 | OK |
 | 400 | Bad body: unknown ward, curse or action |
+| 401 | Sign in, or the saved session expired |
+| 403 | Account mismatch, another player's battle, or a partner you do not own |
 | 404 | No such battle: it ended, or nobody touched it for 15 minutes |
 | 409 | That move isn't available now (e.g. no salves left); the turn is not spent |
 | 503 | Too many battles open on the server; try again |
@@ -155,8 +164,8 @@ comes back. Code: `server/src/battles.ts` (tests in `battles.test.ts`).
 Try it without Unreal:
 
 ```sh
-curl -X POST localhost:8787/battle/start -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"
-curl -X POST localhost:8787/battle/turn  -H "Content-Type: application/json" -d "{\"battleId\":\"<id>\",\"action\":{\"kind\":\"attack\"}}"
+curl -X POST localhost:8787/battle/start -H "Authorization: Bearer <session-token>" -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"
+curl -X POST localhost:8787/battle/turn  -H "Authorization: Bearer <session-token>" -H "Content-Type: application/json" -d "{\"battleId\":\"<id>\",\"action\":{\"kind\":\"attack\"}}"
 ```
 
 In C++, use Unreal's `HTTP`, `Json` and `JsonUtilities` modules (add them to `Grudgebound.Build.cs`).

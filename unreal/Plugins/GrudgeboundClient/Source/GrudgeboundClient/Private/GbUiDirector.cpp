@@ -1,6 +1,7 @@
 #include "GbUiDirector.h"
 
 #include "GbApiSubsystem.h"
+#include "GbAuthSubsystem.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
 #include "GbWidgets.h"
@@ -44,6 +45,7 @@ void AGbUiDirector::BeginPlay()
 	TalismanCase = CreateWidget<UGbTalismanCaseWidget>(PC, UGbTalismanCaseWidget::StaticClass());
 	Rules = CreateWidget<UGbRulesWidget>(PC, UGbRulesWidget::StaticClass());
 	Shop = CreateWidget<UGbShopWidget>(PC, UGbShopWidget::StaticClass());
+	SignIn = CreateWidget<UGbSignInWidget>(PC, UGbSignInWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
@@ -51,6 +53,7 @@ void AGbUiDirector::BeginPlay()
 	TalismanCase->AddToViewport(30);
 	Rules->AddToViewport(30);
 	Shop->AddToViewport(30);
+	SignIn->AddToViewport(100);
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -77,13 +80,30 @@ void AGbUiDirector::BeginPlay()
 		InputComponent->BindKey(EKeys::L, IE_Pressed, this, &AGbUiDirector::OpenLastChainLink);
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AGbUiDirector::ToggleRules);
 		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &AGbUiDirector::ToggleShop);
+		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGbUiDirector::SignOut);
 	}
 
-	ShowScreen(EScreen::Ward);
+	UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
+	Auth->OnSessionChanged.AddUniqueDynamic(this, &AGbUiDirector::HandleSessionChanged);
+	ShowScreen(Auth->IsSignedIn() ? EScreen::Ward : EScreen::SignIn);
+	Auth->ResumeSession();
+}
+
+void AGbUiDirector::HandleSessionChanged()
+{
+	const UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
+	if (!Auth->IsSignedIn()) ShowScreen(EScreen::SignIn);
+	else if (Current == EScreen::SignIn) ShowScreen(EScreen::Ward);
+}
+
+void AGbUiDirector::SignOut()
+{
+	if (Current == EScreen::Ward) GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->SignOut();
 }
 
 void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 {
+	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.RemoveDynamic(this, &AGbUiDirector::HandleSessionChanged);
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
 		Api->OnBattleStarted.RemoveDynamic(this, &AGbUiDirector::HandleBattleStarted);
@@ -100,6 +120,7 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 
 void AGbUiDirector::ShowScreen(EScreen Screen)
 {
+	if (!GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) Screen = EScreen::SignIn;
 	Current = Screen;
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	if (!PC || !Hud) return;
@@ -109,6 +130,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	TalismanCase->SetVisibility(Screen == EScreen::TalismanCase ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Rules->SetVisibility(Screen == EScreen::Rules ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Shop->SetVisibility(Screen == EScreen::Shop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	SignIn->SetVisibility(Screen == EScreen::SignIn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Hud->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
@@ -133,6 +155,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 		if (!PC->IsMoveInputIgnored()) PC->SetIgnoreMoveInput(true);
 		UUserWidget* Focus = Screen == EScreen::Encounter ? static_cast<UUserWidget*>(Encounter.Get())
 			: Screen == EScreen::Battle ? static_cast<UUserWidget*>(Battle.Get())
+			: Screen == EScreen::SignIn ? static_cast<UUserWidget*>(SignIn.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
 			: Screen == EScreen::Shop ? static_cast<UUserWidget*>(Shop.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
 		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop)

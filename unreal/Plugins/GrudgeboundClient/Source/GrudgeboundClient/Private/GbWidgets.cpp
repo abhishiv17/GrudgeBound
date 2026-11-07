@@ -1,6 +1,7 @@
 #include "GbWidgets.h"
 
 #include "GbApiSubsystem.h"
+#include "GbAuthSubsystem.h"
 #include "GbGreyboxMaterials.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
@@ -162,6 +163,41 @@ UWidget* UGbWidgetBase::Sized(UWidget* Content, float Width, float Height)
 }
 
 // ================================================================ HUD
+
+void UGbSignInWidget::BuildTree()
+{
+	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget = Root;
+	UBorder* Panel = MakePanel(PaperPanel(), FMargin(32.f));
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(); Panel->SetContent(Sized(Col, 440.f, 0.f));
+	AddRow(Col, MakeText(TEXT("Enter Hollowmere"), 28, C::Ink, true));
+	StatusText = MakeText(TEXT("Sign in to enter Hollowmere."), 16, C::Ink); AddRow(Col, StatusText, 12.f, 16.f);
+	UTextBlock* Label = nullptr;
+	SignInButton = MakeButton(TEXT("Sign in with email"), Label, C::Gold);
+	SignInButton->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSignIn); AddRow(Col, SignInButton);
+	Centre(Root, Panel);
+}
+
+void UGbSignInWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.AddUniqueDynamic(this, &UGbSignInWidget::HandleChanged);
+	Refresh();
+}
+
+void UGbSignInWidget::NativeDestruct()
+{
+	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.RemoveDynamic(this, &UGbSignInWidget::HandleChanged);
+	Super::NativeDestruct();
+}
+
+void UGbSignInWidget::Refresh()
+{
+	const UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
+	if (StatusText) StatusText->SetText(FText::FromString(Auth->GetMessage()));
+	if (SignInButton) SignInButton->SetIsEnabled(!Auth->IsBusy());
+}
+void UGbSignInWidget::HandleSignIn() { GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->BeginSignIn(); }
+void UGbSignInWidget::HandleChanged() { Refresh(); }
 
 void UGbHudWidget::BuildTree()
 {

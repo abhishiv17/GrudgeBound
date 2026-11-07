@@ -38,6 +38,8 @@ export interface ChainConfig {
   relayerAccount: string;
   /** From NEAR_RELAYER_PRIVATE_KEY; else read from the keychain when first needed. */
   relayerKey?: KeyPairString;
+  /** Optional encrypted-store signer for authenticated testnet players. Never exposed over HTTP. */
+  playerKey?: (account: string) => KeyPairString | undefined;
 }
 
 /** A rule as the rite contract returns it. */
@@ -166,6 +168,7 @@ export interface ChainOps {
   call: ContractCall;
   relay: RelayCall;
   view: ViewCall;
+  createAccount?: (account: string, publicKey: string) => Promise<void>;
 }
 
 const GAS = 30_000_000_000_000n;
@@ -214,6 +217,16 @@ function nearOps(cfg: ChainConfig): ChainOps {
   const players = new Map<string, Account>();
 
   return {
+    async createAccount(account, publicKey) {
+      // Check the saved key first, including after a creation request timed out.
+      try { await provider.viewAccessKey({ accountId: account, publicKey }); return; } catch { /* create below */ }
+      try {
+        const result = await game.createAccount({ newAccountId: account, publicKey, nearToTransfer: 50_000_000_000_000_000_000_000n });
+        checkReceipts(result);
+      } catch (e) {
+        try { await provider.viewAccessKey({ accountId: account, publicKey }); } catch { throw e; }
+      }
+    },
     async call(contractId, methodName, args, deposit = 0n) {
       const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit });
       checkReceipts(res);
@@ -223,7 +236,7 @@ function nearOps(cfg: ChainConfig): ChainOps {
       if (!relayer) throw new Error(`no key for the relayer ${cfg.relayerAccount}`);
       let acct = players.get(player);
       if (!acct) {
-        const key = custodialKey(cfg, player);
+        const key = cfg.playerKey?.(player) ?? custodialKey(cfg, player);
         if (!key) throw new Error(`the server holds no key for ${player}`);
         acct = new Account(player, provider, KeyPairSigner.fromSecretKey(key));
         players.set(player, acct);
@@ -270,6 +283,7 @@ export class ChainWriter {
   private readonly call: ContractCall;
   private readonly relay: RelayCall;
   private readonly view: ViewCall;
+  private readonly createAccount: (account: string, publicKey: string) => Promise<void>;
   private readonly eventListeners: ((events: ChainEvent[]) => void)[] = [];
 
   constructor(
@@ -286,6 +300,7 @@ export class ChainWriter {
     this.call = async (...a) => this.emitEvents(await call(...a));
     this.relay = async (...a) => this.emitEvents(await relay(...a));
     this.view = given.view ?? ((...a) => real().view(...a));
+    this.createAccount = given.createAccount ?? ((...a) => real().createAccount!(...a));
   }
 
   /** Called with the NEP-297 events of every transaction this writer sends. */
@@ -487,5 +502,13 @@ export class ChainWriter {
     const next = this.queue.then(job, job);
     this.queue = next.catch(() => undefined);
     return next;
+  }
+
+  /** Account funding shares the game master's write queue with battle rewards and shop settlement. */
+  provisionAccount(account: string, publicKey: string): Promise<void> {
+    if (this.cfg.network !== "testnet" || !this.cfg.gameAccount || !account.endsWith(`.${this.cfg.gameAccount}`) || !isAccountId(account)) {
+      return Promise.reject(new Error("Player provisioning is restricted to this game's testnet sub-accounts"));
+    }
+    return this.enqueue(() => this.createAccount(account, publicKey));
   }
 }

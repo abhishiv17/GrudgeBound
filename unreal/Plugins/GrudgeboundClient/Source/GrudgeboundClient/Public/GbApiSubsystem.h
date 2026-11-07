@@ -51,6 +51,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Server")
 	FString GetServerUrl() const;
+	FString GetPlayerAccount() const;
+	FString GetPlayerName() const;
 
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Town")
 	FGbWorldState GetWorldState() const { return WorldState; }
@@ -198,6 +200,9 @@ public:
 	FGbApiErrorEvent OnError;
 
 private:
+	UFUNCTION() void HandleSessionChanged();
+	FString SessionToken;
+	uint32 SessionSerial = 0;
 	using FDone = TFunction<void(int32 Status, const FString& Body)>;
 	void Send(const FString& Verb, const FString& Path, const FString& Body, FDone Done);
 

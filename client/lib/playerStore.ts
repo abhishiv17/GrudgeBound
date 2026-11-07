@@ -54,6 +54,7 @@ export interface PlayerState {
 }
 
 const STORAGE_KEY = "grudgebound.player.v1";
+let storageKey = STORAGE_KEY;
 const MAX_HISTORY = 20;
 /** Same purse every simulated participant starts with in the engine. */
 export const STARTING_EMBER = 60;
@@ -81,7 +82,7 @@ function isValid(s: unknown): s is PlayerState {
 
 function load(): PlayerState {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return fresh();
     const parsed: unknown = JSON.parse(raw);
     if (!isValid(parsed)) return fresh();
@@ -97,7 +98,7 @@ function load(): PlayerState {
 
 function save(s: PlayerState) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    window.localStorage.setItem(storageKey, JSON.stringify(s));
   } catch {
     /* private window or storage full: progress lasts until the tab closes */
   }
@@ -133,6 +134,13 @@ export function captureVerb(outcome: Outcome): CaptureVerb | null {
 }
 
 export const playerStore = {
+  selectProfile(playerId?: string) {
+    const key = playerId ? `${STORAGE_KEY}.${playerId}` : STORAGE_KEY;
+    if (key === storageKey) return;
+    storageKey = key;
+    state = load();
+    for (const l of listeners) l();
+  },
   subscribe(listener: () => void): () => void {
     listeners.add(listener);
     return () => listeners.delete(listener);

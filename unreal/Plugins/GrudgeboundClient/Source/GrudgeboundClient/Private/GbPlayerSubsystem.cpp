@@ -1,6 +1,7 @@
 #include "GbPlayerSubsystem.h"
 
 #include "GbApiSubsystem.h"
+#include "GbAuthSubsystem.h"
 #include "GbSettings.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
@@ -15,6 +16,7 @@ void UGbPlayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	UGbApiSubsystem* Api = Collection.InitializeDependency<UGbApiSubsystem>();
+	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.AddDynamic(this, &UGbPlayerSubsystem::HandleSessionChanged);
 	Load();
 	if (Api)
 	{
@@ -26,6 +28,18 @@ void UGbPlayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		Api->OnPlayerView.AddDynamic(this, &UGbPlayerSubsystem::HandlePlayerView);
 		Api->FetchPlayer();
 	}
+}
+
+void UGbPlayerSubsystem::HandleSessionChanged()
+{
+	const FString Account = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetAccount();
+	if (ActiveAccount == Account) return;
+	ActiveAccount = Account;
+	SaveSlot = Account.IsEmpty() ? FString(SlotName) : FString(SlotName) + TEXT("_") + Account;
+	bOnChain = false; AccountUrl.Reset(); PendingTrades.Empty(); Settling.Empty(); GraceMetresLeft = 0;
+	if (Account.IsEmpty()) MakeFresh(); else Load();
+	OnPlayerChanged.Broadcast();
+	if (!Account.IsEmpty()) RefreshFromChain();
 }
 
 void UGbPlayerSubsystem::RefreshFromChain()
@@ -114,9 +128,9 @@ void UGbPlayerSubsystem::MakeFresh()
 void UGbPlayerSubsystem::Load()
 {
 	Data = nullptr;
-	if (UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+	if (UGameplayStatics::DoesSaveGameExist(SaveSlot, 0))
 	{
-		Data = Cast<UGbSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+		Data = Cast<UGbSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlot, 0));
 	}
 	if (!Data || Data->Talismans.Num() == 0)
 	{
@@ -129,7 +143,7 @@ void UGbPlayerSubsystem::Load()
 
 void UGbPlayerSubsystem::Save()
 {
-	if (Data) UGameplayStatics::SaveGameToSlot(Data, SlotName, 0);
+	if (Data) UGameplayStatics::SaveGameToSlot(Data, SaveSlot, 0);
 	OnPlayerChanged.Broadcast();
 }
 
