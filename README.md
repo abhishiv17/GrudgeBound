@@ -1,11 +1,16 @@
 # Grudgebound: The Rite
 
-A browser creature-binding game where **greed creates monsters** and **players rewrite the rules**.
+A creature-binding game where **greed creates monsters** and **players rewrite the rules**. Unreal is the main client; the browser client remains available.
 Built for [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), track: Games With Real Economies.
 
-> **Status: Phase 1 of 5 (core loop).** You can walk Lantern Ward, fight curses, bind them into talismans
-> and earn points; the server replays every reported battle before it counts. Testnet, email login and
-> AI agents with wallets come next. The table under [What works today](#what-works-today) is kept up to date.
+> **Status: Phase 3 of 5 (accounts, agents, live world).** Phase 2's testnet gate passed on 5 Nov.
+> Email sign-in and Unreal sessions use encrypted server-held signing on testnet (selected 7 Nov).
+> A new identity's bind, sale and session recovery passed on testnet; real email delivery and remaining
+> editor acceptance are open. Setup: [`docs/SIGN_IN.md`](docs/SIGN_IN.md).
+> **7 Nov checkpoint:** 108 tests, type checks and the Unreal editor build pass; native Vow Shrine stakes,
+> kept return and early-release burn verified on testnet. Final game delivery is Unreal Windows; the Node
+> backend and browser email handoff support it. New web-game feature work is stopped.
+> Remaining work and the exact restart point are in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md#recovery-checkpoint--7-nov).
 
 ## The idea
 
@@ -32,8 +37,8 @@ npm install
 | `npm run sim -- --days 3 --seed 7 --events` | A different town (seed 7) with every notable event listed. Same seed always gives the same result. |
 | `npm run server` then open `http://localhost:8787/state` | The live world as JSON, advancing one in-game hour per real minute (set `TICK_MS=3000` for faster ticks). |
 | `npm run dev` then open `http://localhost:3000` | Lantern Ward. Walk with arrow keys / WASD. Walk through tall grass: a curse appears, chosen from the Ward's live Grudge. Press **Fight!**: attack, ward, then **Seal** a weakened curse to bind it. Back in the Ward, Kessa announces the result, your points go up and the talisman appears in your case (**T**), where you can make it your partner. Works without the server too (the town then runs in the browser). |
-| With `npm run server` running, fight and bind a curse, then open `http://localhost:8787/events?since=-1` | The town log shows "A newcomer bound ... (+N points)": the server replayed your battle from its seed and actions before counting it. |
-| With `npm run server` running: `curl -X POST localhost:8787/battle/start -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"`, then `POST /battle/turn` with the `battleId` and `{"kind":"attack"}` | A battle run entirely by the server, turn by turn, with log lines; at the end the points and the seed to replay it. This is what the Unreal client uses (`docs/UNREAL_SETUP.md`). |
+| Sign in from Unreal or `http://localhost:3000/sign-in`, then fight and bind a curse | A server-run battle credited to your authenticated player. Testnet signing needs the configuration in `docs/SIGN_IN.md`. |
+| Call `/battle/start` and `/battle/turn` with your sign-in Bearer token | A battle run entirely by the server, turn by turn. Missing sessions and turns for another player's battle are refused. |
 | `http://localhost:8787/shop?merchant=broker` (server running) | The Talisman Broker's prices, each with a one-line reason. With a NEAR AI key in `.env`, the reason is written by the merchant agent; the number always comes from the formula. |
 | `npm run agent:demo` | Each AI rival decides its next move and the Talisman Broker explains a price. Uses NEAR AI Cloud if `.env` has a key, otherwise the scripted fallback. |
 | `npm test` | Unit tests for the type triangle, Grudge, pricing, rules, the Arbiter, engine determinism, battles and replay. |
@@ -48,14 +53,16 @@ npm install
 | `shared/src/pricing.ts`: every price formula in one file, with plain-English reasons | Done |
 | Tick engine: Grudge, spawns, merchants, bankruptcies, AI rival policies, rules with costs and effects | First version, being tuned |
 | Fast-forward simulator (`npm run sim`) | Done (text output; Observatory charts planned) |
-| Game server: `/state`, `/events`, `/shop` (merchant price reasons), `/curses`, `POST /battle` (replays a battle before counting it), `/battle/start` + `/battle/turn` (server-run battles) | Working, in memory |
+| Game server: `/state`, `/events`, `/shop`, `/curses`, `/battle/start` + `/battle/turn` | Working; online player actions require a session. Legacy `POST /battle` removed. |
 | Agent runtime: observe, legal options, LLM choice, guardrail, scripted fallback | Done; not yet acting through NEAR wallets |
 | Game client (Next.js + Phaser): walkable Ward, tall-grass encounters, Grudge HUD, Kessa banner, Rules panel, Vow Shrine | Working; first art pass |
-| Battles and binding: encounter, turn-based battle, seal, talisman case, partner choice, points | Working; progress kept in the browser until sign-in |
+| Battles and binding: encounter, turn-based battle, seal, talisman case, partner choice, points | Working; Unreal reads ownership and points from the chain. Local saves are separated per signed-in player. |
 | Unreal Engine 5.8 client (`unreal/Plugins/GrudgeboundClient`): server API, Lantern Ward greybox, tall-grass encounters, HUD, battle screen, Talisman Case | Builds and plays on UE 5.8.4: walk, encounter, battle, bind (`docs/UNREAL_SETUP.md`) |
-| Contracts: `items` (NEP-245 shape) and `rite` (points, rules, vows) | Compile to wasm, unit tests written; **not deployed yet** |
-| Testnet deploy, relayer (meta transactions), binding mints a token | Planned (Phase 2, 5-7 Nov) |
-| Email login, agents with their own accounts, Observatory page | Planned (Phase 3, 7-10 Nov) |
+| Contracts: `items` (NEP-245 shape) and `rite` (points, rules, vows) | Deployed to testnet; binding, trading and rules verified in Phase 2 |
+| Testnet deploy, relayer (meta transactions), binding mints a token | G2 passed 5 Nov; remaining Rite-panel editor check recorded in the build plan |
+| Email login and Unreal sessions | Encrypted testnet signing selected; new identity provisioning/bind/sale/restart/logout verified through the native HTTP flow. Real-mail and editor acceptance remain (`docs/SIGN_IN.md`). |
+| Native Unreal Vow Shrine (V) | Built; real testnet stake/return/burn verified. Native play-through and power modifiers remain (`docs/VOWS.md`). |
+| Agent accounts, native Unreal Observatory, Satchel/supplies and ink carry-over | Remaining Phase 3 work; feature freeze 8 Nov |
 
 ## How NEAR is used (planned, being built)
 
@@ -85,7 +92,8 @@ docs/        hackathon rules, art direction and concept art
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Only needed for real AI agents (NEAR AI Cloud) and, later, testnet.
+Copy `.env.example` to `.env` for the game server's email delivery, testnet signing and NEAR AI configuration.
+For console-code development and Unreal sign-in, follow [`docs/SIGN_IN.md`](docs/SIGN_IN.md).
 **Never commit `.env` or any key.**
 
 ## Disclosures (hackathon rule Q-005)

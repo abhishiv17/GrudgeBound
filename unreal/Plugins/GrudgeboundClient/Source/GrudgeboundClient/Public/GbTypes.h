@@ -403,3 +403,38 @@ struct FGbRuleVerdict
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Cost = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
 };
+
+USTRUCT(BlueprintType)
+struct FGbVowTemplate
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Id;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Stake = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 MinDays = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 MaxDays = 1;
+};
+
+USTRUCT(BlueprintType)
+struct FGbVow
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Id = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Status;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Stake = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Payout = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") double EndsAt = 0;
+};
+
+USTRUCT(BlueprintType)
+struct FGbVowsOverview
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bChain = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") double DaySeconds = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbVowTemplate> Templates;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbRuleOption> Talismans;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FGbVow> Vows;
+};

@@ -20,6 +20,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbPlayerViewEvent, const FGbPlayerV
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbShopEvent, const FGbShop&, Shop);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTradeEvent, const FGbTrade&, Trade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbVowsEvent, const FGbVowsOverview&, Vows);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRuleVerdictEvent, const FGbRuleVerdict&, Verdict);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FGbChainReceiptEvent, const FString&, BattleId, const FGbChainReceipt&, Receipt);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FGbApiErrorEvent, const FString&, What, int32, Status, const FString&, Message);
@@ -32,6 +33,11 @@ class GRUDGEBOUNDCLIENT_API UGbApiSubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void FetchVows();
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void SwearVow(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params);
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void ReleaseVow(int32 VowId);
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Vows") FGbVowsEvent OnVows;
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Vows") FGbChainReceiptEvent OnVowReceipt;
 
 	// ------------------------------------------------------------ town (GET /health, /state, /events, /curses)
 
@@ -51,6 +57,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Server")
 	FString GetServerUrl() const;
+	FString GetPlayerAccount() const;
+	FString GetPlayerName() const;
 
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Town")
 	FGbWorldState GetWorldState() const { return WorldState; }
@@ -198,6 +206,9 @@ public:
 	FGbApiErrorEvent OnError;
 
 private:
+	UFUNCTION() void HandleSessionChanged();
+	FString SessionToken;
+	uint32 SessionSerial = 0;
 	using FDone = TFunction<void(int32 Status, const FString& Body)>;
 	void Send(const FString& Verb, const FString& Path, const FString& Body, FDone Done);
 
@@ -208,6 +219,7 @@ private:
 	void SetOnline(bool bNowOnline);
 	/** Ask GET /chain?<Kind>=<id> again in a second, up to TriesLeft times (Kind: "battle", "rule" or "shop"). */
 	void SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value);
+	void SendVow(const FString& Path, const FString& Body);
 	void PollChain(const FString& Kind, const FString& Id, int32 TriesLeft);
 
 	FTimerHandle PollTimer;

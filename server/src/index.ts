@@ -22,12 +22,15 @@
  *                           (NEAR AI Cloud if .env has a key, else the plain formula reason; cached per tick)
  *   POST /tick           -> advance one tick now (dev only)
  *
- * Next (Phase 3): player sign-in (keys held by the player), agents with their own NEAR accounts, vows.
+ * Sign-in: /auth/email/start, /auth/email/verify, /auth/session, /auth/logout.
+ * Unreal: /auth/device/start and /auth/device/poll. See docs/SIGN_IN.md for setup and key custody.
+ * Next: agents with their own NEAR accounts, vows.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   createWorld, createRng, step, summarize, log,
   DEFAULT_REAL_MS_PER_TICK, DEMO_SEED,
+  DEFAULT_PLAYER_CURSE,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
 import { BattleSessions, curseCatalog, type TurnAnswer } from "./battles";
@@ -37,12 +40,24 @@ import { playerView } from "./player";
 import { describeChainEvent } from "./chainEvents";
 import { BattleArchive } from "./battleArchive";
 import { Shop } from "./shop";
+import { AuthError, AuthService, authStoreFromEnv, emailDelivery, playerBody } from "./auth";
+import { authRoute, sessionToken } from "./authHttp";
+import { playerKeyResolver, playerProvisioner } from "./playerAccounts";
+import { Vows } from "./vows";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
 const SEED = Number(process.env.WORLD_SEED ?? DEMO_SEED);
 const DEV = process.env.NODE_ENV !== "production";
 const RULE_SYNC_MS = 60_000;
+const SIGN_IN_URL = process.env.AUTH_SIGN_IN_URL || "http://localhost:3000/sign-in";
+const signInUrl = new URL(SIGN_IN_URL);
+if (!DEV && signInUrl.protocol !== "https:") throw new Error("AUTH_SIGN_IN_URL must use HTTPS in production");
+if (!["http:", "https:"].includes(signInUrl.protocol) || signInUrl.username || signInUrl.password ||
+    (signInUrl.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(signInUrl.hostname))) throw new Error("AUTH_SIGN_IN_URL must use HTTPS or loopback HTTP");
+const HOST = process.env.HOST || (DEV ? "127.0.0.1" : "0.0.0.0");
+if (process.env.AUTH_EMAIL_MODE === "console" && !["127.0.0.1", "::1", "localhost"].includes(HOST)) throw new Error("Console email requires a loopback-only server");
+const authStore = authStoreFromEnv();
 
 const world = createWorld(SEED);
 const rng = createRng(SEED);
@@ -50,13 +65,15 @@ const rng = createRng(SEED);
 setInterval(() => step(world, rng), TICK_MS);
 
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": signInUrl.origin,
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Credentials": "true",
+  "Vary": "Origin",
 };
 
 function send(res: ServerResponse, status: number, body: unknown) {
-  res.writeHead(status, { "Content-Type": "application/json", ...CORS });
+  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS });
   res.end(JSON.stringify(body));
 }
 
@@ -87,7 +104,11 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 const chainCfg = chainConfigFromEnv();
+if (chainCfg && process.env.AUTH_KEY_MODE === "server") chainCfg.playerKey = playerKeyResolver(authStore);
 const chain = chainCfg ? new ChainWriter(chainCfg) : null;
+const auth = new AuthService({ store: authStore, deliver: emailDelivery(), provision: playerProvisioner(chain, chainCfg, process.env.AUTH_KEY_MODE),
+  isPlayerReady: (p) => !chainCfg ? p.account.endsWith(".offline") : process.env.AUTH_KEY_MODE === "server" && !!p.signingKey && p.account.endsWith(`.${chainCfg.gameAccount}`),
+});
 /** Replay records of every battle the Rite paid for (npm run replay <seed>). */
 const archive = new BattleArchive();
 // What the contracts logged (NEP-297) joins the town's event feed, with a link to the transaction.
@@ -101,9 +122,18 @@ chain?.onEvents((events) => {
     if (said) log(world, { ...said, url: e.url });
   }
 });
-const canSignFor = (a: string) => !!chainCfg && custodialKey(chainCfg, a) !== undefined;
+const canSignFor = (a: string) => !!chainCfg && (chainCfg.playerKey?.(a) ?? custodialKey(chainCfg, a)) !== undefined;
 const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
 const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor) : null;
+const vows = new Vows(world, chain, canSignFor, TICK_MS);
+let vowsSweeping = false;
+function sweepVows() {
+  if (vowsSweeping || !chain) return;
+  vowsSweeping = true;
+  void vows.sweep(authStore.data.players.filter((p) => p.ready).map((p) => p.account))
+    .catch(() => console.warn("Vows: settlement will retry when the Rite is reachable."))
+    .finally(() => { vowsSweeping = false; });
+}
 
 /** After a battle route answers 200 with a binding or exorcism: write it on chain and add the receipt. */
 async function withChain<T extends object>(body: T, record: BattleRecord | null): Promise<T> {
@@ -164,84 +194,105 @@ async function shop(merchantId: string): Promise<{ status: number; body: unknown
   return { status: 200, body };
 }
 
-createServer((req, res) => {
+async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  if (req.headers.origin && req.headers.origin !== signInUrl.origin) throw new AuthError(403, "Request origin is not allowed.");
+  if (req.method === "POST" && !(req.headers["content-type"] ?? "").startsWith("application/json")) throw new AuthError(415, "Expected application/json.");
+  if (req.method === "POST" && req.headers.cookie && !req.headers.origin && !req.headers.authorization) throw new AuthError(403, "Browser requests must include their origin.");
   if (req.method === "OPTIONS") {
     res.writeHead(204, CORS);
     return res.end();
   }
+  if (url.pathname.startsWith("/auth/")) {
+    return authRoute(auth, req, res, url.pathname, () => readJson(req), (status, body) => send(res, status, body), SIGN_IN_URL, !DEV);
+  }
+  if (req.method === "GET" && url.pathname === "/vows") {
+    const player = auth.authenticate(sessionToken(req));
+    sweepVows();
+    return send(res, 200, await vows.overview(player.account));
+  }
+  if (req.method === "POST" && (url.pathname === "/vows/swear" || url.pathname === "/vows/release")) {
+    const player = auth.authenticate(sessionToken(req));
+    const body = playerBody(await readJson(req), player);
+    const result = url.pathname === "/vows/swear" ? await vows.swear(player.account, body) : await vows.release(player.account, body.vowId);
+    // The Shrine is outside encounters. Old encounters (including a slipped-away one) cannot resume under changed vows.
+    battles.abandonAccount(player.account);
+    return send(res, 200, result);
+  }
   if (req.method === "POST" && (url.pathname === "/battle/start" || url.pathname === "/battle/turn")) {
-    readJson(req).then(
-      (body) => {
-        if (url.pathname === "/battle/start") {
-          const r = battles.start(body);
-          return send(res, r.status, r.body);
-        }
-        const r = battles.turn(body);
-        if (r.status !== 200) return send(res, r.status, r.body);
-        const t = r.body as TurnAnswer;
-        const record = recordFromTurn(t);
-        if (record) {
-          try { archive.add(record, t.ward ?? "lantern"); } catch (e) { console.warn(`battle archive: ${(e as Error).message}`); }
-        }
-        return withChain(t, record).then((b) => send(res, 200, b));
-      },
-      (e: Error) => send(res, 400, { error: e.message }),
-    );
-    return;
+    const player = auth.authenticate(sessionToken(req));
+    const body = playerBody(await readJson(req), player);
+    const activeVows = await vows.snapshot(player.account);
+    const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
+    if (url.pathname === "/battle/start") {
+      if (chain && typeof body.playerCurse === "string" && body.playerCurse !== DEFAULT_PLAYER_CURSE) {
+        const owned = await chain.talismansOf(player.account);
+        if (!owned.some((t) => t.meta.species === body.playerCurse)) throw new AuthError(403, "Choose a partner from your own talismans.");
+      }
+      const r = battles.start(body, vowGuard);
+      return send(res, r.status, r.body);
+    }
+    const r = battles.turn(body, player.account, vowGuard);
+    if (r.status !== 200) return send(res, r.status, r.body);
+    const t = r.body as TurnAnswer;
+    const record = recordFromTurn(t);
+    if (record) {
+      try { archive.add(record, t.ward ?? "lantern"); } catch (e) { console.warn(`battle archive: ${(e as Error).message}`); }
+    }
+    return send(res, 200, await withChain(t, record));
   }
   if (req.method === "GET" && url.pathname === "/shop") {
     const merchantId = url.searchParams.get("merchant") ?? "broker";
-    shop(merchantId).then(
-      async (r) => {
-        if (r.status !== 200 || !playerShop) return send(res, r.status, r.body);
-        const extras = await playerShop.extras(merchantId, url.searchParams.get("account"));
-        send(res, 200, { ...(r.body as object), ...extras });
-      },
-      (e: Error) => send(res, 500, { error: e.message }),
-    );
-    return;
+    const r = await shop(merchantId);
+    if (r.status !== 200 || !playerShop) return send(res, r.status, r.body);
+    const token = sessionToken(req);
+    const account = token ? auth.authenticate(token).account : url.searchParams.get("account");
+    const extras = await playerShop.extras(merchantId, account);
+    return send(res, 200, { ...(r.body as object), ...extras });
   }
   if (req.method === "POST" && (url.pathname === "/shop/buy" || url.pathname === "/shop/sell")) {
+    const player = auth.authenticate(sessionToken(req));
     if (!playerShop) return send(res, 503, { error: "trades are settled on chain, and this server runs off-chain" });
-    readJson(req).then(
-      (body) => (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body)).then((r) => {
-        // Stock and demand just changed: the next GET /shop recomputes prices (and Kessa's tooltip lines).
-        const m = (body as { merchant?: unknown } | null)?.merchant;
-        if (r.status === 200 && typeof m === "string") shopCache.delete(m);
-        send(res, r.status, r.body);
-      }),
-      (e: Error) => send(res, 400, { error: e.message }),
-    ).catch((e: Error) => send(res, 500, { error: e.message }));
+    const body = playerBody(await readJson(req), player);
+    const merchant = world.merchants.find((m) => m.id === body.merchant);
+    if (merchant) vows.assertTrade(await vows.snapshot(player.account), merchant.ward, url.pathname === "/shop/sell" ? body.tokenId : undefined);
+    const r = await (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body));
+    // Stock and demand just changed: the next GET /shop recomputes prices (and Kessa's tooltip lines).
+    const m = body.merchant;
+    if (r.status === 200 && typeof m === "string") shopCache.delete(m);
+    send(res, r.status, r.body);
     return;
   }
   if (req.method === "POST" && (url.pathname === "/rules/propose" || url.pathname === "/rules/repeal")) {
+    const player = auth.authenticate(sessionToken(req));
     if (!chainRules) return send(res, 503, { error: "rules go through the rite contract, and this server runs off-chain" });
-    readJson(req).then(
-      (body) => (url.pathname === "/rules/propose" ? chainRules.propose(body) : chainRules.repeal(body)).then((r) => send(res, r.status, r.body)),
-      (e: Error) => send(res, 400, { error: e.message }),
-    ).catch((e: Error) => send(res, 500, { error: e.message }));
+    const body = playerBody(await readJson(req), player);
+    const r = await (url.pathname === "/rules/propose" ? chainRules.propose(body) : chainRules.repeal(body));
+    send(res, r.status, r.body);
     return;
   }
   if (req.method === "GET" && url.pathname === "/player") {
-    playerView(chain, url.searchParams.get("account")).then(
-      (r) => send(res, r.status, r.body),
-      (e: Error) => send(res, 500, { error: e.message }),
-    );
-    return;
+    const player = auth.authenticate(sessionToken(req));
+    if (url.searchParams.has("account") && url.searchParams.get("account") !== player.account) throw new AuthError(403, "You can only load your signed-in player.");
+    const r = await playerView(chain, player.account);
+    return send(res, r.status, r.body);
   }
   if (req.method === "GET" && url.pathname === "/rules") {
-    rulesOverview(world, chain, url.searchParams.get("account"), chainRules).then(
-      (body) => send(res, 200, body),
-      (e: Error) => send(res, 500, { error: e.message }),
-    );
-    return;
+    const token = sessionToken(req);
+    const account = token ? auth.authenticate(token).account : url.searchParams.get("account");
+    return send(res, 200, await rulesOverview(world, chain, account, chainRules));
   }
   if (req.method === "GET" && url.pathname === "/chain") {
     const id = url.searchParams.get("battle");
     const ruleJob = url.searchParams.get("rule");
     const shopJob = url.searchParams.get("shop");
+    const vowJob = url.searchParams.get("vow");
     if (!chain || !chainCfg) return send(res, 200, { enabled: false });
+    if (vowJob) {
+      const player = auth.authenticate(sessionToken(req));
+      const receipt = chain.vowReceipt(vowJob);
+      return receipt && receipt.account === player.account ? send(res, 200, receipt) : send(res, 404, { error: "no receipt for that vow" });
+    }
     if (shopJob) {
       const receipt = chain.shopReceipt(shopJob);
       return receipt ? send(res, 200, receipt) : send(res, 404, { error: "no chain receipt for that trade" });
@@ -265,11 +316,20 @@ createServer((req, res) => {
     return send(res, 200, world.events.filter((e) => e.tick > since));
   }
   if (req.method === "POST" && url.pathname === "/tick" && DEV) {
+    auth.authenticate(sessionToken(req));
     step(world, rng);
     return send(res, 200, summarize(world));
   }
   send(res, 404, { error: "not found" });
-}).listen(PORT, () => {
+}
+createServer((req, res) => {
+  void handle(req, res).catch((e) => {
+    if (res.headersSent || res.destroyed) return;
+    const status = e instanceof AuthError ? e.status : e instanceof Error && ["body is not JSON", "body too large"].includes(e.message) ? 400 : 500;
+    if (status === 500) console.warn("Request failed (details withheld from clients)");
+    send(res, status, { error: status === 500 ? "The request could not be completed." : (e as Error).message });
+  });
+}).listen(PORT, HOST, () => {
   console.log(`Grudgebound server on http://localhost:${PORT}  (seed ${SEED}, 1 tick every ${TICK_MS} ms)`);
   console.log(chainCfg
     ? `Chain: ${chainCfg.network} via ${chainCfg.gameAccount} (items ${chainCfg.itemsContract}, rite ${chainCfg.riteContract}; key from ${chainCfg.keySource})`
@@ -285,4 +345,6 @@ createServer((req, res) => {
     }, RULE_SYNC_MS).unref();
   }
   console.log(llm ? `Merchant tooltips: NEAR AI Cloud (${llm.model})` : "Merchant tooltips: formula reasons (no NEAR_AI_* settings in .env)");
+  sweepVows();
+  setInterval(sweepVows, Math.max(1000, Math.min(TICK_MS, 30_000))).unref();
 });

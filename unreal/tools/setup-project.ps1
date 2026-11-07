@@ -1,10 +1,14 @@
-# Run once after creating unreal/Grudgebound (docs/UNREAL_SETUP.md, step 3). Safe to run again.
-#   powershell -ExecutionPolicy Bypass -File unreal\tools\setup-project.ps1
+# Run once after cloning (docs/UNREAL_SETUP.md, step 3). Safe to run again.
+#   powershell -ExecutionPolicy Bypass -File unreal\tools\setup-project.ps1 -TemplateContent <path>
 #
+# 0. -TemplateContent: the Content folder of a fresh Top Down C++ project made with your own engine.
+#    The repo carries only our files (Source, Config, Content/Grudgebound); the template's characters and
+#    blueprints (~130 MB, Epic content) come from your engine install, not from the public repo.
 # 1. Points the project at unreal/Plugins and turns on the GrudgeboundClient plugin
 #    (server API, Lantern Ward greybox, tall grass, HUD, battle screen, Talisman Case).
 # 2. Render settings for a 4 GB laptop GPU (RTX 3050): no Lumen, no Nanite, no virtual shadow maps,
 #    no mesh distance fields. The game is a stylized top-down map; it doesn't need them.
+param([string]$TemplateContent = '')
 $ErrorActionPreference = 'Stop'
 
 $unreal = Split-Path -Parent $PSScriptRoot
@@ -15,6 +19,22 @@ if (-not (Test-Path $project)) {
   exit 1
 }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+
+# --- 0. template content
+$content = Join-Path $unreal 'Grudgebound\Content'
+if ($TemplateContent) {
+  if (-not (Test-Path (Join-Path $TemplateContent 'TopDown'))) {
+    Write-Host "No TopDown folder in ${TemplateContent}: pass the Content folder of a Top Down C++ project." -ForegroundColor Red
+    exit 1
+  }
+  foreach ($dir in Get-ChildItem $TemplateContent -Directory) {
+    if ($dir.Name -eq 'Grudgebound') { continue } # ours, from the repo
+    Copy-Item $dir.FullName (Join-Path $content $dir.Name) -Recurse -Force
+  }
+  Write-Host "Template content copied from $TemplateContent" -ForegroundColor Green
+} elseif (-not (Test-Path (Join-Path $content 'TopDown'))) {
+  Write-Host "Template content missing (Content\TopDown). Run again with -TemplateContent <Top Down project>\Content." -ForegroundColor Yellow
+}
 
 # --- 1. plugin
 $json = Get-Content $project -Raw | ConvertFrom-Json

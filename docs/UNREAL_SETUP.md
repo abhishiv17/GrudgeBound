@@ -35,22 +35,24 @@ The build laptop (HP Victus 15, i5-12450H, 16 GB, RTX 3050 4 GB, 512 GB NVMe) wa
 4. **Node.js 20+** (nodejs.org) and **Git** with **Git LFS** (`git lfs install` once).
 5. Clone the repo, then in the repo folder: `npm install`.
 
-## 3. Create the project (only one person does this, once)
+## 3. Open the project after cloning
 
-1. Open Unreal > *Games* > **Top Down** template (it already has click-to-walk and a camera that suits a Ward map).
-2. Project type **C++** (not Blueprint): the HTTP code for the server is C++. Target *Desktop*, quality *Scalable*,
-   Starter Content off (keeps the repo small).
-3. **Location:** the repo's `unreal` folder. **Name:** `Grudgebound`.
-   Result: `unreal/Grudgebound/Grudgebound.uproject`.
-4. Close Unreal and run, in the repo folder:
-   `powershell -ExecutionPolicy Bypass -File unreal\tools\setup-project.ps1`
-   It turns on our plugin (`unreal/Plugins/GrudgeboundClient`, see section 4) and sets the 4 GB GPU render settings.
-   Then right-click `Grudgebound.uproject` > *Generate Visual Studio project files*, and open the project again:
+The project is in the repo (since 5 Nov): `unreal/GrudgeBound` holds the `.uproject`, `Source`, `Config` and our own
+content (`Content/Grudgebound`, the Lantern Ward map). The Top Down template's content (characters, blueprints,
+~130 MB) is Epic content, so it is **not** in the public repo: you copy it from your own engine install once.
+
+1. Make a throwaway project: Unreal > *Games* > **Top Down**, **C++**, any folder outside the repo, name `GrudgeBound`.
+   Close Unreal.
+2. In the repo folder:
+   `powershell -ExecutionPolicy Bypass -File unreal\tools\setup-project.ps1 -TemplateContent <throwaway>\Content`
+   It copies the template content in (everything except `Content/Grudgebound`, which is ours), turns on our plugin
+   (`unreal/Plugins/GrudgeboundClient`, see section 4) and sets the 4 GB GPU render settings.
+3. Right-click `unreal/GrudgeBound/GrudgeBound.uproject` > *Generate Visual Studio project files*, then open it:
    Unreal asks to build the missing modules, say **Yes** (first build takes a few minutes).
-5. Check `git status`: you should see `unreal/Grudgebound/Source`, `Config`, `Content`
-   and the `.uproject`, but **not** `Binaries`, `Intermediate`, `Saved` or `DerivedDataCache` (git-ignored).
-6. Big files (`.uasset`, `.umap`, audio, textures) go through Git LFS automatically (`.gitattributes`).
-   Run `git lfs ls-files` after adding content to check.
+4. `git status` stays clean: the template content, `Binaries`, `Intermediate`, `Saved` and `DerivedDataCache` are
+   git-ignored. Only `Content/Grudgebound` is committed, through Git LFS (`.gitattributes`).
+   Put every asset we make or add under `Content/Grudgebound`, and only CC0 or our own assets (the repo is public;
+   Fab/Megascans assets can't be redistributed). List each pack in the README (Q-005).
 
 **Git LFS quota:** GitHub's free plan has a limited LFS storage and download allowance (check yours at
 *Settings > Billing*). Keep `Content/` lean: no Starter Content, no unused marketplace packs.
@@ -71,7 +73,8 @@ Everything is in `Source/GrudgeboundClient/`:
 | `AGbWardGreybox` | Lantern Ward from blocks, tile for tile from the web map (`client/game/tiles.ts`), 1 tile = 1 m: wall, harbour and pier, streets, plaza with the Rite board, stalls and lanterns, 4 houses, 4 tall-grass patches | U2 |
 | `UGbTallGrassComponent` / `AGbTallGrass` | Walking in tall grass rolls 12% per metre (3 safe metres after a battle), then calls `/battle/start` | U4 |
 | `UGbHudWidget` and friends | HUD (Ward, Grudge per emotion, points, Ember, partner, server status), Kessa's banner, encounter dialog (Fight / Slip away), battle screen, Talisman Case (**T**). Built in C++, no widget assets | U3-U6 |
-| `UGbSettings` | *Project Settings > Game > Grudgebound*: server URL, poll rate, player name, encounter chance | |
+| `UGbSettings` | *Project Settings > Game > Grudgebound*: server URL, poll rate, encounter chance; identity comes from sign-in | |
+| `UGbAuthSubsystem` | Browser email sign-in, session resume, sign-out, Windows DPAPI session storage | `docs/SIGN_IN.md` |
 
 **Make the Lantern Ward level (once):**
 
@@ -94,13 +97,20 @@ By hand:
 npm run server            # in the repo folder; http://localhost:8787
 ```
 
-Then press **Play** in Unreal. Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
-Back in the Ward the points and the talisman show up (press **T**). The HUD says *Server offline* if the server isn't running.
+Also run `npm run dev` for the browser sign-in page. Configure email and signing using [`SIGN_IN.md`](SIGN_IN.md),
+or use its console-email/off-chain development mode. Press **Play** in Unreal, select **Sign in with email**,
+complete the browser page, and return to the game. Sessions resume automatically; F10 signs out in the Ward.
+Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
+Back in the Ward the points and the talisman show up (press **T**). The HUD says *Hollowmere is unreachable* if the server isn't running.
+**V** opens the native Vow Shrine (stake points, keep or release a promise; needs testnet signing).
+Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Broker, **R** the Rite,
+**L** the latest ledger proof and **F10** signs out while in the Ward.
 For faster world ticks while testing: `TICK_MS=3000 npm run server` (PowerShell: `$env:TICK_MS=3000; npm run server`).
 
 **Before the engine is installed:** `unreal/tools/greybox-preview.html` is a browser preview of the same greybox
 (same blocks, colours, camera angle and screens, drawn with three.js, not Unreal). With `npm run server` running,
-double-click it: click to walk, tall grass, battles and the Talisman Case all use the real server.
+double-click it for the visual preview. Its older standalone HTTP client does not implement sign-in; use the
+Unreal client or the web game for authenticated battles.
 
 The plugin's screens are plain paper-and-ink panels. For the art pass, turn off *Create Default Ui* in the settings
 and build Blueprint widgets on the same subsystem events.
@@ -108,6 +118,8 @@ and build Blueprint widgets on the same subsystem events.
 ## 5. Server API the Unreal client uses
 
 All JSON. Base URL `http://localhost:8787` (make it a setting so we can point it at the hosted server later).
+Player actions and `/player` require the session's Bearer token; `UGbApiSubsystem` adds it automatically.
+See [`SIGN_IN.md`](SIGN_IN.md) for the authentication routes and browser handoff.
 
 | Call | What it gives |
 |---|---|
@@ -143,6 +155,8 @@ comes back. Code: `server/src/battles.ts` (tests in `battles.test.ts`).
 |---|---|
 | 200 | OK |
 | 400 | Bad body: unknown ward, curse or action |
+| 401 | Sign in, or the saved session expired |
+| 403 | Account mismatch, another player's battle, or a partner you do not own |
 | 404 | No such battle: it ended, or nobody touched it for 15 minutes |
 | 409 | That move isn't available now (e.g. no salves left); the turn is not spent |
 | 503 | Too many battles open on the server; try again |
@@ -153,8 +167,8 @@ comes back. Code: `server/src/battles.ts` (tests in `battles.test.ts`).
 Try it without Unreal:
 
 ```sh
-curl -X POST localhost:8787/battle/start -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"
-curl -X POST localhost:8787/battle/turn  -H "Content-Type: application/json" -d "{\"battleId\":\"<id>\",\"action\":{\"kind\":\"attack\"}}"
+curl -X POST localhost:8787/battle/start -H "Authorization: Bearer <session-token>" -H "Content-Type: application/json" -d "{\"ward\":\"lantern\"}"
+curl -X POST localhost:8787/battle/turn  -H "Authorization: Bearer <session-token>" -H "Content-Type: application/json" -d "{\"battleId\":\"<id>\",\"action\":{\"kind\":\"attack\"}}"
 ```
 
 In C++, use Unreal's `HTTP`, `Json` and `JsonUtilities` modules (add them to `Grudgebound.Build.cs`).

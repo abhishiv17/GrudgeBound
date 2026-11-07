@@ -24,6 +24,8 @@ namespace GbJson
 	FGbBattleTurn BattleTurn(const TSharedPtr<FJsonObject>& O);
 	FGbChainReceipt ChainReceipt(const TSharedPtr<FJsonObject>& O);
 	FGbRulesOverview RulesOverview(const TSharedPtr<FJsonObject>& O);
+	FGbVowsOverview VowsOverview(const TSharedPtr<FJsonObject>& O);
+	FString VowBody(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params);
 	FGbShop Shop(const TSharedPtr<FJsonObject>& O);
 	FGbPlayerView Player(const TSharedPtr<FJsonObject>& O);
 	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy);

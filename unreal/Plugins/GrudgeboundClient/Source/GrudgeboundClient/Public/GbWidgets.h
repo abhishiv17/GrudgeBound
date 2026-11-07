@@ -21,6 +21,8 @@ class UWidget;
 class UGbApiSubsystem;
 class UGbPlayerSubsystem;
 
+// A modal gate: the game itself never asks for an email, a code, or a wallet.
+
 /** Shared helpers: builds the widget tree in code when the widget is created. */
 UCLASS(Abstract)
 class GRUDGEBOUNDCLIENT_API UGbWidgetBase : public UUserWidget
@@ -41,6 +43,23 @@ protected:
 	UProgressBar* MakeBar(const FLinearColor& Fill);
 	/** Wraps a widget in a size box of the given size (0 = leave that axis free). */
 	UWidget* Sized(UWidget* Content, float Width, float Height);
+};
+
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbSignInWidget : public UGbWidgetBase
+{
+	GENERATED_BODY()
+public:
+	void Refresh();
+protected:
+	virtual void BuildTree() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+private:
+	UFUNCTION() void HandleSignIn();
+	UFUNCTION() void HandleChanged();
+	UPROPERTY() TObjectPtr<UTextBlock> StatusText;
+	UPROPERTY() TObjectPtr<UButton> SignInButton;
 };
 
 /** Ward card (top left), Kessa's banner (bottom), key hint (top right). */

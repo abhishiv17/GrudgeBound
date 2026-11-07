@@ -210,6 +210,7 @@ namespace GbJson
 		E.Ward = Str(O, TEXT("ward"));
 		E.Actor = Str(O, TEXT("actor"));
 		E.Text = Str(O, TEXT("text"));
+		if (E.Type == TEXT("chain")) E.Text = E.Text.Replace(TEXT("NEAR:"), TEXT("The Rite:")).Replace(TEXT("minted to"), TEXT("entered for"));
 		E.Url = Str(O, TEXT("url"));
 		return E;
 	}
@@ -475,6 +476,38 @@ namespace GbJson
 		O->SetStringField(TEXT("account"), Account.TrimStartAndEnd().ToLower());
 		O->SetStringField(TEXT("templateId"), TemplateId);
 		O->SetObjectField(TEXT("params"), P);
+		return Write(O);
+	}
+
+	FGbVowsOverview VowsOverview(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbVowsOverview V;
+		V.bChain = Bool(O, TEXT("chain")); V.Points = Int(O, TEXT("points"), -1); V.DaySeconds = Num(O, TEXT("daySeconds"));
+		for (const auto& T : Objects(O, TEXT("templates")))
+		{
+			FGbVowTemplate& R = V.Templates.AddDefaulted_GetRef();
+			R.Id = Str(T, TEXT("id")); R.Text = Str(T, TEXT("text")); R.Stake = Int(T, TEXT("stake"));
+			R.MinDays = Int(T, TEXT("minDays"), 1); R.MaxDays = Int(T, TEXT("maxDays"), 1);
+		}
+		for (const auto& T : Objects(O, TEXT("talismans")))
+		{
+			FGbRuleOption& R = V.Talismans.AddDefaulted_GetRef(); R.Value = Str(T, TEXT("id")); R.Label = Str(T, TEXT("name"));
+		}
+		for (const auto& T : Objects(O, TEXT("vows")))
+		{
+			FGbVow& R = V.Vows.AddDefaulted_GetRef();
+			R.Id = Int(T, TEXT("id"), -1); R.Text = Str(T, TEXT("text")); R.Status = Str(T, TEXT("status"));
+			R.Stake = Int(T, TEXT("stake")); R.Payout = Int(T, TEXT("payout")); R.EndsAt = Num(T, TEXT("endsAt"));
+		}
+		return V;
+	}
+
+	FString VowBody(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params)
+	{
+		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+		const TSharedRef<FJsonObject> P = MakeShared<FJsonObject>();
+		for (const auto& KV : Params) P->SetStringField(KV.Key, KV.Value);
+		O->SetStringField(TEXT("templateId"), TemplateId); O->SetNumberField(TEXT("days"), Days); O->SetObjectField(TEXT("params"), P);
 		return Write(O);
 	}
 

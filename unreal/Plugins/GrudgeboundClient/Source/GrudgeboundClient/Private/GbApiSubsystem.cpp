@@ -1,4 +1,5 @@
 #include "GbApiSubsystem.h"
+#include "GbAuthSubsystem.h"
 
 #include "GbJson.h"
 #include "GbSettings.h"
@@ -16,18 +17,39 @@ DEFINE_LOG_CATEGORY_STATIC(LogGrudgebound, Log, All);
 void UGbApiSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+	UGbAuthSubsystem* Auth = Collection.InitializeDependency<UGbAuthSubsystem>();
+	Auth->OnSessionChanged.AddDynamic(this, &UGbApiSubsystem::HandleSessionChanged);
 	KessaLine = TEXT("Kessa: Welcome to Hollowmere. Mind the tall grass after dark.");
 }
 
 void UGbApiSubsystem::Deinitialize()
 {
 	StopPolling();
+	if (UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()) Auth->OnSessionChanged.RemoveDynamic(this, &UGbApiSubsystem::HandleSessionChanged);
 	Super::Deinitialize();
 }
 
 FString UGbApiSubsystem::GetServerUrl() const
 {
 	return GetDefault<UGbSettings>()->GetServerUrl();
+}
+
+FString UGbApiSubsystem::GetPlayerAccount() const
+{
+	return GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetAccount();
+}
+
+FString UGbApiSubsystem::GetPlayerName() const
+{
+	return GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetPlayerName();
+}
+
+void UGbApiSubsystem::HandleSessionChanged()
+{
+	const FString NewToken = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetToken();
+	if (NewToken == SessionToken) return;
+	SessionToken = NewToken; ++SessionSerial;
+	AbandonBattle(); bBattleRequestInFlight = false; bStateInFlight = false; bEventsInFlight = false; bCursesInFlight = false;
 }
 
 // ---------------------------------------------------------------- HTTP
@@ -38,6 +60,7 @@ void UGbApiSubsystem::Send(const FString& Verb, const FString& Path, const FStri
 	Request->SetURL(GetServerUrl() + Path);
 	Request->SetVerb(Verb);
 	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	if (!SessionToken.IsEmpty()) Request->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + SessionToken);
 	if (!Body.IsEmpty())
 	{
 		Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -45,8 +68,13 @@ void UGbApiSubsystem::Send(const FString& Verb, const FString& Path, const FStri
 	}
 	Request->SetTimeout(GetDefault<UGbSettings>()->RequestTimeoutSeconds);
 	Request->OnProcessRequestComplete().BindWeakLambda(this,
-		[Done = MoveTemp(Done)](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+		[this, Serial = SessionSerial, Done = MoveTemp(Done)](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 		{
+			if (Serial != SessionSerial) return; // Ignore requests from a signed-out player.
+			if (Response.IsValid() && Response->GetResponseCode() == 401)
+			{
+				GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->SessionExpired(); return;
+			}
 			if (!bConnected || !Response.IsValid())
 			{
 				Done(0, FString());
@@ -215,7 +243,7 @@ void UGbApiSubsystem::StartBattle(const FString& WardId, const FString& PlayerCu
 	if (IsBattleOpen() || bBattleRequestInFlight) return;
 	bBattleRequestInFlight = true;
 	const UGbSettings* Settings = GetDefault<UGbSettings>();
-	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, PlayerCurse, Settings->PlayerName, Settings->PlayerAccount);
+	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, PlayerCurse, GetPlayerName(), GetPlayerAccount());
 	Send(TEXT("POST"), TEXT("/battle/start"), Body, [this](int32 Status, const FString& Text)
 	{
 		bBattleRequestInFlight = false;
@@ -265,10 +293,16 @@ void UGbApiSubsystem::SendAction(EGbAction Action)
 void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 TriesLeft)
 {
 	UGameInstance* GI = GetGameInstance();
-	if (!GI || TriesLeft <= 0) return;
-	FTimerHandle Unused;
-	GI->GetTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this, Kind, Id, TriesLeft]()
+	if (!GI) return;
+	if (TriesLeft <= 0)
 	{
+		if (Kind == TEXT("vow")) OnError.Broadcast(TEXT("vows"), 0, TEXT("The ledger is taking longer than expected. Check the Shrine again shortly."));
+		return;
+	}
+	FTimerHandle Unused;
+	GI->GetTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this, Serial = SessionSerial, Kind, Id, TriesLeft]()
+	{
+		if (Serial != SessionSerial) return;
 		const FString Path = FString::Printf(TEXT("/chain?%s=%s"), *Kind, *Id);
 		Send(TEXT("GET"), Path, FString(), [this, Kind, Id, TriesLeft](int32 Status, const FString& Text)
 		{
@@ -277,20 +311,58 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 			{
 				// 0: server briefly unreachable, try again; anything else (404: server restarted) is final.
 				if (Status == 0) PollChain(Kind, Id, TriesLeft - 1);
+				else if (Kind == TEXT("vow")) OnError.Broadcast(TEXT("vows"), Status, TEXT("The receipt is unavailable. Reopen the Shrine to read the ledger."));
 				return;
 			}
 			const FGbChainReceipt R = GbJson::ChainReceipt(O);
 			if (R.Status == TEXT("pending")) PollChain(Kind, Id, TriesLeft - 1);
 			else if (Kind == TEXT("rule")) OnRuleReceipt.Broadcast(Id, R);
 			else if (Kind == TEXT("shop")) OnTradeReceipt.Broadcast(Id, R);
+			else if (Kind == TEXT("vow")) { OnVowReceipt.Broadcast(Id, R); FetchPlayer(); FetchVows(); }
 			else OnChainReceipt.Broadcast(Id, R);
 		});
 	}), 1.0f, false);
 }
 
+void UGbApiSubsystem::FetchVows()
+{
+	Send(TEXT("GET"), TEXT("/vows"), FString(), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status == 200 && GbJson::ParseObject(Text, O)) OnVows.Broadcast(GbJson::VowsOverview(O));
+		else OnError.Broadcast(TEXT("vows"), Status, Status == 0 ? TEXT("Hollowmere is unreachable. Try again shortly.") : GbJson::ErrorMessage(Text));
+	});
+}
+
+void UGbApiSubsystem::SwearVow(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params)
+{
+	SendVow(TEXT("/vows/swear"), GbJson::VowBody(TemplateId, Days, Params));
+}
+
+void UGbApiSubsystem::ReleaseVow(int32 VowId)
+{
+	SendVow(TEXT("/vows/release"), FString::Printf(TEXT("{\"vowId\":%d}"), VowId));
+}
+
+void UGbApiSubsystem::SendVow(const FString& Path, const FString& Body)
+{
+	Send(TEXT("POST"), Path, Body, [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			OnError.Broadcast(TEXT("vows"), Status, Status == 0 ? TEXT("The Shrine cannot be reached. Reopen it to check your vows.") : GbJson::ErrorMessage(Text)); return;
+		}
+		const FString JobId = O->GetStringField(TEXT("jobId"));
+		const FGbChainReceipt R = GbJson::ChainReceipt(O->GetObjectField(TEXT("chain")));
+		if (R.Status == TEXT("pending")) PollChain(TEXT("vow"), JobId, 120);
+		else { OnVowReceipt.Broadcast(JobId, R); FetchPlayer(); FetchVows(); }
+	});
+}
+
 void UGbApiSubsystem::FetchPlayer()
 {
-	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();
+	const FString Account = GetPlayerAccount();
 	if (Account.IsEmpty()) return; // No account: the local save is all there is.
 	Send(TEXT("GET"), TEXT("/player?account=") + FGenericPlatformHttp::UrlEncode(Account), FString(), [this](int32 Status, const FString& Text)
 	{
@@ -307,7 +379,7 @@ void UGbApiSubsystem::FetchPlayer()
 
 void UGbApiSubsystem::FetchShop(const FString& MerchantId)
 {
-	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();
+	const FString Account = GetPlayerAccount();
 	FString Path = TEXT("/shop?merchant=") + FGenericPlatformHttp::UrlEncode(MerchantId);
 	if (!Account.IsEmpty()) Path += TEXT("&account=") + FGenericPlatformHttp::UrlEncode(Account);
 	Send(TEXT("GET"), Path, FString(), [this](int32 Status, const FString& Text)
@@ -336,10 +408,10 @@ void UGbApiSubsystem::SellTalisman(const FString& MerchantId, const FString& Tok
 void UGbApiSubsystem::SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value)
 {
 	const FString What = bBuy ? TEXT("shop/buy") : TEXT("shop/sell");
-	const FString Account = GetDefault<UGbSettings>()->PlayerAccount;
+	const FString Account = GetPlayerAccount();
 	if (Account.TrimStartAndEnd().IsEmpty())
 	{
-		OnError.Broadcast(What, 400, TEXT("Set Project Settings > Grudgebound > Player Account first."));
+		OnError.Broadcast(What, 400, TEXT("Sign in to enter Hollowmere first."));
 		return;
 	}
 	Send(TEXT("POST"), TEXT("/") + What, GbJson::TradeBody(Account, MerchantId, Key, Value), [this, What, bBuy, Value](int32 Status, const FString& Text)
@@ -361,7 +433,7 @@ void UGbApiSubsystem::SendTrade(bool bBuy, const FString& MerchantId, const FStr
 
 void UGbApiSubsystem::FetchRules()
 {
-	const FString Account = GetDefault<UGbSettings>()->PlayerAccount.TrimStartAndEnd().ToLower();
+	const FString Account = GetPlayerAccount();
 	const FString Path = Account.IsEmpty() ? FString(TEXT("/rules")) : TEXT("/rules?account=") + FGenericPlatformHttp::UrlEncode(Account);
 	Send(TEXT("GET"), Path, FString(), [this](int32 Status, const FString& Text)
 	{
@@ -378,10 +450,10 @@ void UGbApiSubsystem::FetchRules()
 
 void UGbApiSubsystem::ProposeRule(const FString& TemplateId, const TMap<FString, FString>& Params)
 {
-	const FString Account = GetDefault<UGbSettings>()->PlayerAccount;
+	const FString Account = GetPlayerAccount();
 	if (Account.TrimStartAndEnd().IsEmpty())
 	{
-		OnError.Broadcast(TEXT("rules/propose"), 400, TEXT("Set Project Settings > Grudgebound > Player Account first."));
+		OnError.Broadcast(TEXT("rules/propose"), 400, TEXT("Sign in to enter Hollowmere first."));
 		return;
 	}
 	Send(TEXT("POST"), TEXT("/rules/propose"), GbJson::ProposeBody(Account, TemplateId, Params), [this](int32 Status, const FString& Text)
@@ -402,10 +474,10 @@ void UGbApiSubsystem::ProposeRule(const FString& TemplateId, const TMap<FString,
 
 void UGbApiSubsystem::RepealRule(int32 ChainRuleId)
 {
-	const FString Account = GetDefault<UGbSettings>()->PlayerAccount;
+	const FString Account = GetPlayerAccount();
 	if (Account.TrimStartAndEnd().IsEmpty())
 	{
-		OnError.Broadcast(TEXT("rules/repeal"), 400, TEXT("Set Project Settings > Grudgebound > Player Account first."));
+		OnError.Broadcast(TEXT("rules/repeal"), 400, TEXT("Sign in to enter Hollowmere first."));
 		return;
 	}
 	Send(TEXT("POST"), TEXT("/rules/repeal"), GbJson::RepealBody(Account, ChainRuleId), [this](int32 Status, const FString& Text)

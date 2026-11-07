@@ -38,6 +38,8 @@ export interface ChainConfig {
   relayerAccount: string;
   /** From NEAR_RELAYER_PRIVATE_KEY; else read from the keychain when first needed. */
   relayerKey?: KeyPairString;
+  /** Optional encrypted-store signer for authenticated testnet players. Never exposed over HTTP. */
+  playerKey?: (account: string) => KeyPairString | undefined;
 }
 
 /** A rule as the rite contract returns it. */
@@ -50,6 +52,12 @@ export interface ChainRule {
   status: string;
   reason: string | null;
   created_ms: number;
+}
+
+/** The Rite is the source of truth for locked stakes and vow deadlines. */
+export interface ChainVow {
+  id: number; owner: string; template_id: string; params: string; stake: number;
+  status: "Active" | "Kept" | "Broken"; created_ms: number; ends_ms: number;
 }
 
 /** One contract call: what it returned and the transaction hash. Swapped for a fake in tests. */
@@ -70,7 +78,7 @@ export interface BattleRecord {
 }
 
 export interface ChainTx {
-  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over";
+  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over" | "swear" | "settle";
   hash: string;
   url: string;
 }
@@ -92,6 +100,7 @@ export interface ChainReceipt {
   tokenId?: string;
   /** Set when a rule was proposed: its id on the rite contract. */
   ruleId?: number;
+  vowId?: number;
   txs: ChainTx[];
   error?: string;
 }
@@ -166,6 +175,7 @@ export interface ChainOps {
   call: ContractCall;
   relay: RelayCall;
   view: ViewCall;
+  createAccount?: (account: string, publicKey: string) => Promise<void>;
 }
 
 const GAS = 30_000_000_000_000n;
@@ -214,6 +224,16 @@ function nearOps(cfg: ChainConfig): ChainOps {
   const players = new Map<string, Account>();
 
   return {
+    async createAccount(account, publicKey) {
+      // Check the saved key first, including after a creation request timed out.
+      try { await provider.viewAccessKey({ accountId: account, publicKey }); return; } catch { /* create below */ }
+      try {
+        const result = await game.createAccount({ newAccountId: account, publicKey, nearToTransfer: 50_000_000_000_000_000_000_000n });
+        checkReceipts(result);
+      } catch (e) {
+        try { await provider.viewAccessKey({ accountId: account, publicKey }); } catch { throw e; }
+      }
+    },
     async call(contractId, methodName, args, deposit = 0n) {
       const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit });
       checkReceipts(res);
@@ -223,7 +243,7 @@ function nearOps(cfg: ChainConfig): ChainOps {
       if (!relayer) throw new Error(`no key for the relayer ${cfg.relayerAccount}`);
       let acct = players.get(player);
       if (!acct) {
-        const key = custodialKey(cfg, player);
+        const key = cfg.playerKey?.(player) ?? custodialKey(cfg, player);
         if (!key) throw new Error(`the server holds no key for ${player}`);
         acct = new Account(player, provider, KeyPairSigner.fromSecretKey(key));
         players.set(player, acct);
@@ -270,6 +290,7 @@ export class ChainWriter {
   private readonly call: ContractCall;
   private readonly relay: RelayCall;
   private readonly view: ViewCall;
+  private readonly createAccount: (account: string, publicKey: string) => Promise<void>;
   private readonly eventListeners: ((events: ChainEvent[]) => void)[] = [];
 
   constructor(
@@ -286,6 +307,7 @@ export class ChainWriter {
     this.call = async (...a) => this.emitEvents(await call(...a));
     this.relay = async (...a) => this.emitEvents(await relay(...a));
     this.view = given.view ?? ((...a) => real().view(...a));
+    this.createAccount = given.createAccount ?? ((...a) => real().createAccount!(...a));
   }
 
   /** Called with the NEP-297 events of every transaction this writer sends. */
@@ -324,6 +346,14 @@ export class ChainWriter {
   /** Rules in force on the rite contract. */
   async activeRules(): Promise<ChainRule[]> {
     return (await this.view(this.cfg.riteContract, "get_active_rules", {})) as ChainRule[];
+  }
+
+  async vows(account: string): Promise<ChainVow[]> {
+    return await this.view(this.cfg.riteContract, "get_vows", { account_id: account }) as ChainVow[];
+  }
+
+  vowReceipt(jobId: string): ChainReceipt | undefined {
+    return this.receipts.get(`vow:${jobId}`);
   }
 
   /**
@@ -411,7 +441,7 @@ export class ChainWriter {
    * succeed, or `onFail` if one throws. The steps push their own transactions with `tx`.
    */
   job(
-    kind: "shop",
+    kind: "shop" | "vow",
     id: string,
     account: string,
     steps: (ops: { call: ContractCall; relay: RelayCall; tx: (k: ChainTx["kind"], hash: string) => void; receipt: ChainReceipt }) => Promise<void>,
@@ -487,5 +517,13 @@ export class ChainWriter {
     const next = this.queue.then(job, job);
     this.queue = next.catch(() => undefined);
     return next;
+  }
+
+  /** Account funding shares the game master's write queue with battle rewards and shop settlement. */
+  provisionAccount(account: string, publicKey: string): Promise<void> {
+    if (this.cfg.network !== "testnet" || !this.cfg.gameAccount || !account.endsWith(`.${this.cfg.gameAccount}`) || !isAccountId(account)) {
+      return Promise.reject(new Error("Player provisioning is restricted to this game's testnet sub-accounts"));
+    }
+    return this.enqueue(() => this.createAccount(account, publicKey));
   }
 }

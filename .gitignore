@@ -54,3 +54,9 @@ unreal/**/Packaged/
 
 # runtime data (battle archive for npm run replay)
 data/
+
+# Unreal template content (Top Down template, from each developer's own engine install).
+# The public repo carries only our project files and our own content (Content/Grudgebound);
+# docs/UNREAL_SETUP.md explains how to copy the template content in after cloning.
+unreal/GrudgeBound/Content/*
+!unreal/GrudgeBound/Content/Grudgebound/
