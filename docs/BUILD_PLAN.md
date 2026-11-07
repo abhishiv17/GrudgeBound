@@ -30,6 +30,11 @@ The lead (Abhishek) decides every submission field and approves anything public:
 
 ## Status at a glance
 
+**Delivery confirmed 7 Nov:** the final player-facing game is the packaged **Unreal Windows client**.
+The Node game server remains necessary for shared world state, authoritative battles, AI agents and NEAR
+settlement. The existing browser sign-in page is a support service for Unreal's email handoff. No new web-game
+features are planned. The existing web game remains in the repository; the Observatory will be a native Unreal panel.
+
 | Phase | Dates | Goal | Gate | Status |
 |---|---|---|---|---|
 | [0. Foundation](#phase-0--foundation) | 1 Nov | Repo, engine, simulator, agent loop, first client | none | ✅ |
@@ -41,10 +46,11 @@ The lead (Abhishek) decides every submission field and approves anything public:
 
 ### Recovery checkpoint · 7 Nov
 
+- **Phase 3 work since recovery:** Unreal Vow Shrine (V) and authenticated backend stake/settlement implemented; 108 tests and type checks pass, and the Unreal editor target compiles. Real testnet stake return and release/burn verified for the existing Unreal demo account. See [`VOWS.md`](VOWS.md) for proof, controls and acceptance checks. The gameplay power bonuses and Oathbreaker duration remain open; the Shrine advertises only the implemented stake bonus.
 - **Where we stopped:** P3-C1 / P3-G1 / P3-U1 (email sign-in and Unreal sessions). The 6 Nov changes were still uncommitted on `client/P1-U1-unreal-client`; GitHub remained at `71ee3ea` when this audit started.
 - **Verified today:** `npm test` **100/100**, `npm run typecheck`, the web production build, and the Unreal Development Editor target all pass. The Unreal target is up to date with the local C++ changes. Added a regression test and fix so simultaneous browser approvals cannot replace the player during native account provisioning. The restricted build environment crashed bundled .NET before compilation; the same Unreal build succeeded outside it.
 - **Last unresolved acceptance check:** restart/resume and F10 logout with two email identities in Unreal. The signed-in save and the legacy shared save are separate; yesterday's inspection found 5 points / two talismans in the signed-in save and 70 points / six in the legacy save. Confirm the HUD and Case show the signed-in values after restarting; do not copy the shared save into another identity.
-- **Still needed for live sign-in:** verified Resend sender, an explicit custody choice, and a newly signed-in player's testnet bind, trade and rule proposal. Local console-code login does not complete this gate. See [`SIGN_IN.md`](SIGN_IN.md).
+- **Sign-in progress:** user selected encrypted server-held keys for testnet on 7 Nov; enabled in the local configuration. A dedicated new identity passed native-format HTTP approval, provisioning, testnet binding and selling, server restart/session recovery and logout (`npm run native:smoke`). Verified Resend sender, a new player's rule proposal and the remaining actual Unreal checks are still open. Console codes do not verify a real mailbox. See [`SIGN_IN.md`](SIGN_IN.md).
 - **Next implementation order:** finish sign-in acceptance and the remaining P2 Rite/curfew editor checks; agent accounts and live actions (P3-C2/A1), vows (P3-C3/C4/G2), Satchel/supplies/ink (P3-C5/C6/C8/U4), then Observatory (P3-A2). P3-C7 remains optional. Story and level work can proceed alongside these once assigned.
 - **Schedule:** G3 remains incomplete against the plan's **8 Nov feature freeze**. Phase 4's story, interiors, art, hosting, packaging and video are still open; its planned start was 6 Nov. A passing code checkpoint does not mean these gates have passed.
 
@@ -171,19 +177,19 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 
 | ID | Pri | Task | Seat | Who | Status |
 |---|---|---|---|---|---|
-| P3-C1 | Must | Email sign-in: email codes, encrypted identity/session store, session-bound API actions and testnet account provisioning built 6 Nov. Resend sender configuration, key-custody decision and live testnet acceptance remain. Optional server-held keys require explicit `AUTH_KEY_MODE=server`; player-held signing is still open. Setup: `SIGN_IN.md` | C | | 🟡 |
+| P3-C1 | Must | Email sign-in: email codes, encrypted identity/session store, session-bound API actions and testnet account provisioning built 6 Nov. User chose encrypted server-held signing for testnet on 7 Nov (`AUTH_KEY_MODE=server`). Dedicated new identity passed native-format HTTP approval, provisioning, bind, sale, restart/resume and logout on testnet. Real sender and new-player rule/native acceptance remain (`SIGN_IN.md`) | C | | 🟡 |
 | P3-C2 | Must | One sub-account per agent, function-call key limited to our contracts, with a spend cap | C | | ⬜ |
 | P3-C3 | Must | Server writes binds, rules and vows on chain and serves the live state from it. Binds, points, ownership and rules already integrated in Phase 2; vows remain | C | | 🟡 |
-| P3-C4 | Must | Vow stake, keep and break through `rite` | C | | ⬜ |
+| P3-C4 | Must | Vow stake, keep and break through `rite`: authenticated routes, fixed stakes, contract deadlines, automatic settlement/retry after restart, explicit release/burn, and battle/trade restrictions implemented 7 Nov. Testnet: 15 points locked, 18 returned, then a second 15-point stake burned. Native acceptance remains; combat/purse bonuses and Oathbreaker duration still open (`VOWS.md`) | C | | 🟡 |
 | P3-G1 | Must | Sign-in screen with no wallet words on it. `/sign-in` email/code page and HttpOnly-cookie gateway built 6 Nov; web production build passes. Local console-code sign-in reported working by the user (6 Nov). Real-mail acceptance remains | G | | 🟡 |
-| P3-G2 | Must | Vow Shrine swears real vows and shows the stake | G | | ⬜ |
+| P3-G2 | Must | Native Unreal Vow Shrine (V): four vow templates, duration/parameter choices, stake/return preview, active/history list, release/burn and ledger proof (L). Editor target compiles 7 Nov; play-through acceptance remains (`VOWS.md`) | G | | 🟡 |
 | P3-G3 | Should | Tide Ward map using the tide art set. Moved 5 Nov: becomes P4-U11 in Unreal | G | | ➡️ P4-U11 |
-| P3-G4 | Should | New player sprite (not the porcelain one, it looks like Link) | G | | ⬜ |
+| P3-G4 | Cut | New web player sprite. Unreal character/art work belongs to Phase 4 | G | | ✂️ 7 Nov: Unreal delivery |
 | P3-A1 | Must | Agents act through their own accounts, guardrail on every action | A | | ⬜ |
-| P3-A2 | Must | Observatory page: Grudge, prices and rules over time, plus fast-forward | A | | ⬜ |
+| P3-A2 | Must | Native Unreal Observatory panel: Grudge, prices and rules over time, plus an isolated fast-forward preview | A | | ⬜ |
 | P3-A3 | Should | Rival dialogue lines from NEAR AI, shown by Kessa | A | | ⬜ |
 | P3-U1 | Must | Sign-in from Unreal: opens the browser, collects an approved session by polling with a separate private device secret, then plays as that account. No player account in Project Settings; Windows DPAPI remembers the session, F10 signs out, saves are per account. Editor target compiles; local browser-to-Unreal handoff reported working by the user (6 Nov). Manual resume/logout/isolation and real-mail/testnet acceptance remain (`SIGN_IN.md`) | G | | 🟡 |
-| P3-U2 | Must | Chain words out of the game UI: "Sealed in the Rite's ledger" with a seal icon; L / the icon opens the explorer (the proof stays one key away, "players never notice the chain") | G | | ⬜ |
+| P3-U2 | Must | Chain words out of the game UI: 7 Nov, native HUD/case/shop/rules/battle confirmations use the Rite's ledger, event feed translates the NEAR prefix, and L keeps proof available. Native Vow Shrine uses the same language. Seal icon and visual acceptance remain | G | | 🟡 |
 | P3-U3 | Must | Unreal project in the repo: `.uproject`, `Source`, `Config`, `Content/Grudgebound` (Git LFS); template content from each developer's own engine (`setup-project.ps1 -TemplateContent`) | G | | ✅ 5 Nov |
 | P3-C5 | Must | Satchel on the server, kept per player: carried talismans (up to 5; the rest wait in the Case in your room), supplies (blank talisman, gilded talisman, Ink Salve), keepsakes (story items). Binding uses up a blank talisman; `GET /satchel` | C | | ⬜ |
 | P3-C6 | Must | Broker sells supplies for Ember at prices from `pricing.ts` (scarcity, demand, fear), with the merchant's reasoning in a tooltip; agents buy from the same stock, so a run on blank talismans raises the price for everyone | C | | ⬜ |
@@ -222,7 +228,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P4-U6 | Should | Battle staging: camera framing, the two curses on screen, hit flashes, the seal animation | G | | ⬜ |
 | P4-U7 | Should | Sound: footsteps, grass rustle, battle hits, seal, UI clicks, a night-market loop (CC0) | G | | ⬜ |
 | P4-U8 | Must | Packaged Windows build (Shipping) on a GitHub Release, pointed at the hosted server | G | | ⬜ |
-| P4-U9 | Should | Web client: title offers "Enter Hollowmere" (online) and "Practice run" (offline, nothing kept) | G | | ⬜ |
+| P4-U9 | Cut | New web-client modes. Final delivery is Unreal; existing browser game stays as archived fallback code | G | | ✂️ 7 Nov: Unreal delivery |
 | P4-U10 | Must | Buildings you can enter: a door fades to an interior and back. **Counting House** (the Broker: buy and sell talismans and supplies), **Mender's House** (restore ink), **Rite Hall** (Kessa: rules, vows, points; replaces opening the Rite with R alone), **your room** above the noodle stall (rest, the Talisman Case chest, the debt notice). Agents are seen inside when they trade | G | | ⬜ |
 | P4-U11 | Should | Tide Ward in Unreal (docks, warehouses, smugglers), a smaller second level loaded from the Lantern canal gate; only after G3, and only if P4-U4 and P4-U10 are done | G | | ⬜ |
 | P4-U12 | Should | Townsfolk you can talk to: a few CC0 characters with lines that change with the Ward's Grudge and the chapter | G | | ⬜ |
@@ -288,7 +294,7 @@ We use genre ideas (turn-based fights, binding what you defeat, a shop, a place 
 ## Open questions
 
 - [ ] Who takes which seat?
-- [ ] Sign-in sender and custody choice: Resend email codes implemented; configure a verified sender. Player-held signing remains open; encrypted server-held signing exists as an explicit testnet-only option. See `SIGN_IN.md`.
+- [ ] Sign-in sender: Resend email codes implemented; configure a verified sender. Custody was decided 7 Nov: encrypted server-held keys for testnet. See `SIGN_IN.md`.
 - [ ] Where do we host the server (the Unreal build runs on the judge's PC and needs a reachable server URL)?
 - [x] Which Unreal 5.x version do we pin? **5.8** (newest hotfix), with Visual Studio Community 2026.
 - [ ] Tracks besides `games`?
@@ -308,6 +314,8 @@ Newest first. Add a line whenever the plan, the stack or the scope changes.
 
 | Date | Decision | Why |
 |---|---|---|
+| 7 Nov | User selected encrypted server-held signing for player accounts on testnet; enabled locally and in the example configuration. Player-held signing is outside the chosen demo flow | Keeps Unreal's no-wallet experience; the implementation rejects this option on mainnet |
+| 7 Nov | Final game delivery is Unreal Windows. Keep the required Node game backend and browser email handoff; stop new web-game feature work. Observatory becomes an Unreal panel; web sprite/mode tasks are cut | User confirmed that players should receive the Unreal version; backend services support that game rather than a second client |
 | 6 Nov | Unreal/browser sign-in uses email codes and a device-secret polling handoff; a local callback listener is unnecessary. Testnet server custody is implemented behind an explicit option, not enabled; the key-custody decision remains open | Gives Unreal an authenticated session without putting it in a URL; isolates the remaining custody choice from the implemented authentication flow |
 | 5 Nov | Lantern Ward grows into a district with buildings you can enter (Counting House, Mender's House, Rite Hall, your room), a Satchel, supplies bought with Ember, and ink that carries over between fights; Tide Ward moves to Unreal as a Should after G3; Ash and Bone stay locked | Lead wants the depth of the classic monster-binding games; each building is also an Ember sink or source, so the NEAR economy is what the player walks through |
 | 5 Nov | Healing is not free: the Mender charges Ember (price follows Sorrow) or you rest and lose the night | Makes Ember matter and keeps our design apart from the free healing building of other games |
@@ -337,6 +345,7 @@ Newest first. One line per merged PR.
 
 | Date | Change | Who | PR |
 |---|---|---|---|
+| 7 Nov | Native Unreal Vow Shrine, authenticated vow stakes/settlement and restrictions; ledger wording; 108 tests; real vow stake/return/burn and a new player's native-session bind/sale/restart/logout verified on testnet. Unreal-only feature delivery confirmed; encrypted testnet player custody selected | | branch `client/P1-U1-unreal-client` |
 | 5 Nov | Buildings, Satchel, supplies and ink carry-over planned (P3-C5..C8, P3-U4, P4-U10..U12); Lantern Ward as a district; Tide Ward to Unreal; originality guardrails | | branch `client/P1-U1-unreal-client` |
 | 5 Nov | Unreal project committed (Git LFS, template content kept out); decisions on Unreal, story, modes, assets; Phase 3 to 8 Nov and Phase 4 look-and-story tasks | | branch `client/P1-U1-unreal-client` |
 | 3 Nov | First Unreal build on UE 5.8.4: project created, plugin compiles (2 fixes), LanternWard level script; walk, encounter, battle and bind work in the editor | | branch `client/P1-U1-unreal-client` |

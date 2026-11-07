@@ -36,21 +36,23 @@ RESEND_API_KEY=<server-only sending key>
 AUTH_EMAIL_FROM=Hollowmere <signin@your-verified-domain>
 AUTH_SIGN_IN_URL=http://localhost:3000/sign-in
 AUTH_SECRET=<64 random hexadecimal characters>
+AUTH_KEY_MODE=server
 ```
 
 Use `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` to generate a secret locally.
 The Resend sender/domain must be verified. The implementation uses the [send-email API](https://resend.com/docs/api-reference/emails/send-email).
 No real email was sent during automated verification.
 
-**Key custody is still a product decision.** The roadmap originally specified player-held keys. This build
-contains an explicit, optional `AUTH_KEY_MODE=server` implementation for the testnet demo; it stays disabled
-unless configured. It creates one full-access Ed25519 key per player and encrypts it in the auth store.
-That is server custody, not player-held signing. It is rejected on mainnet. Player-held signing/recovery still
-needs its own integration if that option is chosen. No private key is returned to either client.
+**Key custody selected by the user, 7 Nov: encrypted server-held keys for testnet.** Set `AUTH_KEY_MODE=server`
+(also set in `.env.example` and this workstation's ignored `.env`). It creates one full-access Ed25519 key
+per player and encrypts it in the auth store. This option is rejected on mainnet. Player-held signing is
+outside the selected demo flow. No private key is returned to Unreal or the sign-in browser.
 
 With the server-held option explicitly enabled and the existing testnet master/relayer configured, the first
 verified login prepares `p<random player id>.<game account>` with 0.05 NEAR from the game master. Subsequent
-logins reuse that account and key. The key and account name are saved before creation; retries check for the
+logins reuse that account and key. An existing `.offline` profile keeps its identity but receives a new
+testnet account on the next code verification; previous local saves are preserved, and their unverified
+points/talismans are not copied into the new on-chain account. The key and account name are saved before creation; retries check for the
 same access key rather than funding a second account. Account creation shares the chain writer's transaction
 queue. Real provisioning, minting and trading for a newly signed-in player still need a testnet/editor check.
 
@@ -92,9 +94,28 @@ Only the private device code can collect the session. It never appears in the br
 
 Protected routes accept `Authorization: Bearer <token>` for Unreal or the browser cookie. `POST /battle/start`,
 `/battle/turn`, `/shop/buy`, `/shop/sell`, `/rules/propose`, `/rules/repeal`, and `GET /player` require sign-in.
+The native Vow Shrine's `/vows`, `/vows/swear`, `/vows/release` and `/chain?vow=...` also require that session.
 The server supplies the acting account. Public town state, catalogues and chain proof links remain readable.
 
 ## Verification
+
+Testnet checkpoint (7 Nov): `npm run native:smoke` passed against the real game server with console codes and
+a dedicated encrypted identity in `data/native-smoke.enc` (and its local `.key`, both git-ignored). The native
+device handoff created/reused `pdd5f5465e5e8b3ad471da9d2.grudgebound.testnet`, returned no player key, and ran
+a binding and sale. Restarting the server preserved the same session/account, **5 points and 18 Ember**;
+logout then revoked the session. This verifies the native HTTP flow, not the actual C++ screen or real mail.
+The first run funded that account with 0.05 test NEAR; retries reuse it. The script sells a talisman it earns
+through an authenticated battle; it does not award itself points or alter the user's existing identity.
+
+Proof: [binding](https://testnet.nearblocks.io/txns/91BEAz76LnoRZ6E1H34CD98QRGv6xSSbjRuWvgM97mBC),
+[points](https://testnet.nearblocks.io/txns/54nhFLAmJQNHYdVMBrcNuoVPWbCWgP8R6iaZHZdoTgdF),
+[sale payment](https://testnet.nearblocks.io/txns/Eb3RixsJvMDRTM4GH6xKnkDgAEf3KvsrX7PP5B32rt1R).
+
+For a manual Unreal check on testnet without sending real mail, start the server with
+`$env:AUTH_EMAIL_MODE = 'console'` and the selected `AUTH_KEY_MODE=server`, with `NEAR_CHAIN` enabled.
+Run the existing sign-in service (`npm run dev`), press Play in Unreal, and verify a code from the server
+terminal. Console delivery is loopback development only. A prior `.offline` session needs a fresh code
+verification before it can use its new testnet account.
 
 Automated checkpoint (7 Nov): **100/100 tests**, workspace type checks, the Next.js production build, and the
 Unreal Development Editor target pass. A native handoff is reserved while provisioning its player, so two

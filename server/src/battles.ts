@@ -98,6 +98,22 @@ interface Session {
   lastSeen: number;
 }
 
+export interface BattleContext { account?: string; ward: WardId; omen: Omen }
+export type BattleGuard = (context: BattleContext, action?: PlayerAction) => string | null;
+
+function guardedView(state: BattleState, context: BattleContext, guard?: BattleGuard): BattleView {
+  const view = battleView(state);
+  if (!guard) return view;
+  const actions: Record<keyof BattleView["canUse"], PlayerAction> = {
+    attack: { kind: "attack" }, ward: { kind: "ward" }, seal: { kind: "seal" },
+    gildedSeal: { kind: "seal", gilded: true }, salve: { kind: "item", item: "salve" }, flee: { kind: "flee" },
+  };
+  for (const key of Object.keys(actions) as (keyof typeof actions)[]) {
+    if (guard(context, actions[key])) view.canUse[key] = false;
+  }
+  return view;
+}
+
 export interface BattleSessionOptions {
   now?: () => number;
   newSeed?: () => number;
@@ -159,7 +175,11 @@ export class BattleSessions {
     return this.open.size;
   }
 
-  start(body: unknown): Answer<StartAnswer> {
+  abandonAccount(account: string): void {
+    for (const [id, s] of this.open) if (s.account === account) this.open.delete(id);
+  }
+
+  start(body: unknown, guard?: BattleGuard): Answer<StartAnswer> {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const ward = b.ward;
     if (typeof ward !== "string" || !(WARDS as readonly string[]).includes(ward)) return fail(400, "unknown ward");
@@ -179,6 +199,8 @@ export class BattleSessions {
     const seed = this.newSeed();
     // The encounter roll uses its own stream so the battle itself replays from createRng(seed) alone.
     const wild = rollEncounter(this.world.wards[ward as WardId].grudge, createRng((seed ^ 0x9e3779b9) >>> 0));
+    const refusal = guard?.({ account, ward: ward as WardId, omen: wild.omen });
+    if (refusal) return fail(409, refusal);
     const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse });
     const s: Session = {
       id: this.newId(), ward: ward as WardId, by, account, seed, wildId: wild.id, omen: wild.omen, playerCurse,
@@ -192,17 +214,19 @@ export class BattleSessions {
       ward: s.ward,
       wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: wild.omen },
       matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
-      view: battleView(state),
+      view: guardedView(state, s, guard),
       lines: [
         introLine(state),
         ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
         ...(noBind ? [`Kessa: "Curfew: ${noBind}. Drive it off, don't seal it."`] : []),
+        ...[...new Set([guard?.(s, { kind: "attack" }), guard?.(s, { kind: "item", item: "salve" })])]
+          .filter((line): line is string => !!line).map((line) => `Kessa: "${line}"`),
       ],
       curfews: [noExorcise, noBind].filter((x): x is string => x !== null),
     });
   }
 
-  turn(body: unknown, authenticatedAccount?: string): Answer<TurnAnswer> {
+  turn(body: unknown, authenticatedAccount?: string, guard?: BattleGuard): Answer<TurnAnswer> {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     this.sweep();
     const s = typeof b.battleId === "string" ? this.open.get(b.battleId) : undefined;
@@ -210,6 +234,8 @@ export class BattleSessions {
     if (authenticatedAccount !== undefined && s.account !== authenticatedAccount) return fail(403, "this battle belongs to another player");
     const action = parseAction(b.action);
     if (!action) return fail(400, "unknown action");
+    const refusal = guard?.(s, action);
+    if (refusal) return fail(409, refusal);
     if (!canUse(s.state, action)) return fail(409, `you can't ${actionLabel(action)} right now`);
     const noBind = action.kind === "seal" ? curfewText(this.world, "bind", s.ward) : null;
     if (noBind) return fail(409, `Curfew: "${noBind}". You can't seal it here now.`);
@@ -223,7 +249,7 @@ export class BattleSessions {
       action: actionLabel(action),
       events: t.events,
       lines: t.events.map((e) => describeEvent(e, t.state)),
-      view: battleView(t.state),
+      view: guardedView(t.state, s, guard),
       outcome: t.state.outcome,
     };
 

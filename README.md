@@ -4,9 +4,12 @@ A creature-binding game where **greed creates monsters** and **players rewrite t
 Built for [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), track: Games With Real Economies.
 
 > **Status: Phase 3 of 5 (accounts, agents, live world).** Phase 2's testnet gate passed on 5 Nov.
-> Email sign-in and Unreal session integration are implemented; sender configuration, the key-custody choice,
-> and live testnet/editor acceptance remain. Setup: [`docs/SIGN_IN.md`](docs/SIGN_IN.md).
-> **7 Nov checkpoint:** 100 tests, type checks, web production build and Unreal editor target pass.
+> Email sign-in and Unreal sessions use encrypted server-held signing on testnet (selected 7 Nov).
+> A new identity's bind, sale and session recovery passed on testnet; real email delivery and remaining
+> editor acceptance are open. Setup: [`docs/SIGN_IN.md`](docs/SIGN_IN.md).
+> **7 Nov checkpoint:** 108 tests, type checks and the Unreal editor build pass; native Vow Shrine stakes,
+> kept return and early-release burn verified on testnet. Final game delivery is Unreal Windows; the Node
+> backend and browser email handoff support it. New web-game feature work is stopped.
 > Remaining work and the exact restart point are in [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md#recovery-checkpoint--7-nov).
 
 ## The idea
@@ -57,8 +60,9 @@ npm install
 | Unreal Engine 5.8 client (`unreal/Plugins/GrudgeboundClient`): server API, Lantern Ward greybox, tall-grass encounters, HUD, battle screen, Talisman Case | Builds and plays on UE 5.8.4: walk, encounter, battle, bind (`docs/UNREAL_SETUP.md`) |
 | Contracts: `items` (NEP-245 shape) and `rite` (points, rules, vows) | Deployed to testnet; binding, trading and rules verified in Phase 2 |
 | Testnet deploy, relayer (meta transactions), binding mints a token | G2 passed 5 Nov; remaining Rite-panel editor check recorded in the build plan |
-| Email login and Unreal sessions | Implemented; credentials, custody choice and live acceptance pending (`docs/SIGN_IN.md`) |
-| Agents with their own accounts, vows integration, Observatory page | Remaining Phase 3 work; feature freeze 8 Nov |
+| Email login and Unreal sessions | Encrypted testnet signing selected; new identity provisioning/bind/sale/restart/logout verified through the native HTTP flow. Real-mail and editor acceptance remain (`docs/SIGN_IN.md`). |
+| Native Unreal Vow Shrine (V) | Built; real testnet stake/return/burn verified. Native play-through and power modifiers remain (`docs/VOWS.md`). |
+| Agent accounts, native Unreal Observatory, Satchel/supplies and ink carry-over | Remaining Phase 3 work; feature freeze 8 Nov |
 
 ## How NEAR is used (planned, being built)
 

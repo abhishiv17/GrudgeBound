@@ -43,6 +43,7 @@ import { Shop } from "./shop";
 import { AuthError, AuthService, authStoreFromEnv, emailDelivery, playerBody } from "./auth";
 import { authRoute, sessionToken } from "./authHttp";
 import { playerKeyResolver, playerProvisioner } from "./playerAccounts";
+import { Vows } from "./vows";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -124,6 +125,15 @@ chain?.onEvents((events) => {
 const canSignFor = (a: string) => !!chainCfg && (chainCfg.playerKey?.(a) ?? custodialKey(chainCfg, a)) !== undefined;
 const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
 const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor) : null;
+const vows = new Vows(world, chain, canSignFor, TICK_MS);
+let vowsSweeping = false;
+function sweepVows() {
+  if (vowsSweeping || !chain) return;
+  vowsSweeping = true;
+  void vows.sweep(authStore.data.players.filter((p) => p.ready).map((p) => p.account))
+    .catch(() => console.warn("Vows: settlement will retry when the Rite is reachable."))
+    .finally(() => { vowsSweeping = false; });
+}
 
 /** After a battle route answers 200 with a binding or exorcism: write it on chain and add the receipt. */
 async function withChain<T extends object>(body: T, record: BattleRecord | null): Promise<T> {
@@ -196,18 +206,33 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (url.pathname.startsWith("/auth/")) {
     return authRoute(auth, req, res, url.pathname, () => readJson(req), (status, body) => send(res, status, body), SIGN_IN_URL, !DEV);
   }
+  if (req.method === "GET" && url.pathname === "/vows") {
+    const player = auth.authenticate(sessionToken(req));
+    sweepVows();
+    return send(res, 200, await vows.overview(player.account));
+  }
+  if (req.method === "POST" && (url.pathname === "/vows/swear" || url.pathname === "/vows/release")) {
+    const player = auth.authenticate(sessionToken(req));
+    const body = playerBody(await readJson(req), player);
+    const result = url.pathname === "/vows/swear" ? await vows.swear(player.account, body) : await vows.release(player.account, body.vowId);
+    // The Shrine is outside encounters. Old encounters (including a slipped-away one) cannot resume under changed vows.
+    battles.abandonAccount(player.account);
+    return send(res, 200, result);
+  }
   if (req.method === "POST" && (url.pathname === "/battle/start" || url.pathname === "/battle/turn")) {
     const player = auth.authenticate(sessionToken(req));
     const body = playerBody(await readJson(req), player);
+    const activeVows = await vows.snapshot(player.account);
+    const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
     if (url.pathname === "/battle/start") {
       if (chain && typeof body.playerCurse === "string" && body.playerCurse !== DEFAULT_PLAYER_CURSE) {
         const owned = await chain.talismansOf(player.account);
         if (!owned.some((t) => t.meta.species === body.playerCurse)) throw new AuthError(403, "Choose a partner from your own talismans.");
       }
-      const r = battles.start(body);
+      const r = battles.start(body, vowGuard);
       return send(res, r.status, r.body);
     }
-    const r = battles.turn(body, player.account);
+    const r = battles.turn(body, player.account, vowGuard);
     if (r.status !== 200) return send(res, r.status, r.body);
     const t = r.body as TurnAnswer;
     const record = recordFromTurn(t);
@@ -229,6 +254,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const player = auth.authenticate(sessionToken(req));
     if (!playerShop) return send(res, 503, { error: "trades are settled on chain, and this server runs off-chain" });
     const body = playerBody(await readJson(req), player);
+    const merchant = world.merchants.find((m) => m.id === body.merchant);
+    if (merchant) vows.assertTrade(await vows.snapshot(player.account), merchant.ward, url.pathname === "/shop/sell" ? body.tokenId : undefined);
     const r = await (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body));
     // Stock and demand just changed: the next GET /shop recomputes prices (and Kessa's tooltip lines).
     const m = body.merchant;
@@ -259,7 +286,13 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const id = url.searchParams.get("battle");
     const ruleJob = url.searchParams.get("rule");
     const shopJob = url.searchParams.get("shop");
+    const vowJob = url.searchParams.get("vow");
     if (!chain || !chainCfg) return send(res, 200, { enabled: false });
+    if (vowJob) {
+      const player = auth.authenticate(sessionToken(req));
+      const receipt = chain.vowReceipt(vowJob);
+      return receipt && receipt.account === player.account ? send(res, 200, receipt) : send(res, 404, { error: "no receipt for that vow" });
+    }
     if (shopJob) {
       const receipt = chain.shopReceipt(shopJob);
       return receipt ? send(res, 200, receipt) : send(res, 404, { error: "no chain receipt for that trade" });
@@ -312,4 +345,6 @@ createServer((req, res) => {
     }, RULE_SYNC_MS).unref();
   }
   console.log(llm ? `Merchant tooltips: NEAR AI Cloud (${llm.model})` : "Merchant tooltips: formula reasons (no NEAR_AI_* settings in .env)");
+  sweepVows();
+  setInterval(sweepVows, Math.max(1000, Math.min(TICK_MS, 30_000))).unref();
 });

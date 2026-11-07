@@ -293,7 +293,12 @@ void UGbApiSubsystem::SendAction(EGbAction Action)
 void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 TriesLeft)
 {
 	UGameInstance* GI = GetGameInstance();
-	if (!GI || TriesLeft <= 0) return;
+	if (!GI) return;
+	if (TriesLeft <= 0)
+	{
+		if (Kind == TEXT("vow")) OnError.Broadcast(TEXT("vows"), 0, TEXT("The ledger is taking longer than expected. Check the Shrine again shortly."));
+		return;
+	}
 	FTimerHandle Unused;
 	GI->GetTimerManager().SetTimer(Unused, FTimerDelegate::CreateWeakLambda(this, [this, Serial = SessionSerial, Kind, Id, TriesLeft]()
 	{
@@ -306,15 +311,53 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 			{
 				// 0: server briefly unreachable, try again; anything else (404: server restarted) is final.
 				if (Status == 0) PollChain(Kind, Id, TriesLeft - 1);
+				else if (Kind == TEXT("vow")) OnError.Broadcast(TEXT("vows"), Status, TEXT("The receipt is unavailable. Reopen the Shrine to read the ledger."));
 				return;
 			}
 			const FGbChainReceipt R = GbJson::ChainReceipt(O);
 			if (R.Status == TEXT("pending")) PollChain(Kind, Id, TriesLeft - 1);
 			else if (Kind == TEXT("rule")) OnRuleReceipt.Broadcast(Id, R);
 			else if (Kind == TEXT("shop")) OnTradeReceipt.Broadcast(Id, R);
+			else if (Kind == TEXT("vow")) { OnVowReceipt.Broadcast(Id, R); FetchPlayer(); FetchVows(); }
 			else OnChainReceipt.Broadcast(Id, R);
 		});
 	}), 1.0f, false);
+}
+
+void UGbApiSubsystem::FetchVows()
+{
+	Send(TEXT("GET"), TEXT("/vows"), FString(), [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status == 200 && GbJson::ParseObject(Text, O)) OnVows.Broadcast(GbJson::VowsOverview(O));
+		else OnError.Broadcast(TEXT("vows"), Status, Status == 0 ? TEXT("Hollowmere is unreachable. Try again shortly.") : GbJson::ErrorMessage(Text));
+	});
+}
+
+void UGbApiSubsystem::SwearVow(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params)
+{
+	SendVow(TEXT("/vows/swear"), GbJson::VowBody(TemplateId, Days, Params));
+}
+
+void UGbApiSubsystem::ReleaseVow(int32 VowId)
+{
+	SendVow(TEXT("/vows/release"), FString::Printf(TEXT("{\"vowId\":%d}"), VowId));
+}
+
+void UGbApiSubsystem::SendVow(const FString& Path, const FString& Body)
+{
+	Send(TEXT("POST"), Path, Body, [this](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			OnError.Broadcast(TEXT("vows"), Status, Status == 0 ? TEXT("The Shrine cannot be reached. Reopen it to check your vows.") : GbJson::ErrorMessage(Text)); return;
+		}
+		const FString JobId = O->GetStringField(TEXT("jobId"));
+		const FGbChainReceipt R = GbJson::ChainReceipt(O->GetObjectField(TEXT("chain")));
+		if (R.Status == TEXT("pending")) PollChain(TEXT("vow"), JobId, 120);
+		else { OnVowReceipt.Broadcast(JobId, R); FetchPlayer(); FetchVows(); }
+	});
 }
 
 void UGbApiSubsystem::FetchPlayer()

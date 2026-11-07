@@ -48,6 +48,9 @@ test("HTTP: email login, native approval, authorization, logout and invalid requ
     assert.equal((await post("/battle/start", { ward: "lantern" })).status, 401);
     assert.equal((await post("/rules/propose", {})).status, 401);
     assert.equal((await post("/shop/buy", {})).status, 401);
+    assert.equal((await post("/vows/swear", {})).status, 401);
+    assert.equal((await post("/vows/release", {})).status, 401);
+    assert.equal((await fetch(base + "/vows")).status, 401);
     assert.equal((await fetch(base + "/player?account=victim.testnet")).status, 401);
     assert.equal((await post("/auth/email/start", { email: "a@example.com" }, { Origin: "https://evil.example" })).status, 403);
     const code = await emailCode("a@example.com");
@@ -68,6 +71,12 @@ test("HTTP: email login, native approval, authorization, logout and invalid requ
     assert.equal((await gatewayGet(new Request("http://localhost:3000/api/game/x"), { params: Promise.resolve({ path: ["..", "health"] }) })).status, 404);
     assert.equal((await fetch(base + "/auth/session", { headers: browser })).status, 200);
     assert.equal((await fetch(base + "/player", { headers: browser })).status, 200);
+    const shrine = await fetch(base + "/vows", { headers: browser });
+    assert.equal(shrine.status, 200);
+    const shrineView = await json<{ chain: boolean; templates: { id: string }[]; vows: unknown[] }>(shrine);
+    assert.equal(shrineView.chain, false); assert.equal(shrineView.templates.length, 4); assert.deepEqual(shrineView.vows, []);
+    assert.equal((await post("/vows/swear", { templateId: "V2", params: {}, days: 1 }, browser)).status, 503);
+    assert.equal((await post("/vows/release", { vowId: 0, account: "victim.testnet" }, browser)).status, 403);
     assert.equal((await post("/battle/start", { ward: "lantern", account: "victim.testnet" }, browser)).status, 403);
     const battle = await post("/battle/start", { ward: "lantern" }, browser); assert.equal(battle.status, 200);
     const { battleId } = await json<{ battleId: string }>(battle);

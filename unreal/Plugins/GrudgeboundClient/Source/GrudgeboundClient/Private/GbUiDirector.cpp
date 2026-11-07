@@ -5,6 +5,7 @@
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
 #include "GbWidgets.h"
+#include "GbVowWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/InputComponent.h"
 #include "Engine/GameInstance.h"
@@ -46,6 +47,7 @@ void AGbUiDirector::BeginPlay()
 	Rules = CreateWidget<UGbRulesWidget>(PC, UGbRulesWidget::StaticClass());
 	Shop = CreateWidget<UGbShopWidget>(PC, UGbShopWidget::StaticClass());
 	SignIn = CreateWidget<UGbSignInWidget>(PC, UGbSignInWidget::StaticClass());
+	VowShrine = CreateWidget<UGbVowWidget>(PC, UGbVowWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
@@ -54,6 +56,7 @@ void AGbUiDirector::BeginPlay()
 	Rules->AddToViewport(30);
 	Shop->AddToViewport(30);
 	SignIn->AddToViewport(100);
+	VowShrine->AddToViewport(30);
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -61,6 +64,7 @@ void AGbUiDirector::BeginPlay()
 	TalismanCase->OnClose.AddUObject(this, &AGbUiDirector::ToggleTalismanCase);
 	Rules->OnClose.AddUObject(this, &AGbUiDirector::ToggleRules);
 	Shop->OnClose.AddUObject(this, &AGbUiDirector::ToggleShop);
+	VowShrine->OnClose.AddUObject(this, &AGbUiDirector::ToggleVows);
 
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -70,6 +74,7 @@ void AGbUiDirector::BeginPlay()
 		Api->OnChainReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleChainReceipt);
 		Api->OnRuleReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleRuleReceipt);
 		Api->OnTradeReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleTradeReceipt);
+		Api->OnVowReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleTradeReceipt);
 	}
 
 	// T opens the Talisman Case (works alongside the template's Enhanced Input mappings).
@@ -81,6 +86,7 @@ void AGbUiDirector::BeginPlay()
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AGbUiDirector::ToggleRules);
 		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &AGbUiDirector::ToggleShop);
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGbUiDirector::SignOut);
+		InputComponent->BindKey(EKeys::V, IE_Pressed, this, &AGbUiDirector::ToggleVows);
 	}
 
 	UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
@@ -112,6 +118,7 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 		Api->OnChainReceipt.RemoveDynamic(this, &AGbUiDirector::HandleChainReceipt);
 		Api->OnRuleReceipt.RemoveDynamic(this, &AGbUiDirector::HandleRuleReceipt);
 		Api->OnTradeReceipt.RemoveDynamic(this, &AGbUiDirector::HandleTradeReceipt);
+		Api->OnVowReceipt.RemoveDynamic(this, &AGbUiDirector::HandleTradeReceipt);
 		// Leaving the level mid-battle: forget it locally; the server expires it.
 		Api->AbandonBattle();
 	}
@@ -131,6 +138,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	Rules->SetVisibility(Screen == EScreen::Rules ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Shop->SetVisibility(Screen == EScreen::Shop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	SignIn->SetVisibility(Screen == EScreen::SignIn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	VowShrine->SetVisibility(Screen == EScreen::Vows ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Hud->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
@@ -156,9 +164,10 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 		UUserWidget* Focus = Screen == EScreen::Encounter ? static_cast<UUserWidget*>(Encounter.Get())
 			: Screen == EScreen::Battle ? static_cast<UUserWidget*>(Battle.Get())
 			: Screen == EScreen::SignIn ? static_cast<UUserWidget*>(SignIn.Get())
+			: Screen == EScreen::Vows ? static_cast<UUserWidget*>(VowShrine.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
 			: Screen == EScreen::Shop ? static_cast<UUserWidget*>(Shop.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
-		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop)
+		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows)
 		{
 			// Keep game input so T closes the case again.
 			FInputModeGameAndUI Mode;
@@ -219,6 +228,15 @@ void AGbUiDirector::ToggleShop()
 	}
 }
 
+void AGbUiDirector::ToggleVows()
+{
+	if (Current == EScreen::Vows) ShowScreen(EScreen::Ward);
+	else if (Current == EScreen::Ward)
+	{
+		VowShrine->Open(); ShowScreen(EScreen::Vows);
+	}
+}
+
 void AGbUiDirector::HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
 {
 	if (Receipt.Status == TEXT("done") && !Receipt.ExplorerUrl.IsEmpty()) LastChainUrl = Receipt.ExplorerUrl;
@@ -272,14 +290,14 @@ void AGbUiDirector::HandleChainReceipt(const FString& BattleId, const FGbChainRe
 	if (Receipt.Status != TEXT("done"))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Grudgebound: NEAR write for battle %s failed: %s"), *BattleId, *Receipt.Error);
-		Api->SayAsKessa(TEXT("Kessa: The ledger would not take it this time. Your talisman stays in your case."));
+		Api->SayAsKessa(TEXT("Kessa: The ledger would not take it this time. Your case will show what was sealed."));
 		return;
 	}
 	LastChainUrl = Receipt.ExplorerUrl;
 	UE_LOG(LogTemp, Log, TEXT("Grudgebound: battle %s on NEAR %s: %s"), *BattleId, *Receipt.Network, *Receipt.ExplorerUrl);
 	Api->SayAsKessa(Receipt.TokenId.IsEmpty()
-		? FString::Printf(TEXT("Kessa: The Rite has written your points on NEAR %s. (L to see it)"), *Receipt.Network)
-		: FString::Printf(TEXT("Kessa: %s is sealed on NEAR %s as %s. (L to see it)"), *Curse, *Receipt.Network, *Receipt.TokenId));
+		? FString(TEXT("Kessa: Your points are sealed in the Rite's ledger. (L opens the proof)"))
+		: FString::Printf(TEXT("Kessa: %s is sealed in the Rite's ledger. (L opens the proof)"), *Curse));
 }
 
 void AGbUiDirector::OpenLastChainLink()
@@ -300,7 +318,7 @@ void AGbUiDirector::HandleApiError(const FString& What, int32 Status, const FStr
 	{
 		// 404: the battle is gone on the server. 409: that move isn't allowed now; the turn isn't spent.
 		const bool bOver = Status == 404;
-		const FString Text = Status == 0 ? FString(TEXT("No answer from the server. Is  npm run server  running?")) : Message;
+		const FString Text = Status == 0 ? FString(TEXT("Hollowmere is unreachable. Please try again shortly.")) : Message;
 		Battle->ShowProblem(Text, bOver);
 	}
 	else if (What == TEXT("battle/start"))

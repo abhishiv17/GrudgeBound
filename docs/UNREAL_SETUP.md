@@ -101,7 +101,10 @@ Also run `npm run dev` for the browser sign-in page. Configure email and signing
 or use its console-email/off-chain development mode. Press **Play** in Unreal, select **Sign in with email**,
 complete the browser page, and return to the game. Sessions resume automatically; F10 signs out in the Ward.
 Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
-Back in the Ward the points and the talisman show up (press **T**). The HUD says *Server offline* if the server isn't running.
+Back in the Ward the points and the talisman show up (press **T**). The HUD says *Hollowmere is unreachable* if the server isn't running.
+**V** opens the native Vow Shrine (stake points, keep or release a promise; needs testnet signing).
+Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Broker, **R** the Rite,
+**L** the latest ledger proof and **F10** signs out while in the Ward.
 For faster world ticks while testing: `TICK_MS=3000 npm run server` (PowerShell: `$env:TICK_MS=3000; npm run server`).
 
 **Before the engine is installed:** `unreal/tools/greybox-preview.html` is a browser preview of the same greybox

@@ -54,6 +54,12 @@ export interface ChainRule {
   created_ms: number;
 }
 
+/** The Rite is the source of truth for locked stakes and vow deadlines. */
+export interface ChainVow {
+  id: number; owner: string; template_id: string; params: string; stake: number;
+  status: "Active" | "Kept" | "Broken"; created_ms: number; ends_ms: number;
+}
+
 /** One contract call: what it returned and the transaction hash. Swapped for a fake in tests. */
 /** What a sent transaction gives back: its hash, the contract's return value, and the NEP-297 events it logged. */
 export interface CallResult { hash: string; result: unknown; events?: RawChainEvent[] }
@@ -72,7 +78,7 @@ export interface BattleRecord {
 }
 
 export interface ChainTx {
-  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over";
+  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over" | "swear" | "settle";
   hash: string;
   url: string;
 }
@@ -94,6 +100,7 @@ export interface ChainReceipt {
   tokenId?: string;
   /** Set when a rule was proposed: its id on the rite contract. */
   ruleId?: number;
+  vowId?: number;
   txs: ChainTx[];
   error?: string;
 }
@@ -341,6 +348,14 @@ export class ChainWriter {
     return (await this.view(this.cfg.riteContract, "get_active_rules", {})) as ChainRule[];
   }
 
+  async vows(account: string): Promise<ChainVow[]> {
+    return await this.view(this.cfg.riteContract, "get_vows", { account_id: account }) as ChainVow[];
+  }
+
+  vowReceipt(jobId: string): ChainReceipt | undefined {
+    return this.receipts.get(`vow:${jobId}`);
+  }
+
   /**
    * The player proposes through the relayer (their points pay the cost), then the game master, as Arbiter,
    * resolves it with Kessa's verdict (a rejection refunds the cost on chain). `onResolved` runs after both.
@@ -426,7 +441,7 @@ export class ChainWriter {
    * succeed, or `onFail` if one throws. The steps push their own transactions with `tx`.
    */
   job(
-    kind: "shop",
+    kind: "shop" | "vow",
     id: string,
     account: string,
     steps: (ops: { call: ContractCall; relay: RelayCall; tx: (k: ChainTx["kind"], hash: string) => void; receipt: ChainReceipt }) => Promise<void>,

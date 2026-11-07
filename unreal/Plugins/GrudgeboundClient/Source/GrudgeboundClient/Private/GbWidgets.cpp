@@ -243,7 +243,7 @@ void UGbHudWidget::BuildTree()
 
 	// --- key hint, top right
 	UBorder* Hint = MakePanel(InkPanel(), FMargin(10.f, 6.f));
-	Hint->SetContent(MakeText(TEXT("T  Talisman Case"), 13, C::Paper, true));
+	Hint->SetContent(MakeText(TEXT("T Case   B Broker   R Rite   V Vows   L Proof   F10 Sign out"), 13, C::Paper, true));
 	UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(Hint);
 	HintSlot->SetAnchors(FAnchors(1.f, 0.f));
 	HintSlot->SetAlignment(FVector2D(1.f, 0.f));
@@ -332,7 +332,7 @@ void UGbHudWidget::Refresh()
 
 	ServerText->SetText(FText::FromString(A->IsServerOnline()
 		? FString::Printf(TEXT("Server online  -  tick %d"), S.Tick)
-		: FString::Printf(TEXT("Server offline: run  npm run server  (%s)"), *A->GetServerUrl())));
+		: FString(TEXT("Hollowmere is unreachable. Retrying..."))));
 	ServerText->SetColorAndOpacity(FSlateColor(A->IsServerOnline() ? C::Leaf : C::Crimson));
 
 	KessaText->SetText(FText::FromString(A->GetKessaLine()));
@@ -659,9 +659,9 @@ void UGbTalismanRowWidget::Setup(const FGbTalisman& Talisman, const FGbCurseInfo
 	Name->SetText(FText::FromString(Curse.Name));
 	Name->SetColorAndOpacity(FSlateColor(EmotionColor(Curse.Emotion)));
 	const FString Origin = Talisman.Id == UGbPlayerSubsystem::StarterId ? FString(TEXT("Kessa's gift"))
-		: Talisman.BoundDay < 0 ? FString(TEXT("from the chain")) : FString::Printf(TEXT("bound on day %d"), Talisman.BoundDay);
+		: Talisman.BoundDay < 0 ? FString(TEXT("from the ledger")) : FString::Printf(TEXT("bound on day %d"), Talisman.BoundDay);
 	const FString Purse = Talisman.Purse > 0 ? FString::Printf(TEXT(", purse %d Ember"), Talisman.Purse) : FString();
-	const FString OnChain = Talisman.ChainTokenId.IsEmpty() ? FString() : FString::Printf(TEXT("  |  NEAR %s%s"), *Talisman.ChainTokenId, *Purse);
+	const FString OnChain = Talisman.ChainTokenId.IsEmpty() ? FString() : FString::Printf(TEXT("  |  Ledger %s%s"), *Talisman.ChainTokenId, *Purse);
 	Details->SetText(FText::FromString(FString::Printf(TEXT("%s %s  |  %s  |  %d wins%s"),
 		*Capitalised(Curse.Emotion), *Capitalised(Talisman.Omen), *Origin, Talisman.Wins, *OnChain)));
 	PartnerLabel->SetText(FText::FromString(bIsPartner ? TEXT("Partner") : TEXT("Make partner")));
@@ -728,7 +728,7 @@ void UGbTalismanCaseWidget::Refresh()
 	Record->SetText(FText::FromString(FString::Printf(
 		TEXT("%d talismans  |  bound %d, exorcised %d, fled %d, lost %d\n%d points, %d Ember%s"),
 		Talismans.Num(), Bound, Won, Fled, Lost, P->GetPoints(), P->GetEmber(),
-		P->IsOnChain() ? TEXT("  (read from NEAR)") : TEXT("  (this PC only)"))));
+		P->IsOnChain() ? TEXT("  (Rite's ledger)") : TEXT("  (this PC only)"))));
 
 	List->ClearChildren();
 	const FString PartnerId = P->GetPartner().Id;
@@ -796,7 +796,7 @@ void UGbShopWidget::BuildTree()
 	Stock = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
 	AddRow(Col, Sized(Stock, 0.f, 230.f));
 
-	AddRow(Col, MakeText(TEXT("Your talismans on NEAR"), 14, C::Ink, true), 10.f);
+	AddRow(Col, MakeText(TEXT("Your sealed talismans"), 14, C::Ink, true), 10.f);
 	Yours = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
 	AddRow(Col, Sized(Yours, 0.f, 150.f));
 
@@ -863,8 +863,8 @@ void UGbShopWidget::Redraw()
 	Title->SetText(FText::FromString(Data.MerchantName.IsEmpty() ? FString(TEXT("The Talisman Broker"))
 		: Capitalised(Data.MerchantName) + (Data.bClosed ? TEXT("  (closed)") : TEXT(""))));
 	Purse->SetText(FText::FromString(Data.Ember >= 0
-		? FString::Printf(TEXT("Your Ember on NEAR: %d"), Data.Ember)
-		: FString(TEXT("Your Ember isn't on chain here (no Player Account, or the server runs off-chain)."))));
+		? FString::Printf(TEXT("Your Ember in the ledger: %d"), Data.Ember)
+		: FString(TEXT("Your Ember balance is unavailable. The Broker cannot trade yet."))));
 
 	Stock->ClearChildren();
 	for (const FGbShopItem& It : Data.Items)
@@ -895,7 +895,7 @@ void UGbShopWidget::Redraw()
 			UGbShopRowWidget* Row = CreateWidget<UGbShopRowWidget>(this, UGbShopRowWidget::StaticClass());
 			if (!Row) continue;
 			const bool bPartner = T.Id == P->GetPartner().Id;
-			Row->Setup(FString::Printf(TEXT("%s  (NEAR %s)"), *Curse.Name, *T.ChainTokenId),
+			Row->Setup(FString::Printf(TEXT("%s  (ledger %s)"), *Curse.Name, *T.ChainTokenId),
 				bPartner ? FString(TEXT("Your partner: pick another partner (T) before selling it."))
 					: Offer > 0 ? FString::Printf(TEXT("The Broker offers %d Ember"), Offer) : FString(TEXT("The Broker doesn't buy these")),
 				FString::Printf(TEXT("Sell  %d"), Offer), !bBusy && !bPartner && Offer > 0 && !Data.bClosed, EmotionColor(Curse.Emotion));
@@ -905,7 +905,7 @@ void UGbShopWidget::Redraw()
 			++Shown;
 		}
 	}
-	if (Shown == 0) Yours->AddChild(MakeText(TEXT("None yet: talismans you bind or buy on NEAR show up here."), 13, Dim()));
+	if (Shown == 0) Yours->AddChild(MakeText(TEXT("None yet: talismans sealed in the ledger show up here."), 13, Dim()));
 }
 
 void UGbShopWidget::Buy(const FString& ItemId)
@@ -931,7 +931,7 @@ void UGbShopWidget::Sell(const FString& TokenId)
 void UGbShopWidget::HandleTrade(const FGbTrade& Trade)
 {
 	PendingJob = Trade.JobId;
-	Status->SetText(FText::FromString(Trade.Text + TEXT(". Settling it on NEAR...")));
+	Status->SetText(FText::FromString(Trade.Text + TEXT(". Sealing it in the ledger...")));
 }
 
 void UGbShopWidget::HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
@@ -939,9 +939,9 @@ void UGbShopWidget::HandleTradeReceipt(const FString& JobId, const FGbChainRecei
 	if (JobId != PendingJob) return;
 	PendingJob.Reset();
 	bBusy = false;
-	const FString Was = Status->GetText().ToString().Replace(TEXT(" Settling it on NEAR..."), TEXT(""));
+	const FString Was = Status->GetText().ToString().Replace(TEXT(" Sealing it in the ledger..."), TEXT(""));
 	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
-		? FString::Printf(TEXT("%s Settled on NEAR%s. (L to see it)"), *Was, Receipt.TokenId.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (%s)"), *Receipt.TokenId))
+		? FString::Printf(TEXT("%s Sealed in the Rite's ledger. (L opens the proof)"), *Was)
 		: FString::Printf(TEXT("The ledger refused the trade: %s"), *Receipt.Error)));
 	Open();
 }
@@ -1128,7 +1128,7 @@ void UGbRulesWidget::HandleRules(const FGbRulesOverview& Rules)
 
 	FString Line = FString::Printf(TEXT("The next rule costs %d points"), Data.Cost);
 	if (Data.Points >= 0) Line += FString::Printf(TEXT("  |  you have %d"), Data.Points);
-	if (!Data.bChain) Line = TEXT("This server runs off-chain, so no rules can be proposed.");
+	if (!Data.bChain) Line = TEXT("The Rite's ledger is unavailable. Rules cannot be proposed yet.");
 	Info->SetText(FText::FromString(Line));
 
 	ActiveList->ClearChildren();
@@ -1203,7 +1203,7 @@ void UGbRulesWidget::HandleRepealAnswer(const FGbRuleVerdict& Answer)
 {
 	PendingJob = Answer.JobId;
 	bPendingRepeal = true;
-	Status->SetText(FText::FromString(FString::Printf(TEXT("Kessa: \"%s\" will be struck for %d points. Writing it on NEAR..."), *Answer.Text, Answer.Cost)));
+	Status->SetText(FText::FromString(FString::Printf(TEXT("Kessa: \"%s\" will be struck for %d points. Sealing it in the ledger..."), *Answer.Text, Answer.Cost)));
 }
 
 void UGbRulesWidget::StepTemplate(int32 Delta)
@@ -1252,8 +1252,8 @@ void UGbRulesWidget::HandleVerdict(const FGbRuleVerdict& Verdict)
 {
 	PendingJob = Verdict.JobId;
 	Status->SetText(FText::FromString(Verdict.bAccepted
-		? FString::Printf(TEXT("Kessa: \"%s\" is accepted. Writing it into the Rite on NEAR..."), *Verdict.Text)
-		: FString::Printf(TEXT("Kessa rejects it: %s  Writing her verdict on NEAR (your %d points come back)..."), *Verdict.Reason, Verdict.Cost)));
+		? FString::Printf(TEXT("Kessa: \"%s\" is accepted. Sealing it in the Rite's ledger..."), *Verdict.Text)
+		: FString::Printf(TEXT("Kessa rejects it: %s  Sealing her verdict (your %d points come back)..."), *Verdict.Reason, Verdict.Cost)));
 }
 
 void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
@@ -1264,15 +1264,15 @@ void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainRecei
 	{
 		bPendingRepeal = false;
 		Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
-			? FString::Printf(TEXT("Struck from the Rite on NEAR %s (rule %d is repealed). (L to see it)"), *Receipt.Network, Receipt.RuleId)
+			? FString::Printf(TEXT("Rule %d was struck from the Rite's ledger. (L opens the proof)"), Receipt.RuleId)
 			: FString::Printf(TEXT("The ledger refused the repeal: %s"), *Receipt.Error)));
 		SetBusy(false);
 		Open();
 		return;
 	}
-	const FString Was = Status->GetText().ToString().Replace(TEXT("Writing it into the Rite on NEAR..."), TEXT("")).Replace(TEXT("Writing her verdict on NEAR"), TEXT("On NEAR"));
+	const FString Was = Status->GetText().ToString().Replace(TEXT("Sealing it in the Rite's ledger..."), TEXT("")).Replace(TEXT("Sealing her verdict"), TEXT("Verdict"));
 	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
-		? FString::Printf(TEXT("%s  Recorded on NEAR %s as rule %d. (L to see it)"), *Was, *Receipt.Network, Receipt.RuleId)
+		? FString::Printf(TEXT("%s  Sealed in the Rite's ledger as rule %d. (L opens the proof)"), *Was, Receipt.RuleId)
 		: FString::Printf(TEXT("The ledger refused it: %s"), *Receipt.Error)));
 	SetBusy(false);
 	Open();
