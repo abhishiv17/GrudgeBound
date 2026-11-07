@@ -2,6 +2,7 @@
 
 #include "GbApiSubsystem.h"
 #include "GbAuthSubsystem.h"
+#include "GbStorySubsystem.h"
 #include "GbGreyboxMaterials.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
@@ -243,12 +244,21 @@ void UGbHudWidget::BuildTree()
 
 	// --- key hint, top right
 	UBorder* Hint = MakePanel(InkPanel(), FMargin(10.f, 6.f));
-	Hint->SetContent(MakeText(TEXT("T Case   B Broker   R Rite   V Vows   L Proof   F10 Sign out"), 13, C::Paper, true));
+	Hint->SetContent(MakeText(TEXT("T Case   B Broker   R Rite   V Vows   I Story   L Proof   F10 Sign out"), 13, C::Paper, true));
 	UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(Hint);
 	HintSlot->SetAnchors(FAnchors(1.f, 0.f));
 	HintSlot->SetAlignment(FVector2D(1.f, 0.f));
 	HintSlot->SetPosition(FVector2D(-24.f, 24.f));
 	HintSlot->SetAutoSize(true);
+
+	UBorder* ObjectiveCard = MakePanel(PaperPanel(), FMargin(14.f, 10.f));
+	UVerticalBox* ObjectiveCol = WidgetTree->ConstructWidget<UVerticalBox>();
+	ObjectiveCard->SetContent(Sized(ObjectiveCol, 340.f, 0.f));
+	ChapterText = MakeText(TEXT(""), 14, C::Crimson, true); AddRow(ObjectiveCol, ChapterText);
+	ObjectiveText = MakeText(TEXT(""), 14, C::Ink); AddRow(ObjectiveCol, ObjectiveText, 6.f);
+	UCanvasPanelSlot* ObjectiveSlot = Root->AddChildToCanvas(ObjectiveCard);
+	ObjectiveSlot->SetAnchors(FAnchors(1.f, 0.f)); ObjectiveSlot->SetAlignment(FVector2D(1.f, 0.f));
+	ObjectiveSlot->SetPosition(FVector2D(-24.f, 82.f)); ObjectiveSlot->SetAutoSize(true);
 
 	// --- Kessa's banner, bottom centre
 	UBorder* Banner = MakePanel(InkPanel(), FMargin(18.f, 10.f));
@@ -278,10 +288,12 @@ void UGbHudWidget::NativeConstruct()
 		P->OnPlayerChanged.AddUniqueDynamic(this, &UGbHudWidget::HandlePlayerChanged);
 	}
 	Refresh();
+	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->OnStoryChanged.AddUniqueDynamic(this, &UGbHudWidget::HandleStoryChanged);
 }
 
 void UGbHudWidget::NativeDestruct()
 {
+	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->OnStoryChanged.RemoveDynamic(this, &UGbHudWidget::HandleStoryChanged);
 	if (UGbApiSubsystem* A = Api())
 	{
 		A->OnWorldState.RemoveDynamic(this, &UGbHudWidget::HandleWorldState);
@@ -336,12 +348,16 @@ void UGbHudWidget::Refresh()
 	ServerText->SetColorAndOpacity(FSlateColor(A->IsServerOnline() ? C::Leaf : C::Crimson));
 
 	KessaText->SetText(FText::FromString(A->GetKessaLine()));
+	const UGbStorySubsystem* Story = GetGameInstance()->GetSubsystem<UGbStorySubsystem>();
+	ChapterText->SetText(FText::FromString(Story->GetChapterTitle()));
+	ObjectiveText->SetText(FText::FromString(Story->GetObjective()));
 }
 
 void UGbHudWidget::HandleWorldState(const FGbWorldState&) { Refresh(); }
 void UGbHudWidget::HandleServerStatus(bool, int32) { Refresh(); }
 void UGbHudWidget::HandleKessaLine(const FString&) { Refresh(); }
 void UGbHudWidget::HandlePlayerChanged() { Refresh(); }
+void UGbHudWidget::HandleStoryChanged() { Refresh(); }
 
 // ================================================================ encounter
 

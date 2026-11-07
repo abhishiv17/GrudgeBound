@@ -38,6 +38,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void ReleaseVow(int32 VowId);
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Vows") FGbVowsEvent OnVows;
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Vows") FGbChainReceiptEvent OnVowReceipt;
+	/** Successful new promise only; releasing a vow never fires this event. */
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Vows") FGbChainReceiptEvent OnVowSworn;
 
 	// ------------------------------------------------------------ town (GET /health, /state, /events, /curses)
 
@@ -62,6 +64,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Town")
 	FGbWorldState GetWorldState() const { return WorldState; }
+	const TArray<FGbTownEvent>& GetRecentTownEvents() const { return RecentTownEvents; }
 
 	/** The named Ward from the latest /state. False before the first answer. */
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Town")
@@ -220,6 +223,10 @@ private:
 	/** Ask GET /chain?<Kind>=<id> again in a second, up to TriesLeft times (Kind: "battle", "rule" or "shop"). */
 	void SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value);
 	void SendVow(const FString& Path, const FString& Body);
+	void FinishVow(const FString& JobId, const FGbChainReceipt& Receipt);
+	TSet<FString> SwearingVowJobs;
+	TArray<FGbTownEvent> RecentTownEvents;
+	uint32 WorldEpoch = 0;
 	void PollChain(const FString& Kind, const FString& Id, int32 TriesLeft);
 
 	FTimerHandle PollTimer;

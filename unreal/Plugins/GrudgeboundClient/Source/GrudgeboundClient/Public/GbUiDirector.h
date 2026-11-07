@@ -16,6 +16,7 @@ class UGbRulesWidget;
 class UGbShopWidget;
 class UGbSignInWidget;
 class UGbVowWidget;
+class UGbIntroWidget;
 
 UCLASS(NotPlaceable, Transient)
 class GRUDGEBOUNDCLIENT_API AGbUiDirector : public AActor
@@ -30,7 +31,10 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 private:
-	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows };
+	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro };
+	void ShowEntry();
+	void FinishIntro();
+	void ReplayIntro();
 	UFUNCTION() void HandleSessionChanged();
 	void SignOut();
 
@@ -62,6 +66,7 @@ private:
 	UPROPERTY() TObjectPtr<UGbShopWidget> Shop;
 	UPROPERTY() TObjectPtr<UGbSignInWidget> SignIn;
 	UPROPERTY() TObjectPtr<UGbVowWidget> VowShrine;
+	UPROPERTY() TObjectPtr<UGbIntroWidget> Intro;
 
 	EScreen Current = EScreen::Ward;
 	/** False until the first dialog opens. */

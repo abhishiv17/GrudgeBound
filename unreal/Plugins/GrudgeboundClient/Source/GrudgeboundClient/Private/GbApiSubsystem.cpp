@@ -49,6 +49,7 @@ void UGbApiSubsystem::HandleSessionChanged()
 	const FString NewToken = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetToken();
 	if (NewToken == SessionToken) return;
 	SessionToken = NewToken; ++SessionSerial;
+	SwearingVowJobs.Reset();
 	AbandonBattle(); bBattleRequestInFlight = false; bStateInFlight = false; bEventsInFlight = false; bCursesInFlight = false;
 }
 
@@ -137,7 +138,14 @@ void UGbApiSubsystem::FetchState()
 			OnError.Broadcast(TEXT("state"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Body));
 			return;
 		}
-		WorldState = GbJson::WorldState(O);
+		const FGbWorldState Updated = GbJson::WorldState(O);
+		if (WorldState.bValid && Updated.Tick < WorldState.Tick)
+		{
+			// A restarted server has a new clock. Its early events must not be discarded as old.
+			LastEventTick = -1; SeenAtLastTick.Reset(); RecentTownEvents.Reset();
+			++WorldEpoch;
+		}
+		WorldState = Updated;
 		SetOnline(true);
 		OnWorldState.Broadcast(WorldState);
 	});
@@ -150,9 +158,10 @@ void UGbApiSubsystem::FetchEvents()
 	// Ask from one tick earlier so events added to the newest tick after the last fetch are not missed;
 	// the ones already seen are skipped below.
 	const int32 Since = LastEventTick < 0 ? -1 : LastEventTick - 1;
-	Send(TEXT("GET"), FString::Printf(TEXT("/events?since=%d"), Since), FString(), [this](int32 Status, const FString& Body)
+	Send(TEXT("GET"), FString::Printf(TEXT("/events?since=%d"), Since), FString(), [this, Epoch = WorldEpoch](int32 Status, const FString& Body)
 	{
 		bEventsInFlight = false;
+		if (Epoch != WorldEpoch) return;
 		TArray<TSharedPtr<FJsonValue>> Items;
 		if (Status != 200 || !GbJson::ParseArray(Body, Items))
 		{
@@ -177,6 +186,9 @@ void UGbApiSubsystem::FetchEvents()
 			Fresh.Add(E);
 		}
 		if (Fresh.Num() == 0) return;
+		// Keep narrative facts for identities that sign in after the initial public feed was fetched.
+		for (const auto& E : Fresh) if (E.Type == TEXT("bankruptcy") || E.Type == TEXT("calamity")) RecentTownEvents.Add(E);
+		if (RecentTownEvents.Num() > 500) RecentTownEvents.RemoveAt(0, RecentTownEvents.Num() - 500);
 
 		OnTownEvents.Broadcast(Fresh);
 		SayAsKessa(Fresh.Last().Text);
@@ -318,7 +330,7 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 			if (R.Status == TEXT("pending")) PollChain(Kind, Id, TriesLeft - 1);
 			else if (Kind == TEXT("rule")) OnRuleReceipt.Broadcast(Id, R);
 			else if (Kind == TEXT("shop")) OnTradeReceipt.Broadcast(Id, R);
-			else if (Kind == TEXT("vow")) { OnVowReceipt.Broadcast(Id, R); FetchPlayer(); FetchVows(); }
+		else if (Kind == TEXT("vow")) FinishVow(Id, R);
 			else OnChainReceipt.Broadcast(Id, R);
 		});
 	}), 1.0f, false);
@@ -346,7 +358,7 @@ void UGbApiSubsystem::ReleaseVow(int32 VowId)
 
 void UGbApiSubsystem::SendVow(const FString& Path, const FString& Body)
 {
-	Send(TEXT("POST"), Path, Body, [this](int32 Status, const FString& Text)
+	Send(TEXT("POST"), Path, Body, [this, bSwear = Path == TEXT("/vows/swear")](int32 Status, const FString& Text)
 	{
 		TSharedPtr<FJsonObject> O;
 		if (Status != 200 || !GbJson::ParseObject(Text, O))
@@ -354,10 +366,19 @@ void UGbApiSubsystem::SendVow(const FString& Path, const FString& Body)
 			OnError.Broadcast(TEXT("vows"), Status, Status == 0 ? TEXT("The Shrine cannot be reached. Reopen it to check your vows.") : GbJson::ErrorMessage(Text)); return;
 		}
 		const FString JobId = O->GetStringField(TEXT("jobId"));
+		if (bSwear) SwearingVowJobs.Add(JobId);
 		const FGbChainReceipt R = GbJson::ChainReceipt(O->GetObjectField(TEXT("chain")));
 		if (R.Status == TEXT("pending")) PollChain(TEXT("vow"), JobId, 120);
-		else { OnVowReceipt.Broadcast(JobId, R); FetchPlayer(); FetchVows(); }
+		else FinishVow(JobId, R);
 	});
+}
+
+void UGbApiSubsystem::FinishVow(const FString& JobId, const FGbChainReceipt& Receipt)
+{
+	const bool bSworn = SwearingVowJobs.Remove(JobId) > 0 && Receipt.Status == TEXT("done");
+	OnVowReceipt.Broadcast(JobId, Receipt);
+	if (bSworn) OnVowSworn.Broadcast(JobId, Receipt);
+	FetchPlayer(); FetchVows();
 }
 
 void UGbApiSubsystem::FetchPlayer()

@@ -6,6 +6,10 @@
 #include "GbSettings.h"
 #include "GbWidgets.h"
 #include "GbVowWidget.h"
+#include "GbIntroWidget.h"
+#include "GbStorySubsystem.h"
+#include "GbCoopMission.h"
+#include "GameFramework/WorldSettings.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/InputComponent.h"
 #include "Engine/GameInstance.h"
@@ -48,6 +52,7 @@ void AGbUiDirector::BeginPlay()
 	Shop = CreateWidget<UGbShopWidget>(PC, UGbShopWidget::StaticClass());
 	SignIn = CreateWidget<UGbSignInWidget>(PC, UGbSignInWidget::StaticClass());
 	VowShrine = CreateWidget<UGbVowWidget>(PC, UGbVowWidget::StaticClass());
+	Intro = CreateWidget<UGbIntroWidget>(PC, UGbIntroWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
@@ -57,6 +62,7 @@ void AGbUiDirector::BeginPlay()
 	Shop->AddToViewport(30);
 	SignIn->AddToViewport(100);
 	VowShrine->AddToViewport(30);
+	Intro->AddToViewport(80);
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -65,6 +71,7 @@ void AGbUiDirector::BeginPlay()
 	Rules->OnClose.AddUObject(this, &AGbUiDirector::ToggleRules);
 	Shop->OnClose.AddUObject(this, &AGbUiDirector::ToggleShop);
 	VowShrine->OnClose.AddUObject(this, &AGbUiDirector::ToggleVows);
+	Intro->OnFinished.AddUObject(this, &AGbUiDirector::FinishIntro);
 
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -87,11 +94,12 @@ void AGbUiDirector::BeginPlay()
 		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &AGbUiDirector::ToggleShop);
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGbUiDirector::SignOut);
 		InputComponent->BindKey(EKeys::V, IE_Pressed, this, &AGbUiDirector::ToggleVows);
+		InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AGbUiDirector::ReplayIntro);
 	}
 
 	UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
 	Auth->OnSessionChanged.AddUniqueDynamic(this, &AGbUiDirector::HandleSessionChanged);
-	ShowScreen(Auth->IsSignedIn() ? EScreen::Ward : EScreen::SignIn);
+	ShowEntry();
 	Auth->ResumeSession();
 }
 
@@ -99,7 +107,29 @@ void AGbUiDirector::HandleSessionChanged()
 {
 	const UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
 	if (!Auth->IsSignedIn()) ShowScreen(EScreen::SignIn);
-	else if (Current == EScreen::SignIn) ShowScreen(EScreen::Ward);
+	else if (Current == EScreen::SignIn) ShowEntry();
+}
+
+void AGbUiDirector::ShowEntry()
+{
+	if (!GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) { ShowScreen(EScreen::SignIn); return; }
+	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->RefreshSession();
+	if (GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->ShouldShowIntro())
+	{
+		Intro->Open(); ShowScreen(EScreen::Intro);
+	}
+	else ShowScreen(EScreen::Ward);
+}
+
+void AGbUiDirector::FinishIntro()
+{
+	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->CompleteIntro();
+	ShowScreen(EScreen::Ward);
+}
+
+void AGbUiDirector::ReplayIntro()
+{
+	if (Current == EScreen::Ward) { Intro->Open(); ShowScreen(EScreen::Intro); }
 }
 
 void AGbUiDirector::SignOut()
@@ -139,7 +169,8 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	Shop->SetVisibility(Screen == EScreen::Shop ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	SignIn->SetVisibility(Screen == EScreen::SignIn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	VowShrine->SetVisibility(Screen == EScreen::Vows ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	Hud->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	Intro->SetVisibility(Screen == EScreen::Intro ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	Hud->SetVisibility(Screen == EScreen::Battle || Screen == EScreen::Intro || Screen == EScreen::SignIn ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
 	if (!bInputTouched && Screen == EScreen::Ward) return;
@@ -165,6 +196,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 			: Screen == EScreen::Battle ? static_cast<UUserWidget*>(Battle.Get())
 			: Screen == EScreen::SignIn ? static_cast<UUserWidget*>(SignIn.Get())
 			: Screen == EScreen::Vows ? static_cast<UUserWidget*>(VowShrine.Get())
+			: Screen == EScreen::Intro ? static_cast<UUserWidget*>(Intro.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
 			: Screen == EScreen::Shop ? static_cast<UUserWidget*>(Shop.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
 		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows)
@@ -343,6 +375,9 @@ bool UGbGameFlowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType
 void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	// The opt-in co-op mission owns its local UI and networking. No solo API battles or sign-in gate run there.
+	const auto ModeClass=InWorld.GetWorldSettings()->DefaultGameMode;
+	if (ModeClass && ModeClass->IsChildOf(AGbCoopMode::StaticClass())) return;
 
 	if (UGbApiSubsystem* Api = ApiOf(&InWorld))
 	{

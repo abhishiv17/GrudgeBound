@@ -69,6 +69,8 @@ public:
 	static const TCHAR* SlotName;
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	/** Identity whose local save is currently loaded (used to avoid cross-profile narrative callbacks). */
+	FString GetActiveAccount() const { return ActiveAccount; }
 
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Player")
 	int32 GetPoints() const;

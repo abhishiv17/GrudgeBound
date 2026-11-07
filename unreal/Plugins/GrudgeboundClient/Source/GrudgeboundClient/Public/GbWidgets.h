@@ -81,6 +81,7 @@ private:
 	UFUNCTION() void HandleServerStatus(bool bOnline, int32 Tick);
 	UFUNCTION() void HandleKessaLine(const FString& Line);
 	UFUNCTION() void HandlePlayerChanged();
+	UFUNCTION() void HandleStoryChanged();
 
 	UPROPERTY() TObjectPtr<UTextBlock> WardTitle;
 	UPROPERTY() TObjectPtr<UTextBlock> GrudgeTotal;
@@ -94,6 +95,8 @@ private:
 	UPROPERTY() TObjectPtr<UTextBlock> PartnerText;
 	UPROPERTY() TObjectPtr<UTextBlock> ServerText;
 	UPROPERTY() TObjectPtr<UTextBlock> KessaText;
+	UPROPERTY() TObjectPtr<UTextBlock> ChapterText;
+	UPROPERTY() TObjectPtr<UTextBlock> ObjectiveText;
 };
 
 /** "A curse stirs": Fight / Slip away. */
