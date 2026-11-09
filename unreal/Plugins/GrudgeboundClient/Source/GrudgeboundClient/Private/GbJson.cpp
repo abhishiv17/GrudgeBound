@@ -241,6 +241,7 @@ namespace GbJson
 		const TSharedPtr<FJsonObject> Items = Obj(O, TEXT("items"));
 		V.Salves = Int(Items, TEXT("salve"));
 		V.GildedSeals = Int(Items, TEXT("gilded"));
+		V.BlankSeals = Int(Items, TEXT("blank"));
 
 		const TSharedPtr<FJsonObject> Chances = Obj(O, TEXT("chances"));
 		V.SealChance = Num(Chances, TEXT("seal"));
@@ -413,11 +414,48 @@ namespace GbJson
 		return P;
 	}
 
+	FGbSatchel Satchel(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbSatchel S;
+		const TSharedPtr<FJsonObject> Supplies = Obj(O, TEXT("supplies"));
+		const TSharedPtr<FJsonObject> Ink = Obj(O, TEXT("ink"));
+		// Fail closed on an error/malformed body rather than showing a usable empty pocket.
+		S.bValid = O.IsValid() && O->HasTypedField<EJson::Array>(TEXT("carried")) && O->HasTypedField<EJson::Array>(TEXT("case")) && Supplies.IsValid() && Ink.IsValid();
+		if (!S.bValid) return S;
+		S.Carried = Strings(O, TEXT("carried")); S.Case = Strings(O, TEXT("case"));
+		S.Keepsakes = Strings(O, TEXT("keepsakes"));
+		S.Blank = FMath::Max(0, Int(Supplies, TEXT("blank")));
+		S.Gilded = FMath::Max(0, Int(Supplies, TEXT("gilded")));
+		S.Salves = FMath::Max(0, Int(Supplies, TEXT("salve")));
+		S.Ember = Int(O, TEXT("ember"), -1); S.Points = Int(O, TEXT("points"), -1);
+		for (const auto& Entry : Ink->Values)
+		{
+			const auto I = AsObj(Entry.Value);
+			if (!I.IsValid()) continue;
+			FGbInk Value; Value.MaxHp = FMath::Max(0, Int(I, TEXT("maxHp")));
+			Value.Hp = FMath::Clamp(Int(I, TEXT("hp")), 0, Value.MaxHp);
+			S.Ink.Add(FString(Entry.Key), Value);
+		}
+		return S;
+	}
+
+	FString TokenBody(const FString& TokenId)
+	{
+		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>(); O->SetStringField(TEXT("tokenId"), TokenId); return Write(O);
+	}
+
+	FString CarryBody(const FString& TokenId, bool bCarry)
+	{
+		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
+		O->SetStringField(TEXT("tokenId"), TokenId); O->SetBoolField(TEXT("carry"), bCarry); return Write(O);
+	}
+
 	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy)
 	{
 		FGbTrade T;
 		T.bBuy = bBuy;
 		T.JobId = Str(O, TEXT("jobId"));
+		T.ItemId = Str(O, TEXT("itemId"));
 		T.Price = Int(O, TEXT("price"));
 		T.Text = Str(O, TEXT("text"));
 		T.SpeciesId = Str(O, TEXT("speciesId"));
@@ -511,11 +549,12 @@ namespace GbJson
 		return Write(O);
 	}
 
-	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account)
+	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account, const FString& TokenId)
 	{
 		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
 		O->SetStringField(TEXT("ward"), Ward);
 		if (!PlayerCurse.IsEmpty()) O->SetStringField(TEXT("playerCurse"), PlayerCurse);
+		if (!TokenId.IsEmpty()) O->SetStringField(TEXT("tokenId"), TokenId);
 		if (!By.IsEmpty()) O->SetStringField(TEXT("by"), By);
 		const FString Acct = Account.TrimStartAndEnd().ToLower();
 		if (!Acct.IsEmpty()) O->SetStringField(TEXT("account"), Acct);

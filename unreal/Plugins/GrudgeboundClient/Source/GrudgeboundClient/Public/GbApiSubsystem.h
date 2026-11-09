@@ -17,6 +17,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbKessaLineEvent, const FString&, L
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleStartedEvent, const FGbBattleStart&, Battle);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleTurn&, Turn);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbPlayerViewEvent, const FGbPlayerView&, Player);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbSatchelEvent, const FGbSatchel&, Satchel);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbShopEvent, const FGbShop&, Shop);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTradeEvent, const FGbTrade&, Trade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
@@ -138,6 +139,15 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Player")
 	FGbPlayerViewEvent OnPlayerView;
 
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void FetchSatchel();
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void SetCarried(const FString& TokenId, bool bCarry);
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void UseSalve(const FString& TokenId);
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void RestoreInk(const FString& TokenId);
+	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void Rest();
+	bool IsSatchelBusy() const { return bSatchelMutationInFlight || bTradeRequestInFlight || !MenderJobs.IsEmpty() || !TradeJobs.IsEmpty(); }
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Satchel") FGbSatchelEvent OnSatchel;
+	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Satchel") FGbKessaLineEvent OnSatchelAction;
+
 	// ------------------------------------------------------------ shop (GET /shop, POST /shop/buy, /shop/sell)
 
 	/** Prices, reasons, stock, buy-back offers and your chain Ember. Answer: OnShop (or OnError "shop"). */
@@ -222,6 +232,15 @@ private:
 	void SetOnline(bool bNowOnline);
 	/** Ask GET /chain?<Kind>=<id> again in a second, up to TriesLeft times (Kind: "battle", "rule" or "shop"). */
 	void SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value);
+	void MutateSatchel(const FString& Path, const FString& Body, const FString& Message);
+	void FinishMender(const FString& Id, const FGbChainReceipt& Receipt);
+	void FinishTrade(const FString& Id, const FGbChainReceipt& Receipt);
+	TSet<FString> MenderJobs;
+	TSet<FString> TradeJobs;
+	bool bTradeRequestInFlight = false;
+	bool bSatchelMutationInFlight = false;
+	uint32 SatchelSerial = 0;
+	FString PendingSatchelMessage;
 	void SendVow(const FString& Path, const FString& Body);
 	void FinishVow(const FString& JobId, const FGbChainReceipt& Receipt);
 	TSet<FString> SwearingVowJobs;

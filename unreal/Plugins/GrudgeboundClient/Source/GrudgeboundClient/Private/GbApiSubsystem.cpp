@@ -1,5 +1,6 @@
 #include "GbApiSubsystem.h"
 #include "GbAuthSubsystem.h"
+#include "GbPlayerSubsystem.h"
 
 #include "GbJson.h"
 #include "GbSettings.h"
@@ -50,6 +51,8 @@ void UGbApiSubsystem::HandleSessionChanged()
 	if (NewToken == SessionToken) return;
 	SessionToken = NewToken; ++SessionSerial;
 	SwearingVowJobs.Reset();
+	MenderJobs.Reset(); bSatchelMutationInFlight = false; PendingSatchelMessage.Reset(); ++SatchelSerial;
+	TradeJobs.Reset(); bTradeRequestInFlight = false;
 	AbandonBattle(); bBattleRequestInFlight = false; bStateInFlight = false; bEventsInFlight = false; bCursesInFlight = false;
 }
 
@@ -253,9 +256,19 @@ void UGbApiSubsystem::SayAsKessa(const FString& Line)
 void UGbApiSubsystem::StartBattle(const FString& WardId, const FString& PlayerCurse)
 {
 	if (IsBattleOpen() || bBattleRequestInFlight) return;
+	UGbPlayerSubsystem* Player = GetGameInstance()->GetSubsystem<UGbPlayerSubsystem>();
+	FString Hint;
+	if (IsSatchelBusy()) Hint = TEXT("Wait for your Satchel action to finish before fighting.");
+	else if (Player) Player->CanStartBattle(Hint);
+	if (!Player || !Hint.IsEmpty())
+	{
+		OnError.Broadcast(TEXT("battle/start"), 409, Hint.IsEmpty() ? TEXT("Your Satchel is not ready.") : Hint);
+		if (Player && !Player->GetSatchel().bValid) FetchSatchel();
+		return;
+	}
 	bBattleRequestInFlight = true;
 	const UGbSettings* Settings = GetDefault<UGbSettings>();
-	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, PlayerCurse, GetPlayerName(), GetPlayerAccount());
+	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, Player->GetPartner().SpeciesId, GetPlayerName(), GetPlayerAccount(), Player->GetPartnerTokenId());
 	Send(TEXT("POST"), TEXT("/battle/start"), Body, [this](int32 Status, const FString& Text)
 	{
 		bBattleRequestInFlight = false;
@@ -299,6 +312,7 @@ void UGbApiSubsystem::SendAction(EGbAction Action)
 			if (Turn.Chain.Status == TEXT("pending")) PollChain(TEXT("battle"), Turn.BattleId, 30);
 			else OnChainReceipt.Broadcast(Turn.BattleId, Turn.Chain);
 		}
+		if (Turn.bEnded) FetchSatchel();
 	});
 }
 
@@ -308,6 +322,16 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 	if (!GI) return;
 	if (TriesLeft <= 0)
 	{
+		if (Kind == TEXT("shop") && MenderJobs.Remove(Id))
+		{
+			OnError.Broadcast(TEXT("mender/restore"), 0, TEXT("The Mender's receipt is taking longer than expected. Refresh your Satchel to check its ink before trying again."));
+			FetchSatchel();
+		}
+		else if (Kind == TEXT("shop") && TradeJobs.Remove(Id))
+		{
+			OnError.Broadcast(TEXT("shop/buy"), 0, TEXT("The Broker's receipt is taking longer than expected. Refresh your Satchel before trying again."));
+			FetchSatchel();
+		}
 		if (Kind == TEXT("vow")) OnError.Broadcast(TEXT("vows"), 0, TEXT("The ledger is taking longer than expected. Check the Shrine again shortly."));
 		return;
 	}
@@ -324,14 +348,28 @@ void UGbApiSubsystem::PollChain(const FString& Kind, const FString& Id, int32 Tr
 				// 0: server briefly unreachable, try again; anything else (404: server restarted) is final.
 				if (Status == 0) PollChain(Kind, Id, TriesLeft - 1);
 				else if (Kind == TEXT("vow")) OnError.Broadcast(TEXT("vows"), Status, TEXT("The receipt is unavailable. Reopen the Shrine to read the ledger."));
+				else if (Kind == TEXT("shop") && MenderJobs.Remove(Id))
+				{
+					OnError.Broadcast(TEXT("mender/restore"), Status, TEXT("The Mender's receipt is unavailable. Refresh your Satchel before trying again."));
+					FetchSatchel();
+				}
+				else if (Kind == TEXT("shop") && TradeJobs.Remove(Id))
+				{
+					OnError.Broadcast(TEXT("shop/buy"), Status, TEXT("The Broker's receipt is unavailable. Refresh your Satchel before trying again."));
+					FetchSatchel();
+				}
 				return;
 			}
 			const FGbChainReceipt R = GbJson::ChainReceipt(O);
 			if (R.Status == TEXT("pending")) PollChain(Kind, Id, TriesLeft - 1);
 			else if (Kind == TEXT("rule")) OnRuleReceipt.Broadcast(Id, R);
-			else if (Kind == TEXT("shop")) OnTradeReceipt.Broadcast(Id, R);
-		else if (Kind == TEXT("vow")) FinishVow(Id, R);
-			else OnChainReceipt.Broadcast(Id, R);
+			else if (Kind == TEXT("shop"))
+			{
+				if (MenderJobs.Contains(Id)) FinishMender(Id, R);
+				else FinishTrade(Id, R);
+			}
+			else if (Kind == TEXT("vow")) FinishVow(Id, R);
+			else { OnChainReceipt.Broadcast(Id, R); FetchSatchel(); }
 		});
 	}), 1.0f, false);
 }
@@ -398,6 +436,86 @@ void UGbApiSubsystem::FetchPlayer()
 	});
 }
 
+void UGbApiSubsystem::FetchSatchel()
+{
+	if (GetPlayerAccount().IsEmpty()) return;
+	// Do not let an old GET overwrite an in-flight mutation or signal its completion prematurely.
+	if (bSatchelMutationInFlight && PendingSatchelMessage.IsEmpty()) return;
+	const uint32 RequestSerial = ++SatchelSerial;
+	Send(TEXT("GET"), TEXT("/satchel"), FString(), [this, RequestSerial](int32 Status, const FString& Text)
+	{
+		if (RequestSerial != SatchelSerial) return;
+		TSharedPtr<FJsonObject> O;
+		const bool bParsed = Status == 200 && GbJson::ParseObject(Text, O);
+		const FGbSatchel S = bParsed ? GbJson::Satchel(O) : FGbSatchel();
+		if (!S.bValid)
+		{
+			bSatchelMutationInFlight = false; PendingSatchelMessage.Reset();
+			OnError.Broadcast(TEXT("satchel"), Status, Status == 0 ? TEXT("Hollowmere is unreachable. Refresh your Satchel when the town returns.") : Status == 200 ? TEXT("Your Satchel could not be read. Please refresh.") : GbJson::ErrorMessage(Text));
+			return;
+		}
+		const FString Message = PendingSatchelMessage; PendingSatchelMessage.Reset(); bSatchelMutationInFlight = false;
+		OnSatchel.Broadcast(S);
+		if (!Message.IsEmpty()) OnSatchelAction.Broadcast(Message);
+	});
+}
+
+void UGbApiSubsystem::SetCarried(const FString& TokenId, bool bCarry)
+{
+	MutateSatchel(TEXT("satchel/carry"), GbJson::CarryBody(TokenId, bCarry), bCarry ? TEXT("Talisman placed in your Satchel.") : TEXT("Talisman left in the Case."));
+}
+void UGbApiSubsystem::UseSalve(const FString& TokenId) { MutateSatchel(TEXT("satchel/salve"), GbJson::TokenBody(TokenId), TEXT("Ink Salve used.")); }
+void UGbApiSubsystem::RestoreInk(const FString& TokenId) { MutateSatchel(TEXT("mender/restore"), GbJson::TokenBody(TokenId), TEXT("The Mender restored your talisman's ink.")); }
+void UGbApiSubsystem::Rest() { MutateSatchel(TEXT("rest"), TEXT("{}"), TEXT("You rested until morning. Your talismans' ink is restored.")); }
+
+void UGbApiSubsystem::MutateSatchel(const FString& Path, const FString& Body, const FString& Message)
+{
+	if (GetPlayerAccount().IsEmpty() || IsSatchelBusy() || IsBattleOpen() || IsBattleBusy())
+	{
+		OnError.Broadcast(Path, 409, TEXT("Finish your current action before changing your Satchel.")); return;
+	}
+	bSatchelMutationInFlight = true; PendingSatchelMessage.Reset(); ++SatchelSerial;
+	Send(TEXT("POST"), TEXT("/") + Path, Body, [this, Path, Message](int32 Status, const FString& Text)
+	{
+		TSharedPtr<FJsonObject> O;
+		if (Status != 200 || !GbJson::ParseObject(Text, O))
+		{
+			bSatchelMutationInFlight = false;
+			OnError.Broadcast(Path, Status, Status == 0 ? TEXT("Hollowmere is unreachable. Refresh your Satchel to check the result before trying again.") : GbJson::ErrorMessage(Text));
+			FetchSatchel(); return;
+		}
+		if (Path == TEXT("mender/restore"))
+		{
+			FString Id; O->TryGetStringField(TEXT("jobId"), Id);
+			const TSharedPtr<FJsonObject>* Chain = nullptr;
+			const FGbChainReceipt R = O->TryGetObjectField(TEXT("chain"), Chain) && Chain ? GbJson::ChainReceipt(*Chain) : FGbChainReceipt();
+			bSatchelMutationInFlight = false;
+			if (Id.IsEmpty()) { OnError.Broadcast(Path, 200, TEXT("The Mender's receipt could not be read. Refresh your Satchel.")); FetchSatchel(); return; }
+			MenderJobs.Add(Id);
+			if (R.Status == TEXT("pending"))
+			{
+				FString Reason; O->TryGetStringField(TEXT("reason"), Reason);
+				OnSatchelAction.Broadcast(Reason.IsEmpty() ? FString(TEXT("The Mender is restoring your ink...")) : FString(TEXT("Restoring ink. ")) + Reason);
+				PollChain(TEXT("shop"), Id, 40);
+			}
+			else FinishMender(Id, R);
+			return;
+		}
+		PendingSatchelMessage = Message; FetchSatchel();
+	});
+}
+
+void UGbApiSubsystem::FinishMender(const FString& Id, const FGbChainReceipt& Receipt)
+{
+	MenderJobs.Remove(Id);
+	if (Receipt.Status == TEXT("done"))
+	{
+		bSatchelMutationInFlight = true; PendingSatchelMessage = TEXT("The Mender restored your talisman's ink.");
+	}
+	else OnError.Broadcast(TEXT("mender/restore"), 409, TEXT("The Mender could not restore the ink. Refresh your Satchel before trying again."));
+	FetchSatchel();
+}
+
 void UGbApiSubsystem::FetchShop(const FString& MerchantId)
 {
 	const FString Account = GetPlayerAccount();
@@ -429,14 +547,18 @@ void UGbApiSubsystem::SellTalisman(const FString& MerchantId, const FString& Tok
 void UGbApiSubsystem::SendTrade(bool bBuy, const FString& MerchantId, const FString& Key, const FString& Value)
 {
 	const FString What = bBuy ? TEXT("shop/buy") : TEXT("shop/sell");
+	if (IsSatchelBusy() || IsBattleOpen() || IsBattleBusy()) { OnError.Broadcast(What, 409, TEXT("Finish your current action before trading.")); return; }
 	const FString Account = GetPlayerAccount();
 	if (Account.TrimStartAndEnd().IsEmpty())
 	{
 		OnError.Broadcast(What, 400, TEXT("Sign in to enter Hollowmere first."));
 		return;
 	}
+	bTradeRequestInFlight = true;
+	OnSatchelAction.Broadcast(TEXT("The Broker is checking your trade..."));
 	Send(TEXT("POST"), TEXT("/") + What, GbJson::TradeBody(Account, MerchantId, Key, Value), [this, What, bBuy, Value](int32 Status, const FString& Text)
 	{
+		bTradeRequestInFlight = false;
 		TSharedPtr<FJsonObject> O;
 		if (Status != 200 || !GbJson::ParseObject(Text, O))
 		{
@@ -446,10 +568,20 @@ void UGbApiSubsystem::SendTrade(bool bBuy, const FString& MerchantId, const FStr
 		}
 		FGbTrade T = GbJson::Trade(O, bBuy);
 		if (!bBuy) T.TokenId = Value;
+		if (T.Chain.Status == TEXT("pending")) TradeJobs.Add(T.JobId);
 		OnTrade.Broadcast(T);
 		if (T.Chain.Status == TEXT("pending")) PollChain(TEXT("shop"), T.JobId, 40);
-		else OnTradeReceipt.Broadcast(T.JobId, T.Chain);
+		else FinishTrade(T.JobId, T.Chain);
 	});
+}
+
+void UGbApiSubsystem::FinishTrade(const FString& Id, const FGbChainReceipt& Receipt)
+{
+	TradeJobs.Remove(Id);
+	bSatchelMutationInFlight = true;
+	PendingSatchelMessage = Receipt.Status == TEXT("done") ? TEXT("The Broker finished your trade.") : TEXT("The Broker could not complete the trade. Your pockets have been checked.");
+	OnTradeReceipt.Broadcast(Id, Receipt);
+	FetchSatchel();
 }
 
 void UGbApiSubsystem::FetchRules()

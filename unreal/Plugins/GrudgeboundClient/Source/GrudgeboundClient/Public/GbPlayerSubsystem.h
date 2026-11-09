@@ -67,6 +67,12 @@ public:
 	static const TCHAR* StarterOmen;
 	static const TCHAR* StarterId;
 	static const TCHAR* SlotName;
+	/** Server's reserved id for the built-in partner; distinct from the old local SaveGame id. */
+	static FString ServerTokenId(const FGbTalisman& Talisman);
+	FGbSatchel GetSatchel() const { return Satchel; }
+	FString GetPartnerTokenId() const;
+	bool CanStartBattle(FString& Hint) const;
+	bool CanChoosePartner(const FGbTalisman& Talisman) const;
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	/** Identity whose local save is currently loaded (used to avoid cross-profile narrative callbacks). */
@@ -128,6 +134,11 @@ public:
 	FGbTalismanBoundEvent OnTalismanBound;
 
 private:
+	friend class FGbSatchelPartnerTest;
+	friend class FGbSatchelSupplyTradeTest;
+	UFUNCTION() void HandleSatchel(const FGbSatchel& View);
+	UFUNCTION() void HandleSatchelError(const FString& What, int32 Status, const FString& Message);
+	FGbSatchel Satchel;
 	UFUNCTION() void HandleSessionChanged();
 	FString ActiveAccount;
 	FString SaveSlot = TEXT("Grudgebound");

@@ -103,8 +103,19 @@ complete the browser page, and return to the game. Sessions resume automatically
 Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
 Back in the Ward the points and the talisman show up (press **T**). The HUD says *Hollowmere is unreachable* if the server isn't running.
 **V** opens the native Vow Shrine (stake points, keep or release a promise; needs testnet signing).
-Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Broker, **R** the Rite,
+Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Satchel, **R** the Rite,
 **L** the latest ledger proof and **F10** signs out while in the Ward.
+The Satchel has four pockets: **Talismans**, **Supplies**, **Keepsakes**, and **Ledger**. Select a talisman
+to carry/leave it in the Case (five carried slots), choose a carried partner, or check its ink. The Supplies
+pocket uses a salve on that selection; full ink disables the button. **Broker** opens the existing shop,
+which now sells blanks, gilded talismans and Ink Salves as well as sealed talismans. **B** or its Back button
+returns from the Broker to the Satchel; **B** again returns to walking. **T** still opens the legacy Case.
+Until the buildings are wired, the Talismans pocket also offers **Mender** restoration for Ember (price
+follows Lantern Ward's Sorrow) and **Rest until morning** for free. Rest advances only your personal clock.
+The server supplies every count and ink value. New players receive **3 blank / 0 gilded / 1 salve** once;
+existing accounts keep their supplies. A partner with zero ink cannot start a fight: visit the Mender,
+use a salve, or rest. The battle view shows its saved ink. **Slip away** from an encounter now attempts
+the server's flee move; if it fails, the battle continues, and its turn/ink costs still count.
 First entry now shows a four-panel arrival story. **Enter/Space** turns a page, **Escape** skips it, and
 **I** replays it from the Ward. The HUD keeps the current chapter and objective visible; story flags are
 saved separately per account and server. Script and chapter triggers: [`STORY.md`](STORY.md).

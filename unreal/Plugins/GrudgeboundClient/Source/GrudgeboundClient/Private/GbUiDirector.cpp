@@ -7,6 +7,7 @@
 #include "GbWidgets.h"
 #include "GbVowWidget.h"
 #include "GbIntroWidget.h"
+#include "GbSatchelWidget.h"
 #include "GbStorySubsystem.h"
 #include "GbCoopMission.h"
 #include "GameFramework/WorldSettings.h"
@@ -53,6 +54,7 @@ void AGbUiDirector::BeginPlay()
 	SignIn = CreateWidget<UGbSignInWidget>(PC, UGbSignInWidget::StaticClass());
 	VowShrine = CreateWidget<UGbVowWidget>(PC, UGbVowWidget::StaticClass());
 	Intro = CreateWidget<UGbIntroWidget>(PC, UGbIntroWidget::StaticClass());
+	Satchel = CreateWidget<UGbSatchelWidget>(PC, UGbSatchelWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
@@ -63,6 +65,7 @@ void AGbUiDirector::BeginPlay()
 	SignIn->AddToViewport(100);
 	VowShrine->AddToViewport(30);
 	Intro->AddToViewport(80);
+	Satchel->AddToViewport(30);
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -72,6 +75,8 @@ void AGbUiDirector::BeginPlay()
 	Shop->OnClose.AddUObject(this, &AGbUiDirector::ToggleShop);
 	VowShrine->OnClose.AddUObject(this, &AGbUiDirector::ToggleVows);
 	Intro->OnFinished.AddUObject(this, &AGbUiDirector::FinishIntro);
+	Satchel->OnClose.AddUObject(this, &AGbUiDirector::ToggleSatchel);
+	Satchel->OnBroker.AddUObject(this, &AGbUiDirector::ToggleShop);
 
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -91,7 +96,7 @@ void AGbUiDirector::BeginPlay()
 		InputComponent->BindKey(EKeys::T, IE_Pressed, this, &AGbUiDirector::ToggleTalismanCase);
 		InputComponent->BindKey(EKeys::L, IE_Pressed, this, &AGbUiDirector::OpenLastChainLink);
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AGbUiDirector::ToggleRules);
-		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &AGbUiDirector::ToggleShop);
+		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &AGbUiDirector::ToggleSatchel);
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGbUiDirector::SignOut);
 		InputComponent->BindKey(EKeys::V, IE_Pressed, this, &AGbUiDirector::ToggleVows);
 		InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AGbUiDirector::ReplayIntro);
@@ -170,6 +175,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	SignIn->SetVisibility(Screen == EScreen::SignIn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	VowShrine->SetVisibility(Screen == EScreen::Vows ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Intro->SetVisibility(Screen == EScreen::Intro ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	Satchel->SetVisibility(Screen == EScreen::Satchel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Hud->SetVisibility(Screen == EScreen::Battle || Screen == EScreen::Intro || Screen == EScreen::SignIn ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
@@ -197,9 +203,10 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 			: Screen == EScreen::SignIn ? static_cast<UUserWidget*>(SignIn.Get())
 			: Screen == EScreen::Vows ? static_cast<UUserWidget*>(VowShrine.Get())
 			: Screen == EScreen::Intro ? static_cast<UUserWidget*>(Intro.Get())
+			: Screen == EScreen::Satchel ? static_cast<UUserWidget*>(Satchel.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
 			: Screen == EScreen::Shop ? static_cast<UUserWidget*>(Shop.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
-		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows)
+		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows || Screen == EScreen::Satchel)
 		{
 			// Keep game input so T closes the case again.
 			FInputModeGameAndUI Mode;
@@ -247,13 +254,23 @@ void AGbUiDirector::ToggleRules()
 	}
 }
 
+void AGbUiDirector::ToggleSatchel()
+{
+	if (Current == EScreen::Satchel) ShowScreen(EScreen::Ward);
+	else if (Current == EScreen::Shop) { Satchel->Open(); ShowScreen(EScreen::Satchel); }
+	else if (Current == EScreen::Ward)
+	{
+		Satchel->Open(); ShowScreen(EScreen::Satchel);
+	}
+}
+
 void AGbUiDirector::ToggleShop()
 {
 	if (Current == EScreen::Shop)
 	{
-		ShowScreen(EScreen::Ward);
+		Satchel->Open(); ShowScreen(EScreen::Satchel);
 	}
-	else if (Current == EScreen::Ward)
+	else if (Current == EScreen::Satchel)
 	{
 		Shop->Open();
 		ShowScreen(EScreen::Shop);
@@ -296,13 +313,10 @@ void AGbUiDirector::Fight()
 
 void AGbUiDirector::SlipAway()
 {
-	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
-	{
-		Api->AbandonBattle();
-		Api->SayAsKessa(FString::Printf(TEXT("You slipped away from %s. It still haunts the tall grass."), *PendingBattle.Wild.Name));
-	}
-	if (UGbPlayerSubsystem* Player = PlayerOf(GetWorld())) Player->StartEncounterGrace();
-	ShowScreen(EScreen::Ward);
+	// The server owns supplies/ink and one open battle per player. Resolve the existing flee move rather
+	// than forgetting an encounter locally and stranding all pocket/healing actions until it expires.
+	Battle->ShowStart(PendingBattle); ShowScreen(EScreen::Battle);
+	if (UGbApiSubsystem* Api = ApiOf(GetWorld())) Api->SendAction(EGbAction::Flee);
 }
 
 void AGbUiDirector::HandleBattleTurn(const FGbBattleTurn& Turn)
@@ -341,6 +355,7 @@ void AGbUiDirector::BackToWard()
 {
 	if (UGbPlayerSubsystem* Player = PlayerOf(GetWorld())) Player->StartEncounterGrace();
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld())) Api->RefreshNow();
+	if (UGbPlayerSubsystem* Player = PlayerOf(GetWorld())) Player->RefreshFromChain();
 	ShowScreen(EScreen::Ward);
 }
 

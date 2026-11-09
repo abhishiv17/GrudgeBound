@@ -28,6 +28,9 @@ namespace GbJson
 	FString VowBody(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params);
 	FGbShop Shop(const TSharedPtr<FJsonObject>& O);
 	FGbPlayerView Player(const TSharedPtr<FJsonObject>& O);
+	FGbSatchel Satchel(const TSharedPtr<FJsonObject>& O);
+	FString TokenBody(const FString& TokenId);
+	FString CarryBody(const FString& TokenId, bool bCarry);
 	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy);
 	/** {"account":..,"merchant":..,"itemId"|"tokenId":..} */
 	FString TradeBody(const FString& Account, const FString& Merchant, const FString& Key, const FString& Value);
@@ -42,7 +45,7 @@ namespace GbJson
 	EGbOutcome Outcome(const FString& Text);
 
 	/** {"ward":..,"playerCurse":..,"by":..,"account":..} (empty fields left out) */
-	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account = FString());
+	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account = FString(), const FString& TokenId = FString());
 	/** {"battleId":..,"action":{"kind":..}} */
 	FString TurnBody(const FString& BattleId, EGbAction Action);
 }

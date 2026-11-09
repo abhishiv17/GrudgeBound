@@ -176,6 +176,7 @@ struct FGbBattleView
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbSide Wild;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Salves = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 GildedSeals = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 BlankSeals = 0;
 	/** 0-1, shown on the buttons. */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float SealChance = 0.f;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") float GildedSealChance = 0.f;
@@ -278,6 +279,46 @@ struct FGbPlayerView
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString ExplorerUrl;
 };
 
+/** Current ink for one talisman; MaxHp 0 means it has not been read. */
+USTRUCT(BlueprintType)
+struct FGbInk
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Hp = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 MaxHp = 0;
+};
+
+/** Authoritative pockets from GET /satchel. Unknown balances remain -1; no client starter-kit grants. */
+USTRUCT(BlueprintType)
+struct FGbSatchel
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bValid = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Carried;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Case;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Blank = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Gilded = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Salves = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Keepsakes;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TMap<FString, FGbInk> Ink;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Ember = -1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = -1;
+
+	static constexpr int32 CarryLimit = 5;
+	bool HasToken(const FString& Id) const { return Carried.Contains(Id) || Case.Contains(Id); }
+	bool CanCarry(const FString& Id) const { return bValid && Case.Contains(Id) && Carried.Num() < CarryLimit; }
+	bool CanUseSalve(const FString& Id) const
+	{
+		const FGbInk* I = Ink.Find(Id);
+		return bValid && HasToken(Id) && Salves > 0 && I && I->MaxHp > 0 && I->Hp < I->MaxHp;
+	}
+	bool CanFight(const FString& Id) const
+	{
+		const FGbInk* I = Ink.Find(Id);
+		return bValid && Carried.Contains(Id) && I && I->MaxHp > 0 && I->Hp > 0;
+	}
+};
+
 /** One line of a merchant's stock from GET /shop. */
 USTRUCT(BlueprintType)
 struct FGbShopItem
@@ -318,6 +359,8 @@ struct FGbTrade
 
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString JobId;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bBuy = true;
+	/** Non-empty for supplies; a supply receipt never creates a talisman. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString ItemId;
 	/** Ember paid (buy) or received (sell). */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Price = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Text;

@@ -26,6 +26,8 @@ void UGbPlayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		Api->OnTrade.AddDynamic(this, &UGbPlayerSubsystem::HandleTrade);
 		Api->OnTradeReceipt.AddDynamic(this, &UGbPlayerSubsystem::HandleTradeReceipt);
 		Api->OnPlayerView.AddDynamic(this, &UGbPlayerSubsystem::HandlePlayerView);
+		Api->OnSatchel.AddDynamic(this, &UGbPlayerSubsystem::HandleSatchel);
+		Api->OnError.AddDynamic(this, &UGbPlayerSubsystem::HandleSatchelError);
 		Api->FetchPlayer();
 	}
 }
@@ -37,6 +39,7 @@ void UGbPlayerSubsystem::HandleSessionChanged()
 	ActiveAccount = Account;
 	SaveSlot = Account.IsEmpty() ? FString(SlotName) : FString(SlotName) + TEXT("_") + Account;
 	bOnChain = false; AccountUrl.Reset(); PendingTrades.Empty(); Settling.Empty(); GraceMetresLeft = 0;
+	Satchel = FGbSatchel();
 	if (Account.IsEmpty()) MakeFresh(); else Load();
 	OnPlayerChanged.Broadcast();
 	if (!Account.IsEmpty()) RefreshFromChain();
@@ -46,8 +49,52 @@ void UGbPlayerSubsystem::RefreshFromChain()
 {
 	if (const UGameInstance* GI = GetGameInstance())
 	{
-		if (UGbApiSubsystem* Api = GI->GetSubsystem<UGbApiSubsystem>()) Api->FetchPlayer();
+		if (UGbApiSubsystem* Api = GI->GetSubsystem<UGbApiSubsystem>()) { Api->FetchPlayer(); Api->FetchSatchel(); }
 	}
+}
+
+FString UGbPlayerSubsystem::ServerTokenId(const FGbTalisman& T)
+{
+	return T.Id == StarterId ? FString(TEXT("starter")) : T.ChainTokenId;
+}
+
+FString UGbPlayerSubsystem::GetPartnerTokenId() const { return ServerTokenId(GetPartner()); }
+
+bool UGbPlayerSubsystem::CanChoosePartner(const FGbTalisman& T) const
+{
+	return Satchel.bValid && Satchel.Carried.Contains(ServerTokenId(T));
+}
+
+bool UGbPlayerSubsystem::CanStartBattle(FString& Hint) const
+{
+	if (!Satchel.bValid) { Hint = TEXT("Your Satchel is not ready. Open it with B and refresh before fighting."); return false; }
+	const FString Token = GetPartnerTokenId();
+	if (!Satchel.Carried.Contains(Token)) { Hint = TEXT("Carry a talisman and choose your partner in the Satchel (B)."); return false; }
+	if (!Satchel.CanFight(Token)) { Hint = TEXT("Visit the Mender or rest. Your partner needs ink."); return false; }
+	Hint.Reset(); return true;
+}
+
+void UGbPlayerSubsystem::HandleSatchel(const FGbSatchel& View)
+{
+	Satchel = View;
+	if (Data && View.bValid)
+	{
+		if (View.Points >= 0) Data->Points = View.Points;
+		if (View.Ember >= 0) Data->Ember = View.Ember;
+		// A partner put in the Case cannot silently keep fighting.
+		if (!Data->Talismans.ContainsByPredicate([this](const FGbTalisman& T) { return T.Id == Data->PartnerId && CanChoosePartner(T); }))
+		{
+			const FGbTalisman* First = Data->Talismans.FindByPredicate([this](const FGbTalisman& T) { return IsShown(T) && CanChoosePartner(T); });
+			Data->PartnerId = First ? First->Id : FString();
+		}
+		Save();
+	}
+	else OnPlayerChanged.Broadcast();
+}
+
+void UGbPlayerSubsystem::HandleSatchelError(const FString& What, int32, const FString&)
+{
+	if (What == TEXT("satchel")) { Satchel.bValid = false; OnPlayerChanged.Broadcast(); }
 }
 
 void UGbPlayerSubsystem::HandlePlayerView(const FGbPlayerView& View)
@@ -143,7 +190,7 @@ void UGbPlayerSubsystem::Load()
 
 void UGbPlayerSubsystem::Save()
 {
-	if (Data) UGameplayStatics::SaveGameToSlot(Data, SaveSlot, 0);
+	if (Data && !SaveSlot.IsEmpty()) UGameplayStatics::SaveGameToSlot(Data, SaveSlot, 0);
 	OnPlayerChanged.Broadcast();
 }
 
@@ -173,13 +220,14 @@ FGbTalisman UGbPlayerSubsystem::GetPartner() const
 	{
 		for (const FGbTalisman& T : Data->Talismans)
 		{
-			if (T.Id == Data->PartnerId && IsShown(T)) return T;
+			if (T.Id == Data->PartnerId && IsShown(T) && (!Satchel.bValid || CanChoosePartner(T))) return T;
 		}
 		for (const FGbTalisman& T : Data->Talismans)
 		{
-			if (IsShown(T)) return T;
+			if (IsShown(T) && (!Satchel.bValid || CanChoosePartner(T))) return T;
 		}
 	}
+	if (Satchel.bValid) return FGbTalisman(); // An empty carried pocket has no fighting partner.
 	FGbTalisman Starter;
 	Starter.Id = StarterId;
 	Starter.SpeciesId = StarterSpecies;
@@ -190,7 +238,7 @@ FGbTalisman UGbPlayerSubsystem::GetPartner() const
 void UGbPlayerSubsystem::SetPartner(const FString& TalismanId)
 {
 	if (!Data || Data->PartnerId == TalismanId) return;
-	if (!Data->Talismans.ContainsByPredicate([&](const FGbTalisman& T) { return T.Id == TalismanId && IsShown(T); })) return;
+	if (!Data->Talismans.ContainsByPredicate([&](const FGbTalisman& T) { return T.Id == TalismanId && IsShown(T) && CanChoosePartner(T); })) return;
 	Data->PartnerId = TalismanId;
 	Save();
 }
@@ -294,7 +342,7 @@ void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChain
 	FGbTrade Trade;
 	Settling.Remove(JobId);
 	if (!PendingTrades.RemoveAndCopyValue(JobId, Trade) || !Data || Receipt.Status != TEXT("done")) return;
-	if (Trade.bBuy)
+	if (Trade.bBuy && !Trade.SpeciesId.IsEmpty() && !Receipt.TokenId.IsEmpty())
 	{
 		FGbTalisman T;
 		T.Id = FString::Printf(TEXT("tal-%d"), Data->NextTalisman++);
@@ -309,7 +357,7 @@ void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChain
 		Data->Talismans.Add(T);
 		Data->Ember = FMath::Max(0, Data->Ember - Trade.Price);
 	}
-	else
+	else if (!Trade.bBuy)
 	{
 		const int32 At = Data->Talismans.IndexOfByPredicate([&Trade](const FGbTalisman& T) { return T.ChainTokenId == Trade.TokenId; });
 		if (At != INDEX_NONE)
@@ -321,6 +369,7 @@ void UGbPlayerSubsystem::HandleTradeReceipt(const FString& JobId, const FGbChain
 		}
 		Data->Ember += Trade.Price;
 	}
+	else Data->Ember = FMath::Max(0, Data->Ember - Trade.Price); // Supplies never enter the Talisman Case.
 	Save();
 	RefreshFromChain();
 }

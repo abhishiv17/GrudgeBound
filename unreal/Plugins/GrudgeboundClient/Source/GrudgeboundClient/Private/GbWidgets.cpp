@@ -244,7 +244,7 @@ void UGbHudWidget::BuildTree()
 
 	// --- key hint, top right
 	UBorder* Hint = MakePanel(InkPanel(), FMargin(10.f, 6.f));
-	Hint->SetContent(MakeText(TEXT("T Case   B Broker   R Rite   V Vows   I Story   L Proof   F10 Sign out"), 13, C::Paper, true));
+	Hint->SetContent(MakeText(TEXT("B Satchel   T Case   R Rite   V Vows   I Story   L Proof   F10 Sign out"), 13, C::Paper, true));
 	UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(Hint);
 	HintSlot->SetAnchors(FAnchors(1.f, 0.f));
 	HintSlot->SetAlignment(FVector2D(1.f, 0.f));
@@ -821,7 +821,7 @@ void UGbShopWidget::BuildTree()
 	AddRow(Col, Status, 8.f);
 
 	UTextBlock* Ignored = nullptr;
-	UButton* Close = MakeButton(TEXT("Close  (B)"), Ignored, C::Stone);
+	UButton* Close = MakeButton(TEXT("Back to Satchel  (B)"), Ignored, C::Stone);
 	Close->OnClicked.AddDynamic(this, &UGbShopWidget::HandleClose);
 	AddRow(Col, Sized(Close, 0.f, 40.f), 10.f);
 
@@ -886,12 +886,13 @@ void UGbShopWidget::Redraw()
 	for (const FGbShopItem& It : Data.Items)
 	{
 		const bool bTalisman = It.Id.StartsWith(TEXT("talisman-"));
+		const bool bSupply = It.Id == TEXT("blank-talisman") || It.Id == TEXT("gilded-talisman") || It.Id == TEXT("ink-salve") || It.Id == TEXT("binding-seal");
 		UGbShopRowWidget* Row = CreateWidget<UGbShopRowWidget>(this, UGbShopRowWidget::StaticClass());
 		if (!Row) continue;
-		const bool bCan = bTalisman && !bBusy && !Data.bClosed && It.Stock > 0 && Data.Ember >= It.Price;
+		const bool bCan = (bTalisman || bSupply) && !bBusy && A && !A->IsSatchelBusy() && !Data.bClosed && It.Stock > 0 && Data.Ember >= It.Price;
 		const FString Detail = FString::Printf(TEXT("%d Ember  |  %d in stock  |  %s"), It.Price, It.Stock, *It.Text);
 		const FString Emotion = bTalisman ? It.Id.Mid(9) : FString();
-		Row->Setup(It.Name, bTalisman ? Detail : Detail + TEXT("  (not sold to players yet)"),
+		Row->Setup(It.Name, bTalisman || bSupply ? Detail : Detail + TEXT("  (not sold to players yet)"),
 			FString::Printf(TEXT("Buy  %d"), It.Price), bCan, bTalisman ? EmotionColor(Emotion) : C::Ink);
 		const FString ItemId = It.Id;
 		Row->OnClick = [this, ItemId]() { Buy(ItemId); };
@@ -912,9 +913,9 @@ void UGbShopWidget::Redraw()
 			if (!Row) continue;
 			const bool bPartner = T.Id == P->GetPartner().Id;
 			Row->Setup(FString::Printf(TEXT("%s  (ledger %s)"), *Curse.Name, *T.ChainTokenId),
-				bPartner ? FString(TEXT("Your partner: pick another partner (T) before selling it."))
+				bPartner ? FString(TEXT("Your partner: choose another partner in the Satchel (B) before selling it."))
 					: Offer > 0 ? FString::Printf(TEXT("The Broker offers %d Ember"), Offer) : FString(TEXT("The Broker doesn't buy these")),
-				FString::Printf(TEXT("Sell  %d"), Offer), !bBusy && !bPartner && Offer > 0 && !Data.bClosed, EmotionColor(Curse.Emotion));
+				FString::Printf(TEXT("Sell  %d"), Offer), !bBusy && !A->IsSatchelBusy() && !bPartner && Offer > 0 && !Data.bClosed, EmotionColor(Curse.Emotion));
 			const FString TokenId = T.ChainTokenId;
 			Row->OnClick = [this, TokenId]() { Sell(TokenId); };
 			Yours->AddChild(Row);
