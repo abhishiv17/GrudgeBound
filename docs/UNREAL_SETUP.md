@@ -207,9 +207,47 @@ The web client's code is the reference for behaviour: `client/game/scenes/WardSc
 
 ## 7. Builds for judges
 
-Judges can't build Unreal projects themselves, so each milestone also gets a packaged build:
-*Platforms > Windows > Package Project* (Shipping), zip it and attach it to a **GitHub Release**
-(not committed to the repo). The README links the newest one, plus the demo video.
+Judges can't build Unreal projects themselves, so each milestone also gets a packaged build, zipped and
+attached to a **GitHub Release** (never committed to the repo). The README links the newest one, plus the demo video.
+
+**Package** (close every Unreal editor first, and don't run it while another Unreal build or cook runs: on a
+16 GB laptop the cook needs the memory). From the repo root:
+
+```powershell
+# the build for judges: Shipping, pointed at the hosted HTTPS game server
+powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl https://<game-server> -Version 1.0.0
+# a quick local test build against the server on this PC
+powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://localhost:8787 -Config Development
+```
+
+The script cooks LanternWard and NinthBell (plus everything under `/Game/Grudgebound`), builds, paks with IoStore,
+stages and archives into `unreal\Packaged\<date>-<Config>\Windows\`, then zips it as
+`Grudgebound-Win64-<version>.zip` next to it and prints the size and the time taken. It writes the server URL into
+`Config/DefaultGame.ini` only while it runs and puts the committed file back exactly afterwards. It never uploads.
+A Shipping build refuses a plain `http://` server URL. If BuildCookRun fails, the first `Error:` line in its output
+is the cause; the full log is under `%APPDATA%\Unreal Engine\AutomationTool\Logs\`.
+
+**Run the packaged game:** unzip anywhere and start `GrudgeBound.exe`. Sign-in opens the system browser at the
+server's sign-in page; the session is remembered for that Windows user and server, and F10 signs out. To use
+another server without repackaging: `GrudgeBound.exe -GbServer=https://<host>`. The Ninth Bell with two players:
+
+```powershell
+GrudgeBound.exe /Game/Grudgebound/NinthBell?listen -windowed -ResX=1280 -ResY=720 -port=7777   # host
+GrudgeBound.exe 127.0.0.1:7777 -windowed -ResX=1280 -ResY=720                                 # join (use the host's LAN IP on another PC)
+```
+
+Windows may ask to allow the game through the firewall for the host; allow it on private networks.
+
+**Publish (owner only, after a play test of the zip):**
+1. On github.com, open the repo, then *Releases* > *Draft a new release*.
+2. *Choose a tag*: type `v1.0.0` (match `-Version`) and pick *Create new tag on publish*; target `main`.
+3. Title: `Grudgebound 1.0.0 (Windows)`. Notes: what's in the build, the server it points at, the minimum
+   hardware (Windows 10/11 64-bit, a DirectX 12 GPU with 4 GB), and "unzip, run GrudgeBound.exe".
+4. Drag the zip into *Attach binaries*, then *Publish release*. Copy the zip's download link into the
+   README's "Play it" section.
+
+On a machine with the GitHub CLI the same thing is:
+`gh release create v1.0.0 unreal/Packaged/<date>-Shipping/Grudgebound-Win64-1.0.0.zip --title "Grudgebound 1.0.0 (Windows)" --notes-file <notes.md>`
 
 ## Team versions
 
