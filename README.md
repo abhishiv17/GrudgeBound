@@ -12,7 +12,7 @@ Built at [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), track
 |---|---|
 | Demo video | added at release |
 | Windows build (GitHub Release) | added at release |
-| Hosted game server / sign-in page | added at release |
+| Hosted game server / sign-in page | Pending owner deployment — [hosting setup](docs/HOSTING.md) |
 | Contracts (NEAR testnet) | [`items.grudgebound.testnet`](https://testnet.nearblocks.io/address/items.grudgebound.testnet) · [`rite.grudgebound.testnet`](https://testnet.nearblocks.io/address/rite.grudgebound.testnet) |
 
 > **Build status (9 Nov):** steps marked ⏳ below are being finished for the final build (11 Nov).
@@ -61,7 +61,7 @@ Requirements: Node 20+ and npm. `npm install` first.
 | `cd contracts && cargo test` | Contract unit tests (Linux, macOS, WSL2, or Docker on Windows; see `contracts/README.md`). |
 
 Full local setup (server, sign-in page, Unreal editor): [`docs/UNREAL_SETUP.md`](docs/UNREAL_SETUP.md) and
-[`docs/SIGN_IN.md`](docs/SIGN_IN.md). Hosting: [`docs/HOSTING.md`](docs/HOSTING.md) ⏳.
+[`docs/SIGN_IN.md`](docs/SIGN_IN.md). Hosting: [`docs/HOSTING.md`](docs/HOSTING.md).
 
 ## How NEAR is used
 

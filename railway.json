@@ -1,0 +1,13 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": { "builder": "RAILPACK", "buildCommand": "npm ci --include=dev" },
+  "deploy": {
+    "startCommand": "npm run server",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 120,
+    "sleepApplication": false,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+    "numReplicas": 1
+  }
+}

@@ -1,0 +1,80 @@
+# Owner applies after review. One process/disk; keep automatic deploys disabled.
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: grudgebound-server
+    runtime: node
+    plan: starter
+    branch: main
+    autoDeployTrigger: "off"
+    buildCommand: npm ci
+    startCommand: npm run server
+    healthCheckPath: /health
+    numInstances: 1
+    disk:
+      name: grudgebound-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        sync: false
+      - key: NPM_CONFIG_INCLUDE
+        sync: false
+      - key: NODE_ENV
+        sync: false
+      - key: NEAR_NETWORK
+        sync: false
+      - key: NEAR_GAME_ACCOUNT
+        sync: false
+      - key: NEAR_ITEMS_CONTRACT
+        sync: false
+      - key: NEAR_RITE_CONTRACT
+        sync: false
+      - key: NEAR_RELAYER_ACCOUNT
+        sync: false
+      - key: NEAR_GAME_PRIVATE_KEY
+        sync: false
+      - key: NEAR_RELAYER_PRIVATE_KEY
+        sync: false
+      - key: NEAR_RPC_URL
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: AUTH_KEY_MODE
+        sync: false
+      - key: AUTH_STORE_PATH
+        sync: false
+      - key: SATCHEL_STORE_PATH
+        sync: false
+      - key: BATTLE_ARCHIVE
+        sync: false
+      - key: AUTH_SIGN_IN_URL
+        sync: false
+      - key: AUTH_EMAIL_MODE
+        sync: false
+      - key: AUTH_EMAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: NEAR_AI_API_KEY
+        sync: false
+      - key: NEAR_AI_BASE_URL
+        sync: false
+      - key: NEAR_AI_MODEL
+        sync: false
+      - key: TICK_MS
+        sync: false
+      - key: WORLD_SEED
+        sync: false
+      - key: TRUST_PROXY
+        sync: false
+      - key: RULE_PROPOSAL_COOLDOWN_MS
+        sync: false
+      - key: AGENT_CHAIN
+        sync: false
+      - key: AGENT_STORE_PATH
+        sync: false
+      - key: AGENT_DAILY_EMBER_CAP
+        sync: false
+      - key: AGENT_ACTIONS_PER_DAY
+        sync: false
