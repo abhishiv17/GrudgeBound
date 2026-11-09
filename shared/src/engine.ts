@@ -640,8 +640,19 @@ function endOfDay(world: World) {
   }
 }
 
+/**
+ * Optional server hooks into step(). Without them the simulation is unchanged (same seed, same result).
+ * The game server uses them to send AI agents' choices through their own NEAR accounts (mirror the sim).
+ */
+export interface StepHooks {
+  /** Return true to take an agent's rule proposal elsewhere (the rite contract); the sim then does not enact it. */
+  onAgentProposal?(world: World, me: Participant, templateId: string, params: RuleParams): boolean;
+  /** Observes each action after it was applied; `emberBefore` is the actor's Ember before it. */
+  afterAction?(world: World, me: Participant, action: ParticipantAction, emberBefore: number): void;
+}
+
 /** Advance the world by one tick (one in-game hour). */
-export function step(world: World, rng: Rng, policy: Policy = scriptedPolicy): void {
+export function step(world: World, rng: Rng, policy: Policy = scriptedPolicy, hooks: StepHooks = {}): void {
   stepWards(world, rng);
   stepMerchants(world, rng);
   const order = [...world.participants].sort(() => rng.next() - 0.5);
@@ -649,7 +660,12 @@ export function step(world: World, rng: Rng, policy: Policy = scriptedPolicy): v
     if (!rng.chance(TUNING.actChance)) continue;
     const options = legalActions(world, me);
     const choice = policy(world, me, options, rng);
-    act(world, me, choice, rng);
+    const emberBefore = me.ember;
+    // proposeRule draws nothing from rng, so handing it off keeps the random stream identical.
+    if (!(choice.type === "proposeRule" && me.kind === "agent" && hooks.onAgentProposal?.(world, me, choice.templateId, choice.params))) {
+      act(world, me, choice, rng);
+    }
+    hooks.afterAction?.(world, me, choice, emberBefore);
   }
   if (hourOf(world.tick) === TICKS_PER_DAY - 1) endOfDay(world);
   world.tick += 1;

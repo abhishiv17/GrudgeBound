@@ -16,7 +16,7 @@ import {
   CURSES, curseById, log, payTradeTax, quoteBuyPrice, quoteSellPrice, recordPurchase, recordSale, totalGrudge,
   type Merchant, type World,
 } from "@grudgebound/shared";
-import { isAccountId, type ChainReceipt, type ChainWriter } from "./chain";
+import { isAccountId, type ChainJobOps, type ChainReceipt, type ChainWriter } from "./chain";
 import { displayName } from "./rules";
 import { Satchels, supplyForItem } from "./satchel";
 
@@ -128,22 +128,41 @@ export class Shop {
     if (ember < price) { rollback(); return fail(402, `${item.name} cost ${price} Ember; ${displayName(account)} has ${ember}.`); }
     const jobId = randomUUID();
     const text = `${displayName(account)} bought ${species ? `a ${species.name} talisman` : item.name.toLowerCase()} from ${m.name} for ${price} Ember`;
-    const chain = await this.chain.job("shop", jobId, account, async ({ call, relay, tx, receipt }) => {
-      const paid = await relay(account, this.chain.cfg.itemsContract, "mt_transfer",
-        { receiver_id: this.gameAccount, token_id: "ember", amount: String(price), memo: `buy ${item.id} from ${m.id}` }, ONE_YOCTO);
-      tx("pay", paid.hash);
+    const deliver = async ({ call, tx, receipt }: ChainJobOps) => {
       if (species) {
         const meta = { species: species.id, emotion: species.emotion, omen: species.omen, level: 1, wins: 0 };
         const minted = await call(this.chain.cfg.itemsContract, "mint_talisman", { to: account, meta });
         receipt.tokenId = String(minted.result);
         tx("mint", minted.hash);
       }
-    }, () => {
+    };
+    const done = () => {
       try {
         if (supply) this.satchels.addSupply(account, supply);
         log(this.world, { type: "trade", ward: m.ward, actor: account, text: `${text}.` });
       } finally { this.pending.delete(account); }
-    }, rollback);
+    };
+    const chain = await this.chain.job("shop", jobId, account, async (ops) => {
+      const paid = await ops.relay(account, this.chain.cfg.itemsContract, "mt_transfer",
+        { receiver_id: this.gameAccount, token_id: "ember", amount: String(price), memo: `buy ${item.id} from ${m.id}` }, ONE_YOCTO);
+      ops.tx("pay", paid.hash);
+      await deliver(ops);
+    }, done, async (receipt, ops) => {
+      if (!receipt.txs.some((t) => t.kind === "pay")) { rollback(); return; }
+      if (receipt.txs.some((t) => t.kind === "mint")) return;
+      try {
+        await deliver(ops); done(); receipt.status = "done"; delete receipt.error;
+      } catch {
+        // Always release the player and the merchant's stock, even if the refund itself fails (logged on the receipt).
+        try {
+          if (!receipt.txs.some((t) => t.kind === "refund")) {
+            const refund = await ops.call(this.chain.cfg.itemsContract, "mt_transfer",
+              { receiver_id: account, token_id: "ember", amount: String(price), memo: `refund ${jobId}` }, ONE_YOCTO);
+            ops.tx("refund", refund.hash);
+          }
+        } finally { rollback(); }
+      }
+    });
     return { status: 200, body: { jobId, price, text, speciesId: species?.id ?? "", omen: species?.omen ?? "", itemId: item.id, chain } };
   }
 
@@ -179,22 +198,41 @@ export class Shop {
     const text = `${displayName(account)} sold a ${name} talisman (${tokenId}) to ${m.name} for ${paid} Ember`;
     const game = this.gameAccount;
     const items = this.chain.cfg.itemsContract;
-    const chain = await this.chain.job("shop", jobId, account, async ({ call, relay, tx, receipt }) => {
-      receipt.tokenId = tokenId;
-      const handed = await relay(account, items, "mt_transfer", { receiver_id: game, token_id: tokenId, amount: "1", memo: `sell to ${m.id}` }, ONE_YOCTO);
-      tx("hand-over", handed.hash);
+    const payout = async ({ call, tx }: ChainJobOps) => {
       if (paid > 0) {
         if ((await this.chain.ember(game)) < paid) await call(items, "mint_ember", { to: game, amount: String(TREASURY_TOP_UP) });
         const sent = await call(items, "mt_transfer", { receiver_id: account, token_id: "ember", amount: String(paid), memo: `${m.id} buys ${tokenId}` }, ONE_YOCTO);
         tx("pay", sent.hash);
       }
-    }, () => {
+    };
+    const done = () => {
       this.pending.delete(account);
       log(this.world, { type: "trade", ward: m.ward, actor: account, text: `${text}.` });
-    }, () => {
+    };
+    const rollback = () => {
       this.pending.delete(account);
       m.ember += offer;
       m.items[idx] = { ...m.items[idx]!, stock: Math.max(0, m.items[idx]!.stock - 1) };
+    };
+    const chain = await this.chain.job("shop", jobId, account, async (ops) => {
+      ops.receipt.tokenId = tokenId;
+      const handed = await ops.relay(account, items, "mt_transfer", { receiver_id: game, token_id: tokenId, amount: "1", memo: `sell to ${m.id}` }, ONE_YOCTO);
+      ops.tx("hand-over", handed.hash);
+      await payout(ops);
+    }, done, async (receipt, ops) => {
+      if (!receipt.txs.some((t) => t.kind === "hand-over")) { rollback(); return; }
+      if (receipt.txs.some((t) => t.kind === "pay")) return;
+      try {
+        await payout(ops); done(); receipt.status = "done"; delete receipt.error;
+      } catch {
+        try {
+          if (!receipt.txs.some((t) => t.kind === "refund")) {
+            const refund = await ops.call(items, "mt_transfer",
+              { receiver_id: account, token_id: tokenId, amount: "1", memo: `refund ${jobId}` }, ONE_YOCTO);
+            ops.tx("refund", refund.hash);
+          }
+        } finally { rollback(); }
+      }
     });
     return { status: 200, body: { jobId, price: paid, text, speciesId: tal.meta.species, omen: tal.meta.omen, chain } };
   }

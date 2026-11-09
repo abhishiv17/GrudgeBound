@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isIP } from "node:net";
 import { AuthError, AuthService, SESSION_MS } from "./auth";
 
 export function sessionToken(req: IncomingMessage): string | undefined {
@@ -14,6 +15,14 @@ export function cookie(token: string, production: boolean, clear = false): strin
   return `gb_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${clear ? 0 : SESSION_MS / 1000}${production ? "; Secure" : ""}`;
 }
 
+/** Enable only behind a platform proxy that appends/overwrites XFF; never trust its left-most value. */
+export function clientIp(req: IncomingMessage, trustProxy = process.env.TRUST_PROXY === "1"): string {
+  const header = req.headers["x-forwarded-for"];
+  const last = (Array.isArray(header) ? header.join(",") : header)?.split(",").at(-1)?.trim();
+  const ip = trustProxy && last && isIP(last) ? last : req.socket.remoteAddress ?? "unknown";
+  return ip.startsWith("::ffff:") && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip;
+}
+
 /** Kept independent of the world so authentication can be exercised over HTTP in tests. */
 export async function authRoute(
   auth: AuthService, req: IncomingMessage, res: ServerResponse, path: string,
@@ -21,7 +30,7 @@ export async function authRoute(
   signInUrl: string, production: boolean,
 ): Promise<void> {
   res.setHeader("Cache-Control", "no-store");
-  const ip = req.socket.remoteAddress ?? "unknown";
+  const ip = clientIp(req);
   if (req.method === "GET" && path === "/auth/session") {
     send(200, { player: auth.authenticate(sessionToken(req)) }); return;
   }

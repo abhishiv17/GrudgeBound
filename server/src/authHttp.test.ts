@@ -9,7 +9,24 @@ import { dirname, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { GET as gatewayGet, POST as gatewayPost } from "../../client/app/api/game/[...path]/route";
+import { IncomingMessage } from "node:http";
+import { Socket } from "node:net";
+import { clientIp } from "./authHttp";
+import { AuthService } from "./auth";
 const json = async <T>(response: Response) => await response.json() as T;
+
+test("proxy sign-in buckets use the right-most IP and ignore a spoofed left-most IP", async () => {
+  const req = (header: string) => {
+    const socket = new Socket(); Object.defineProperty(socket, "remoteAddress", { value: "127.0.0.1" });
+    const request = new IncomingMessage(socket); request.headers["x-forwarded-for"] = header; return request;
+  };
+  const auth = new AuthService({ store: { data: { players: [], sessions: {} }, save() {} }, deliver: async () => {}, provision: async () => {} });
+  for (let i = 0; i < 10; i++) await auth.startEmail(`a${i}@example.com`, clientIp(req("192.0.2.1"), true));
+  await assert.rejects(auth.startEmail("spoof@example.com", clientIp(req("203.0.113.99, 192.0.2.1"), true)), { status: 429 });
+  await assert.doesNotReject(auth.startEmail("next@example.com", clientIp(req("192.0.2.2"), true)));
+  assert.equal(clientIp(req("192.0.2.2"), false), "127.0.0.1");
+  assert.equal(clientIp(req("192.0.2.2, invalid"), true), "127.0.0.1");
+});
 
 test("HTTP: email login, native approval, authorization, logout and invalid requests", { timeout: 30_000 }, async () => {
   const reservation = createServer(); await new Promise<void>((r) => reservation.listen(0, "127.0.0.1", r));

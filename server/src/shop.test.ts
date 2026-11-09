@@ -14,6 +14,7 @@ function fakeItems(ember: Record<string, number> = { [AFREEN]: 60, [GAME]: 0 }) 
   const talismans: Record<string, { token_id: string; owner: string; meta: { species: string; emotion: string; omen: string } }> = {};
   let next = 1;
   let failOn: string | null = null;
+  let mintFailures = 0, payoutFailures = 0, refundFailures = 0;
   const transfer = (from: string, to: string, token: string, amount: number) => {
     if (token === "ember") {
       if ((ember[from] ?? 0) < amount) throw new Error("not enough Ember");
@@ -30,6 +31,9 @@ function fakeItems(ember: Record<string, number> = { [AFREEN]: 60, [GAME]: 0 }) 
       await new Promise((r) => setTimeout(r, 2));
       calls.push(`game ${method}${deposit ? " +1y" : ""}`);
       if (method === failOn) throw new Error(`${method} refused`);
+      if (String(args.memo ?? "").startsWith("refund") && refundFailures-- > 0) throw new Error("refund unavailable");
+      if (method === "mint_talisman" && mintFailures-- > 0) throw new Error("mint unavailable");
+      if (method === "mt_transfer" && args.token_id === "ember" && payoutFailures-- > 0) throw new Error("payout unavailable");
       if (method === "mint_talisman") {
         const id = `tal-${next++}`;
         const meta = args.meta as { species: string; emotion: string; omen: string };
@@ -53,7 +57,9 @@ function fakeItems(ember: Record<string, number> = { [AFREEN]: 60, [GAME]: 0 }) 
       throw new Error(method);
     },
   };
-  return { calls, ember, talismans, ops, failOn: (m: string | null) => { failOn = m; } };
+  return { calls, ember, talismans, ops, failOn: (m: string | null) => { failOn = m; },
+    failMints: (n: number) => { mintFailures = n; }, failPayouts: (n: number) => { payoutFailures = n; },
+    failRefunds: (n: number) => { refundFailures = n; } };
 }
 
 function setup(ember?: Record<string, number>) {
@@ -65,9 +71,57 @@ function setup(ember?: Record<string, number>) {
   return { world, items, chain, shop, broker };
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 40));
+const settle = async (shop: Shop) => {
+  for (let i = 0; i < 200 && shop.isTrading(AFREEN); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(shop.isTrading(AFREEN), false, "trade must finish recovery");
+};
 
 describe("player shop", () => {
+  for (const failures of [1, 2]) {
+    test(`a paid buy retries delivery once; ${failures} mint failure(s)`, async () => {
+      const { items, shop, chain, broker } = setup();
+      const stock = broker.items.find((i) => i.id === "talisman-dread")!.stock;
+      items.failMints(failures);
+      const r = await shop.buy({ account: AFREEN, merchant: "broker", itemId: "talisman-dread" });
+      const a = r.body as TradeAnswer;
+      await settle(shop);
+      const receipt = chain.shopReceipt(a.jobId)!;
+      assert.equal(receipt.status, failures === 1 ? "done" : "failed");
+      assert.equal(items.ember[AFREEN], failures === 1 ? 60 - a.price : 60);
+      assert.equal(receipt.txs.filter((t) => t.kind === "refund").length, failures === 1 ? 0 : 1);
+      assert.equal(broker.items.find((i) => i.id === "talisman-dread")!.stock, stock - (failures === 1 ? 1 : 0));
+      assert.equal(shop.isTrading(AFREEN), false);
+    });
+    test(`a handed-over sell retries payout once; ${failures} payout failure(s)`, async () => {
+      const { items, shop, chain, broker } = setup({ [AFREEN]: 0, [GAME]: 1000 });
+      items.talismans["tal-9"] = { token_id: "tal-9", owner: AFREEN, meta: { species: "weepwick", emotion: "sorrow", omen: "whisper" } };
+      const purse = broker.ember;
+      items.failPayouts(failures);
+      const r = await shop.sell({ account: AFREEN, merchant: "broker", tokenId: "tal-9" });
+      const a = r.body as TradeAnswer;
+      await settle(shop);
+      const receipt = chain.shopReceipt(a.jobId)!;
+      assert.equal(receipt.status, failures === 1 ? "done" : "failed");
+      assert.equal(items.talismans["tal-9"]!.owner, failures === 1 ? GAME : AFREEN);
+      assert.equal(items.ember[AFREEN], failures === 1 ? a.price : 0);
+      assert.equal(receipt.txs.filter((t) => t.kind === "refund").length, failures === 1 ? 0 : 1);
+      assert.equal(broker.ember, failures === 1 ? purse - a.price : purse);
+      assert.equal(shop.isTrading(AFREEN), false);
+    });
+  }
+  test("a failed refund still releases the player and restores the stock", async () => {
+    const { items, shop, chain, broker } = setup();
+    const stock = broker.items.find((i) => i.id === "talisman-dread")!.stock;
+    items.failMints(2);
+    items.failRefunds(1);
+    const r = await shop.buy({ account: AFREEN, merchant: "broker", itemId: "talisman-dread" });
+    await settle(shop);
+    const receipt = chain.shopReceipt((r.body as TradeAnswer).jobId)!;
+    assert.equal(receipt.status, "failed");
+    assert.match(receipt.error ?? "", /refund unavailable/);
+    assert.equal(broker.items.find((i) => i.id === "talisman-dread")!.stock, stock);
+    assert.equal(shop.isTrading(AFREEN), false);
+  });
   test("buying a talisman: Ember to the game master, a talisman minted, stock and price move", async () => {
     const { items, chain, shop, broker, world } = setup();
     const it = broker.items.find((i) => i.id === "talisman-sorrow")!;
@@ -78,7 +132,7 @@ describe("player shop", () => {
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const a = r.body as TradeAnswer;
     assert.equal(a.price, before);
-    await settle();
+    await settle(shop);
     assert.deepEqual(items.calls, [`${AFREEN} mt_transfer +1y`, "game mint_talisman"]);
     const receipt = chain.shopReceipt(a.jobId)!;
     assert.equal(receipt.status, "done");
@@ -101,7 +155,7 @@ describe("player shop", () => {
     const r = await shop.sell({ account: AFREEN, merchant: "broker", tokenId: "tal-9" });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const a = r.body as TradeAnswer;
-    await settle();
+    await settle(shop);
     assert.equal(chain.shopReceipt(a.jobId)!.status, "done");
     assert.equal(items.talismans["tal-9"]!.owner, GAME);
     assert.equal(items.ember[AFREEN], a.price);
@@ -132,7 +186,7 @@ describe("player shop", () => {
     const purse = broker.ember;
     const r = await shop.buy({ account: AFREEN, merchant: "broker", itemId: "talisman-dread" });
     assert.equal(r.status, 200);
-    await settle();
+    await settle(shop);
     assert.equal(it().stock, stock);
     assert.equal(broker.ember, purse);
   });

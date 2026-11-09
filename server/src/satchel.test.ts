@@ -20,6 +20,12 @@ import { checkBattle } from "./replay";
 const ACCOUNT = "alice.gb.testnet", OTHER = "bob.gb.testnet", GAME = "gb.testnet";
 const cfg = { network: "testnet", itemsContract: "items.gb.testnet", riteContract: "rite.gb.testnet", guestAccount: ACCOUNT };
 
+test("fifty rests leave the shared event feed unchanged", async () => {
+  const s = setup(); const before = structuredClone(s.world.events);
+  for (let i = 0; i < 50; i++) await s.satchels.rest(ACCOUNT);
+  assert.deepEqual(s.world.events, before);
+});
+
 function setup(file?: string) {
   const world = createWorld(7);
   const tokens: ChainTalisman[] = Array.from({ length: 7 }, (_, i) => ({ token_id: `tal-${i + 1}`, owner: ACCOUNT,

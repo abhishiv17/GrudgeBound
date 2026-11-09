@@ -10,6 +10,8 @@ const AFREEN = "afreen.gb.testnet";
 /** A fake rite contract: points per account, rules, and every call recorded. */
 function fakeRite(points: Record<string, number> = { [AFREEN]: 120 }) {
   const calls: string[] = [];
+  /** resolve_rule failures to inject: "before" = refused, "after" = applied but the answer was lost. */
+  const resolveFailures: ("before" | "after")[] = [];
   const rules: { id: number; template_id: string; params: string; author: string; cost: number; status: string }[] = [];
   const cost = () => 50 + 25 * rules.filter((r) => r.status === "Active").length;
   const ops: ChainOps = {
@@ -17,9 +19,13 @@ function fakeRite(points: Record<string, number> = { [AFREEN]: 120 }) {
       await new Promise((r) => setTimeout(r, 2));
       calls.push(`game ${method}`);
       if (method === "resolve_rule") {
+        const failure = resolveFailures.shift();
+        if (failure === "before") throw new Error("rpc timeout");
         const rule = rules[args.rule_id as number]!;
+        if (rule.status !== "Pending") throw new Error("rule is not pending");
         rule.status = args.accepted ? "Active" : "Rejected";
         if (!args.accepted) points[rule.author] = (points[rule.author] ?? 0) + rule.cost;
+        if (failure === "after") throw new Error("rpc timeout");
       }
       return { hash: `h${calls.length}`, result: null };
     },
@@ -43,18 +49,20 @@ function fakeRite(points: Record<string, number> = { [AFREEN]: 120 }) {
       if (method === "get_points") return points[args.account_id as string] ?? 0;
       if (method === "rule_cost") return cost();
       if (method === "get_active_rules") return rules.filter((r) => r.status === "Active");
+      if (method === "get_rules") return rules.slice(args.from_index as number, (args.from_index as number) + (args.limit as number));
       throw new Error(method);
     },
   };
-  return { calls, rules, points, ops };
+  return { calls, rules, points, ops, resolveFailures };
 }
 
 function setup(points?: Record<string, number>) {
   const world = createWorld(7);
   const rite = fakeRite(points);
   const chain = new ChainWriter(CFG, rite.ops);
-  const rules = new ChainRules(world, chain, (a) => a.endsWith(".gb.testnet"));
-  return { world, rite, chain, rules };
+  let time = 0;
+  const rules = new ChainRules(world, chain, (a) => a.endsWith(".gb.testnet"), { cooldownMs: 60_000, now: () => time });
+  return { world, rite, chain, rules, advance: () => { time += 60_000; } };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 40));
@@ -62,6 +70,56 @@ const PVP_BAN = { templateId: "R8", params: { ward: "lantern" } };
 const PVP_BONUS = { templateId: "R1", params: { action: "pvp", ward: "lantern", multiplier: 2 } };
 
 describe("rules through the rite contract", () => {
+  test("one pending proposal per account, then a cooldown, including concurrent checks", async () => {
+    const { rules, advance } = setup({ [AFREEN]: 500 });
+    const first = rules.propose({ account: AFREEN, ...PVP_BAN });
+    assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 409);
+    await first;
+    assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 409);
+    await settle();
+    assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 429);
+    advance();
+    assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 200);
+    await settle();
+  });
+
+  test("concurrent contradictory proposals reserve accepted rules before resolution", async () => {
+    const bob = "bob.gb.testnet";
+    const { world, rules, rite } = setup({ [AFREEN]: 500, [bob]: 500 });
+    const results = await Promise.all([rules.propose({ account: AFREEN, ...PVP_BAN }), rules.propose({ account: bob, ...PVP_BONUS })]);
+    assert.deepEqual(results.map((r) => (r.body as ProposeAnswer).accepted), [true, false]);
+    assert.equal(world.rules.length, 0);
+    await settle();
+    assert.equal(world.rules.length, 1);
+    assert.deepEqual(rite.rules.map((r) => r.status), ["Active", "Rejected"]);
+  });
+  test("a failed verdict is settled once more, and a verdict whose answer was lost is not sent twice", async () => {
+    for (const failure of ["before", "after"] as const) {
+      const { world, rite, chain, rules, advance } = setup({ [AFREEN]: 500 });
+      rite.resolveFailures.push(failure);
+      const r = await rules.propose({ account: AFREEN, ...PVP_BAN });
+      await settle();
+      const receipt = chain.ruleReceipt((r.body as ProposeAnswer).jobId)!;
+      assert.equal(receipt.status, "done", failure);
+      assert.equal(rite.rules[0]!.status, "Active");
+      assert.equal(world.rules.length, 1, "enacted exactly once");
+      assert.equal(rite.calls.filter((c) => c === "game resolve_rule").length, failure === "before" ? 2 : 1);
+      advance();
+      assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 200, "the proposal slot is free again");
+      await settle();
+    }
+  });
+
+  test("when the second try fails too, the proposal stays reserved (its verdict is uncertain)", async () => {
+    const { rite, chain, rules, advance } = setup({ [AFREEN]: 500 });
+    rite.resolveFailures.push("before", "before");
+    const r = await rules.propose({ account: AFREEN, ...PVP_BAN });
+    await settle();
+    assert.equal(chain.ruleReceipt((r.body as ProposeAnswer).jobId)!.status, "failed");
+    advance();
+    assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 409);
+  });
+
   test("an accepted rule is relayed for the player, resolved by the game master, then in force in the world", async () => {
     const { world, rite, chain, rules } = setup();
     const r = await rules.propose({ account: AFREEN, ...PVP_BAN });
@@ -84,9 +142,10 @@ describe("rules through the rite contract", () => {
   });
 
   test("a contradiction is rejected on chain with Kessa's reason, refunded, and stays out of the world", async () => {
-    const { world, rite, rules } = setup({ [AFREEN]: 200 });
+    const { world, rite, rules, advance } = setup({ [AFREEN]: 200 });
     await rules.propose({ account: AFREEN, ...PVP_BAN });
     await settle();
+    advance();
     const r = await rules.propose({ account: AFREEN, ...PVP_BONUS });
     const a = r.body as ProposeAnswer;
     assert.equal(a.accepted, false);

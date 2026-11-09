@@ -15,7 +15,7 @@
 import { randomUUID } from "node:crypto";
 import {
   arbiterCheck, enactRule, repealRule, log, REPEAL_MULTIPLIER, paramLabel, renderRule, ruleCost, RULE_TEMPLATES, validateParams,
-  type RuleParams, type World,
+  type Rule, type RuleParams, type World,
 } from "@grudgebound/shared";
 import { isAccountId, type ChainReceipt, type ChainRule, type ChainWriter } from "./chain";
 
@@ -111,7 +111,17 @@ export async function rulesOverview(
 }
 
 /** "afreen.grudgebound.testnet" -> "Afreen" for Kessa's lines. */
+const knownNames = new Map<string, string>();
+const agentIds = new Map<string, string>();
+/** An AI agent's chain account: shown by its name, and rules it passes credit the agent in the world. */
+export function registerAgentAccount(account: string, participantId: string, name: string): void {
+  knownNames.set(account, name);
+  agentIds.set(account, participantId);
+}
+
 export function displayName(account: string): string {
+  const known = knownNames.get(account);
+  if (known) return known;
   const first = account.split(".")[0] ?? account;
   return first.charAt(0).toUpperCase() + first.slice(1);
 }
@@ -131,13 +141,19 @@ export class ChainRules {
   private readonly enacted = new Map<number, number>();
   /** Rite rule ids with a repeal on its way, so the same rule isn't paid for twice. */
   private readonly repealing = new Set<number>();
+  private readonly checking = new Set<string>();
+  private readonly pending = new Map<string, { jobId: string; rule?: Rule }>();
+  private readonly proposedAt = new Map<string, number>();
 
   constructor(
     private readonly world: World,
     private readonly chain: ChainWriter,
     /** Can the server sign for this account? (custodial demo players) */
     private readonly canSignFor: (account: string) => boolean,
-  ) {}
+    private readonly limits = { cooldownMs: Number(process.env.RULE_PROPOSAL_COOLDOWN_MS ?? 60_000), now: Date.now },
+  ) {
+    if (!Number.isFinite(limits.cooldownMs) || limits.cooldownMs < 0) throw new Error("Invalid RULE_PROPOSAL_COOLDOWN_MS");
+  }
 
   /** Puts a rule that is in force on chain into the world, once. Returns false for rules it can't read. */
   enact(r: Pick<ChainRule, "id" | "template_id" | "params" | "author" | "cost">): boolean {
@@ -146,7 +162,7 @@ export class ChainRules {
     let params: RuleParams | null;
     try { params = parseParams(JSON.parse(r.params)); } catch { params = null; }
     if (!params || validateParams(r.template_id, params).length) return false;
-    const rule = enactRule(this.world, { author: r.author, authorName: displayName(r.author), templateId: r.template_id, params, cost: r.cost });
+    const rule = enactRule(this.world, { author: agentIds.get(r.author) ?? r.author, authorName: displayName(r.author), templateId: r.template_id, params, cost: r.cost });
     this.enacted.set(r.id, rule.id);
     return true;
   }
@@ -213,6 +229,21 @@ export class ChainRules {
   }
 
   async propose(body: unknown): Promise<Answer<ProposeAnswer>> {
+    const account = body && typeof body === "object" ? (body as Record<string, unknown>).account : undefined;
+    if (!isAccountId(account)) return fail(400, "account must be a NEAR account id");
+    // A failure after propose but before resolve remains reserved: its final verdict is uncertain.
+    for (const [a, p] of this.pending) {
+      const r = this.chain.ruleReceipt(p.jobId);
+      if (r?.status === "failed" && !r.txs.some((t) => t.kind === "propose")) this.pending.delete(a);
+    }
+    if (this.checking.has(account) || this.pending.has(account)) return fail(409, "Wait for your previous rule's receipt.");
+    const last = this.proposedAt.get(account);
+    if (last !== undefined && this.limits.now() - last < this.limits.cooldownMs) return fail(429, "Wait before proposing another rule.");
+    this.checking.add(account);
+    try { return await this.proposeChecked(body); } finally { this.checking.delete(account); }
+  }
+
+  private async proposeChecked(body: unknown): Promise<Answer<ProposeAnswer>> {
     const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
     const account = b.account;
     if (!isAccountId(account)) return fail(400, "account must be a NEAR account id");
@@ -238,7 +269,8 @@ export class ChainRules {
     }
     if (points < cost) return fail(402, `A rule costs ${cost} points; ${displayName(account)} has ${points}.`);
 
-    const verdict = arbiterCheck(templateId, params, this.world.rules);
+    const verdict = arbiterCheck(templateId, params, [...this.world.rules,
+      ...[...this.pending.values()].flatMap((p) => p.rule ? [p.rule] : [])]);
     const accepted = verdict.accepted;
     const reason = verdict.accepted
       ? verdict.cruel ? "Accepted. The Wards it touches will not forget it." : "Accepted."
@@ -246,8 +278,13 @@ export class ChainRules {
     const text = renderRule(templateId, params);
     const jobId = randomUUID();
     const name = displayName(account);
+    this.proposedAt.set(account, this.limits.now());
+    this.pending.set(account, { jobId, ...(accepted ? { rule: {
+      id: -1, author: account, templateId, params, cost, addedAtTick: this.world.tick,
+    } } : {}) });
 
     const chain = await this.chain.proposeRule({ jobId, account, templateId, params, accepted, reason }, (chainRuleId) => {
+      this.pending.delete(account);
       if (accepted) this.enact({ id: chainRuleId, template_id: templateId, params: JSON.stringify(params), author: account, cost });
       else log(this.world, { type: "rule-rejected", actor: account, text: `Kessa rejects ${name}'s rule "${text}": ${reason} (points refunded)` });
     });

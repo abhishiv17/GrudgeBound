@@ -42,6 +42,11 @@ export class EncryptedAuthStore implements AuthStore {
 }
 
 export function authStoreFromEnv(env: NodeJS.ProcessEnv = process.env): EncryptedAuthStore {
+  return new EncryptedAuthStore(resolve(env.AUTH_STORE_PATH || "data/auth.enc"), authKeyFromEnv(env));
+}
+
+/** The auth store's 32-byte key (AUTH_SECRET, or the local development key file). Other encrypted stores reuse it. */
+export function authKeyFromEnv(env: NodeJS.ProcessEnv = process.env): Buffer {
   const file = resolve(env.AUTH_STORE_PATH || "data/auth.enc");
   let keyHex = env.AUTH_SECRET;
   if (keyHex && !/^[a-fA-F0-9]{64}$/.test(keyHex)) throw new Error("AUTH_SECRET must be 64 hexadecimal characters");
@@ -55,7 +60,7 @@ export function authStoreFromEnv(env: NodeJS.ProcessEnv = process.env): Encrypte
     keyHex = readFileSync(keyFile, "utf8").trim();
     if (!/^[a-fA-F0-9]{64}$/.test(keyHex)) throw new Error("Invalid local auth store key");
   }
-  return new EncryptedAuthStore(file, Buffer.from(keyHex, "hex"));
+  return Buffer.from(keyHex, "hex");
 }
 
 export type DeliverCode = (email: string, code: string) => Promise<void>;

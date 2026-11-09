@@ -31,7 +31,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import {
-  createWorld, createRng, step, summarize, log,
+  createWorld, createRng, step, summarize, log, scriptedPolicy,
   DEFAULT_REAL_MS_PER_TICK, DEMO_SEED,
 } from "@grudgebound/shared";
 import { llmConfigFromEnv, priceTooltip, type Tooltip } from "@grudgebound/agents";
@@ -42,11 +42,13 @@ import { playerView } from "./player";
 import { describeChainEvent } from "./chainEvents";
 import { BattleArchive } from "./battleArchive";
 import { Shop } from "./shop";
-import { AuthError, AuthService, authStoreFromEnv, emailDelivery, playerBody } from "./auth";
+import { AuthError, AuthService, authKeyFromEnv, authStoreFromEnv, emailDelivery, playerBody } from "./auth";
+import { AgentChain, DEFAULT_AGENT_LIMITS, EncryptedAgentStore } from "./agentChain";
 import { authRoute, sessionToken } from "./authHttp";
 import { playerKeyResolver, playerProvisioner } from "./playerAccounts";
 import { Vows } from "./vows";
 import { STARTER_KIT, Satchels } from "./satchel";
+import { Observatory, observatoryPreview } from "./observatory";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TICK_MS = Number(process.env.TICK_MS ?? DEFAULT_REAL_MS_PER_TICK);
@@ -65,7 +67,12 @@ const authStore = authStoreFromEnv();
 const world = createWorld(SEED);
 const rng = createRng(SEED);
 
-setInterval(() => step(world, rng), TICK_MS);
+const observatory = new Observatory(world);
+/** AI agents acting through their own NEAR accounts (set below when the chain is on; AGENT_CHAIN=off disables). */
+let agentChain: AgentChain | null = null;
+let agentHooks: ReturnType<AgentChain["hooks"]> | undefined;
+function tick() { step(world, rng, scriptedPolicy, agentHooks); observatory.sample(); agentChain?.afterStep(); }
+setInterval(tick, TICK_MS);
 
 const CORS = {
   "Access-Control-Allow-Origin": signInUrl.origin,
@@ -105,7 +112,11 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 const chainCfg = chainConfigFromEnv();
-if (chainCfg && process.env.AUTH_KEY_MODE === "server") chainCfg.playerKey = playerKeyResolver(authStore);
+if (chainCfg) {
+  // Agents sign with a limited key per contract; players (server-held testnet keys) with their own key.
+  const playerKeys = process.env.AUTH_KEY_MODE === "server" ? playerKeyResolver(authStore) : undefined;
+  chainCfg.playerKey = (account, contractId) => agentChain?.keyFor(account, contractId) ?? playerKeys?.(account);
+}
 const chain = chainCfg ? new ChainWriter(chainCfg) : null;
 const auth = new AuthService({ store: authStore, deliver: emailDelivery(), provision: playerProvisioner(chain, chainCfg, process.env.AUTH_KEY_MODE),
   isPlayerReady: (p) => !chainCfg ? p.account.endsWith(".offline") : process.env.AUTH_KEY_MODE === "server" && !!p.signingKey && p.account.endsWith(`.${chainCfg.gameAccount}`),
@@ -131,6 +142,16 @@ const satchels = new Satchels(world, chain, {
 const battles = new BattleSessions(world, { satchels });
 const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
 const playerShop = chain && chainCfg ? new Shop(world, chain, chainCfg.gameAccount, canSignFor, undefined, satchels) : null;
+if (chain && chainCfg && chainCfg.network === "testnet" && process.env.AGENT_CHAIN !== "off") {
+  const storeFile = process.env.AGENT_STORE_PATH || join(dirname(resolve(process.env.AUTH_STORE_PATH || "data/auth.enc")), "agents.enc");
+  const num = (v: string | undefined, d: number) => (v !== undefined && v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
+  agentChain = new AgentChain(world, chain, chainRules, new EncryptedAgentStore(storeFile, authKeyFromEnv()), {
+    gameAccount: chainCfg.gameAccount, network: chainCfg.network,
+    limits: { dailyEmberCap: num(process.env.AGENT_DAILY_EMBER_CAP, DEFAULT_AGENT_LIMITS.dailyEmberCap),
+      actionsPerDay: num(process.env.AGENT_ACTIONS_PER_DAY, DEFAULT_AGENT_LIMITS.actionsPerDay) },
+  });
+  agentHooks = agentChain.hooks();
+}
 const vows = new Vows(world, chain, canSignFor, TICK_MS);
 let vowsSweeping = false;
 function sweepVows() {
@@ -229,6 +250,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(204, CORS);
     return res.end();
   }
+  if (req.method === "GET" && url.pathname === "/observatory") {
+    const mode = url.searchParams.get("mode") ?? "live";
+    if (mode !== "live" && mode !== "preview") return send(res, 400, { error: "mode must be live or preview" });
+    return send(res, 200, mode === "preview" ? observatoryPreview() : observatory.view());
+  }
   if (url.pathname.startsWith("/auth/")) {
     return authRoute(auth, req, res, url.pathname, () => readJson(req), (status, body) => send(res, status, body), SIGN_IN_URL, !DEV);
   }
@@ -313,10 +339,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "POST" && (url.pathname === "/rules/propose" || url.pathname === "/rules/repeal")) {
     const player = auth.authenticate(sessionToken(req));
     if (!chainRules) return send(res, 503, { error: "rules go through the rite contract, and this server runs off-chain" });
-    const body = playerBody(await readJson(req), player);
-    const r = await (url.pathname === "/rules/propose" ? chainRules.propose(body) : chainRules.repeal(body));
-    send(res, r.status, r.body);
-    return;
+    return playerAction(player.account, async () => {
+      outsideBattle(player.account);
+      const body = playerBody(await readJson(req), player);
+      const r = await (url.pathname === "/rules/propose" ? chainRules.propose(body) : chainRules.repeal(body));
+      return send(res, r.status, r.body);
+    });
   }
   if (req.method === "GET" && url.pathname === "/player") {
     const player = auth.authenticate(sessionToken(req));
@@ -355,6 +383,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     const receipt = chain.receipt(id);
     return receipt ? send(res, 200, receipt) : send(res, 404, { error: "no chain receipt for that battle" });
   }
+  if (req.method === "GET" && url.pathname === "/agents") {
+    // Chain words are fine here: the Unreal UI translates them (P3-U2). Keys are never part of this view.
+    return send(res, 200, { enabled: !!agentChain, agents: agentChain ? await agentChain.view() : [] });
+  }
   if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { ok: true, tick: world.tick });
   if (req.method === "GET" && url.pathname === "/curses") return send(res, 200, curseCatalog());
   if (req.method === "GET" && url.pathname === "/state") return send(res, 200, summarize(world));
@@ -364,7 +396,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
   if (req.method === "POST" && url.pathname === "/tick" && DEV) {
     auth.authenticate(sessionToken(req));
-    step(world, rng);
+    tick();
     return send(res, 200, summarize(world));
   }
   send(res, 404, { error: "not found" });
@@ -394,4 +426,8 @@ createServer((req, res) => {
   console.log(llm ? `Merchant tooltips: NEAR AI Cloud (${llm.model})` : "Merchant tooltips: formula reasons (no NEAR_AI_* settings in .env)");
   sweepVows();
   setInterval(sweepVows, Math.max(1000, Math.min(TICK_MS, 30_000))).unref();
+  if (agentChain) {
+    console.log("Agents: acting through their own testnet accounts (AGENT_CHAIN=off to keep them in the simulation)");
+    void agentChain.provision();
+  }
 });

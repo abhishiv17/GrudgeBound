@@ -202,7 +202,6 @@ export class Satchels {
       p.personalTick = (Math.floor((clock - 6) / TICKS_PER_DAY) + 1) * TICKS_PER_DAY + 6;
     });
     const personalTick = this.read(account).personalTick;
-    log(this.world, { type: "rest", actor: account, text: `${displayName(account)} rested until morning.` });
     return { personalTick, hour: 6, ink: Object.fromEntries(owned.map((t) => [t.tokenId, this.inkFor(account, t)])) };
   }
   async useSalve(account: string, tokenId: unknown) {

@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 /** What callFunctionRaw / signAndSendTransaction resolve to (near-api-js does not export the type by name). */
 type RpcTransactionResponse = Awaited<ReturnType<Account["signAndSendTransaction"]>>;
-import { Account, JsonRpcProvider, KeyPairSigner, actions, getTransactionLastResult, type KeyPairString } from "near-api-js";
+import { Account, JsonRpcProvider, KeyPairSigner, PublicKey, actions, getTransactionLastResult, type KeyPairString } from "near-api-js";
 import type { Combatant, Omen, PlayerAction } from "@grudgebound/shared";
 
 export interface ChainConfig {
@@ -38,8 +38,8 @@ export interface ChainConfig {
   relayerAccount: string;
   /** From NEAR_RELAYER_PRIVATE_KEY; else read from the keychain when first needed. */
   relayerKey?: KeyPairString;
-  /** Optional encrypted-store signer for authenticated testnet players. Never exposed over HTTP. */
-  playerKey?: (account: string) => KeyPairString | undefined;
+  /** Optional encrypted-store signer for authenticated testnet players (and agents, per contract). Never exposed over HTTP. */
+  playerKey?: (account: string, contractId?: string) => KeyPairString | undefined;
 }
 
 /** A rule as the rite contract returns it. */
@@ -79,7 +79,7 @@ export interface BattleRecord {
 }
 
 export interface ChainTx {
-  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over" | "swear" | "settle";
+  kind: "mint" | "points" | "propose" | "resolve" | "repeal" | "pay" | "hand-over" | "swear" | "settle" | "refund" | "fund";
   hash: string;
   url: string;
 }
@@ -178,6 +178,20 @@ export interface ChainOps {
   relay: RelayCall;
   view: ViewCall;
   createAccount?: (account: string, publicKey: string) => Promise<void>;
+  /**
+   * Creates `account` in ONE transaction with only function-call keys (no full-access key): each key may call
+   * only `methods` on `contractId`. Idempotent: returns if the first key is already on the account.
+   */
+  createLimitedAccount?: (account: string, keys: LimitedKey[]) => Promise<void>;
+}
+
+/** A function-call access key: `publicKey` may call only `methods` on `contractId`. */
+export interface LimitedKey { publicKey: string; contractId: string; methods: string[] }
+
+export interface ChainJobOps {
+  call: ContractCall; relay: RelayCall;
+  tx: (kind: ChainTx["kind"], hash: string) => void;
+  receipt: ChainReceipt;
 }
 
 const GAS = 30_000_000_000_000n;
@@ -236,6 +250,21 @@ function nearOps(cfg: ChainConfig): ChainOps {
         try { await provider.viewAccessKey({ accountId: account, publicKey }); } catch { throw e; }
       }
     },
+    async createLimitedAccount(account, keys) {
+      if (!keys.length) throw new Error("a limited account needs at least one key");
+      try { await provider.viewAccessKey({ accountId: account, publicKey: keys[0]!.publicKey }); return; } catch { /* create below */ }
+      try {
+        const res = await game.signAndSendTransaction({ receiverId: account, actions: [
+          actions.createAccount(),
+          actions.transfer(50_000_000_000_000_000_000_000n),
+          // Gas is paid by the relayer; the allowance only bounds fees if the key ever signs directly.
+          ...keys.map((k) => actions.addFunctionCallAccessKey(PublicKey.fromString(k.publicKey), k.contractId, k.methods, 250_000_000_000_000_000_000_000n)),
+        ] });
+        checkReceipts(res);
+      } catch (e) {
+        try { await provider.viewAccessKey({ accountId: account, publicKey: keys[0]!.publicKey }); } catch { throw e; }
+      }
+    },
     async call(contractId, methodName, args, deposit = 0n) {
       const res = await game.callFunctionRaw({ contractId, methodName, args, gas: GAS, deposit });
       checkReceipts(res);
@@ -243,12 +272,14 @@ function nearOps(cfg: ChainConfig): ChainOps {
     },
     async relay(player, contractId, methodName, args, deposit = 0n) {
       if (!relayer) throw new Error(`no key for the relayer ${cfg.relayerAccount}`);
-      let acct = players.get(player);
+      // Agents hold one limited key per contract, so the signer depends on the receiving contract.
+      const key = cfg.playerKey?.(player, contractId) ?? custodialKey(cfg, player);
+      if (!key) throw new Error(`the server holds no key for ${player}`);
+      const cacheKey = `${player}|${key}`;
+      let acct = players.get(cacheKey);
       if (!acct) {
-        const key = cfg.playerKey?.(player) ?? custodialKey(cfg, player);
-        if (!key) throw new Error(`the server holds no key for ${player}`);
         acct = new Account(player, provider, KeyPairSigner.fromSecretKey(key));
-        players.set(player, acct);
+        players.set(cacheKey, acct);
       }
       const { signedDelegate } = await acct.createSignedMetaTransaction({
         receiverId: contractId,
@@ -293,6 +324,7 @@ export class ChainWriter {
   private readonly relay: RelayCall;
   private readonly view: ViewCall;
   private readonly createAccount: (account: string, publicKey: string) => Promise<void>;
+  private readonly createLimitedAccount: (account: string, keys: LimitedKey[]) => Promise<void>;
   private readonly eventListeners: ((events: ChainEvent[]) => void)[] = [];
 
   constructor(
@@ -310,6 +342,7 @@ export class ChainWriter {
     this.relay = async (...a) => this.emitEvents(await relay(...a));
     this.view = given.view ?? ((...a) => real().view(...a));
     this.createAccount = given.createAccount ?? ((...a) => real().createAccount!(...a));
+    this.createLimitedAccount = given.createLimitedAccount ?? ((...a) => real().createLimitedAccount!(...a));
   }
 
   /** Called with the NEP-297 events of every transaction this writer sends. */
@@ -377,12 +410,35 @@ export class ChainWriter {
         receipt.status = "done";
         onResolved(ruleId);
       } catch (e) {
+        // Proposed but the verdict didn't land (or its answer was lost): settle it once more before giving up, so
+        // the author's proposal slot isn't held until a restart.
+        if (receipt.ruleId !== undefined && receipt.status === "pending" && await this.finishResolve(p, receipt, onResolved)) return;
         receipt.status = "failed";
         receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         console.warn(`[chain] rule ${p.jobId}: ${receipt.error}`);
       }
     });
     return this.settle(work, receipt, waitMs);
+  }
+
+  /** Reads the proposed rule back; resolves it if still Pending, or accepts a verdict that did land. */
+  private async finishResolve(p: RuleProposal, receipt: ChainReceipt, onResolved: (chainRuleId: number) => void): Promise<boolean> {
+    const ruleId = receipt.ruleId!;
+    try {
+      const [rule] = (await this.view(this.cfg.riteContract, "get_rules", { from_index: ruleId, limit: 1 })) as { id: number; status: string }[];
+      if (!rule || rule.id !== ruleId) return false;
+      if (rule.status === "Pending") {
+        const resolved = await this.call(this.cfg.riteContract, "resolve_rule", { rule_id: ruleId, accepted: p.accepted, reason: p.reason });
+        receipt.txs.push({ kind: "resolve", hash: resolved.hash, url: explorerTxUrl(this.cfg.network, resolved.hash) });
+      } else if (rule.status !== (p.accepted ? "Active" : "Rejected")) {
+        return false; // someone else changed it: leave it for a person to look at
+      }
+      receipt.status = "done";
+      onResolved(ruleId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -443,12 +499,12 @@ export class ChainWriter {
    * succeed, or `onFail` if one throws. The steps push their own transactions with `tx`.
    */
   job(
-    kind: "shop" | "vow",
+    kind: "shop" | "vow" | "agent",
     id: string,
     account: string,
-    steps: (ops: { call: ContractCall; relay: RelayCall; tx: (k: ChainTx["kind"], hash: string) => void; receipt: ChainReceipt }) => Promise<void>,
+    steps: (ops: ChainJobOps) => Promise<void>,
     onDone: (receipt: ChainReceipt) => void,
-    onFail: (receipt: ChainReceipt) => void = () => {},
+    onFail: (receipt: ChainReceipt, ops: ChainJobOps) => void | Promise<void> = () => {},
     waitMs = 0,
   ): Promise<ChainReceipt> {
     const receipt: ChainReceipt = { status: "pending", network: this.cfg.network, account, txs: [] };
@@ -460,10 +516,13 @@ export class ChainWriter {
         receipt.status = "done";
         onDone(receipt);
       } catch (e) {
-        receipt.status = "failed";
         receipt.error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
         console.warn(`[chain] ${kind} ${id}: ${receipt.error}`);
-        onFail(receipt);
+        // Recovery uses this same queue slot, so no other trade can spend the refund first.
+        receipt.status = "pending";
+        try { await onFail(receipt, { call: this.call, relay: this.relay, tx, receipt }); }
+        catch (recovery) { receipt.error = `${receipt.error}; recovery: ${recovery instanceof Error ? recovery.message : String(recovery)}`.slice(0, 300); }
+        if (receipt.status === "pending") receipt.status = "failed";
       }
     });
     return this.settle(work, receipt, waitMs);
@@ -521,6 +580,19 @@ export class ChainWriter {
     const next = this.queue.then(job, job);
     this.queue = next.catch(() => undefined);
     return next;
+  }
+
+  /** An AI agent's account: function-call keys only, created on the game master's write queue. Testnet only. */
+  provisionLimitedAccount(account: string, keys: LimitedKey[]): Promise<void> {
+    if (this.cfg.network !== "testnet" || !this.cfg.gameAccount || !account.endsWith(`.${this.cfg.gameAccount}`) || !isAccountId(account)) {
+      return Promise.reject(new Error("Agent provisioning is restricted to this game's testnet sub-accounts"));
+    }
+    return this.enqueue(() => this.createLimitedAccount(account, keys));
+  }
+
+  /** An agent chain action's receipt (GET /chain?agent=<id>). */
+  agentReceipt(id: string): ChainReceipt | undefined {
+    return this.receipts.get(`agent:${id}`);
   }
 
   /** Account funding shares the game master's write queue with battle rewards and shop settlement. */
