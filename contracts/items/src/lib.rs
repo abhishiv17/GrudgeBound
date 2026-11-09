@@ -136,6 +136,23 @@ impl Items {
         emit("mt_transfer", data);
     }
 
+    /// Pays Ember to the game master (the minter) without an attached deposit, so an account holding only a
+    /// function-call key for this contract can buy from the game. NEAR forbids deposits under function-call keys,
+    /// and `mt_transfer` needs 1 yoctoNEAR. The receiver is fixed, so a leaked limited key can only pay the house.
+    pub fn pay_minter(&mut self, amount: U128, memo: Option<String>) {
+        let sender = env::predecessor_account_id();
+        require!(sender != self.minter, "the minter cannot pay itself");
+        require!(amount.0 > 0, "amount must be positive");
+        let minter = self.minter.clone();
+        self.sub(EMBER, &sender, amount.0);
+        self.add(EMBER, &minter, amount.0);
+        let data = json!({
+            "old_owner_id": sender, "new_owner_id": minter,
+            "token_ids": [EMBER], "amounts": [amount.0.to_string()], "memo": memo,
+        });
+        emit("mt_transfer", data);
+    }
+
     // ------------------------------------------------------------------ views
 
     pub fn mt_balance_of(&self, account_id: AccountId, token_id: TokenId) -> U128 {
@@ -318,6 +335,33 @@ mod tests {
         let id = c.mint_talisman(accounts(1), meta("weepwick"));
         as_caller(accounts(1), 0);
         c.mt_transfer(accounts(2), id, U128(1), None);
+    }
+
+    #[test]
+    fn pay_minter_moves_ember_to_the_game_without_a_deposit() {
+        let mut c = setup();
+        as_caller(accounts(0), 0);
+        c.mint_ember(accounts(1), U128(50));
+        as_caller(accounts(1), 0);
+        c.pay_minter(U128(20), Some("agent buy blank-talisman".into()));
+        assert_eq!(c.mt_balance_of(accounts(1), EMBER.into()).0, 30);
+        assert_eq!(c.mt_balance_of(accounts(0), EMBER.into()).0, 20);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient balance")]
+    fn pay_minter_needs_the_ember() {
+        let mut c = setup();
+        as_caller(accounts(1), 0);
+        c.pay_minter(U128(1), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "the minter cannot pay itself")]
+    fn the_minter_cannot_pay_itself() {
+        let mut c = setup();
+        as_caller(accounts(0), 0);
+        c.pay_minter(U128(1), None);
     }
 
     #[test]

@@ -79,6 +79,10 @@ near contract deploy rite.grudgebound.testnet use-file target/near/grudgebound_r
 ```
 
 Upgrade the code later: same command with `without-init-call` instead of `with-init-call ... attached-deposit '0 NEAR'`.
+
+`items.pay_minter(amount, memo)` (added 9 Nov) moves the caller's Ember to the minter without a deposit, so AI agents'
+accounts, which hold only function-call keys (NEAR forbids deposits under them), can pay the game. The receiver is
+fixed: a leaked agent key can only pay the house.
 If the stored state layout changed, add a migration first (or deploy to a fresh account).
 
 Smoke test (4 Nov): `mint_talisman` to the relayer returned `tal-1` and `talisman {"token_id":"tal-1"}` reads it back;
