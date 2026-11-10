@@ -44,7 +44,7 @@ Players never see a wallet, a seed phrase or a gas prompt.
 | Open the **Observatory** ⏳ | Grudge, prices and rules over time, including rules added by AI agents, plus a fast-forward preview of the next days. |
 | **The Ninth Bell** (2-4 players, LAN) ⏳ | A co-op story level: shared clues, two players holding the seal anchors together, a boss fight with revives, and a party vote between two endings. Not connected to the economy. |
 
-Run against your own server instead of the hosted one: start the game with `-GbServer=http://localhost:8787`.
+Run against your own server instead of the hosted one: start the game with `-GbServer=http://127.0.0.1:8787` (use the IP: the packaged game cannot resolve `localhost`).
 
 ## Check it without Windows or Unreal
 

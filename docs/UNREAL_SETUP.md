@@ -250,7 +250,7 @@ attached to a **GitHub Release** (never committed to the repo). The README links
 # the build for judges: Shipping, pointed at the hosted HTTPS game server
 powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl https://<game-server> -Version 1.0.0
 # a quick local test build against the server on this PC
-powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://localhost:8787 -Config Development
+powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://127.0.0.1:8787 -Config Development
 ```
 
 The script cooks LanternWard and NinthBell (plus everything under `/Game/Grudgebound`), builds, paks with IoStore,

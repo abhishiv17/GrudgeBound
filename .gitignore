@@ -50,6 +50,7 @@ unreal/**/*.opensdf
 unreal/**/*.sdf
 # packaged builds go on GitHub Releases, not in the repo
 unreal/**/Packaged/
+unreal/GrudgeBound/Content/Certificates/
 *.zip
 
 # runtime data (battle archive for npm run replay)

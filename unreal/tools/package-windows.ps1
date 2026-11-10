@@ -3,7 +3,11 @@
 # Also close Chrome and other heavy apps: the first run compiles and cooks everything.
 #
 #   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl https://<game-server>
-#   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://localhost:8787 -Config Development
+#   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://127.0.0.1:8787 -Config Development
+#
+# Use 127.0.0.1, not localhost: the packaged game's HTTP library cannot resolve "localhost" (10 Nov test).
+# HTTPS needs a CA bundle in the package: the script copies the engine's cacert.pem to
+# Content/Certificates/ (git-ignored) and stages it as a loose file, where the engine looks for it.
 #
 # The server URL is written into DefaultGame.ini only for the duration of the package run, then the committed
 # file is put back exactly as it was. Players can still override it with  GrudgeBound.exe -GbServer=<url>.
@@ -26,6 +30,7 @@ $uat = Join-Path $Engine 'Engine\Build\BatchFiles\RunUAT.bat'
 if (!(Test-Path -LiteralPath $uat)) { throw "RunUAT.bat not found: set -Engine to your UE 5.8 folder." }
 if (Get-Process -Name 'UnrealEditor*' -ErrorAction SilentlyContinue) { throw 'Close every Unreal editor window first (UnrealEditor is running).' }
 if ($Config -eq 'Shipping' -and $ServerUrl -notmatch '^https://') { throw 'A Shipping build for judges must point at an HTTPS server.' }
+if ($ServerUrl -match '^https?://localhost([:/]|$)') { throw 'Use http://127.0.0.1:<port> instead of localhost: the packaged game cannot resolve "localhost".' }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 $archive = Join-Path $repo "unreal\Packaged\$stamp-$Config"
@@ -36,6 +41,12 @@ if ($original.Contains('written by package-windows.ps1')) {
 $backupDir = Join-Path $repo 'unreal\GrudgeBound\Saved'
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 [System.IO.File]::WriteAllText((Join-Path $backupDir 'DefaultGame.ini.before-package'), $original)
+# Without this bundle every HTTPS request fails (curl error 60). Engine search path: <Project>/Content/Certificates/cacert.pem.
+$caSource = Join-Path $Engine 'Engine\Content\Certificates\ThirdParty\cacert.pem'
+if (!(Test-Path -LiteralPath $caSource)) { throw "CA bundle not found: $caSource" }
+$caDir = Join-Path $repo 'unreal\GrudgeBound\Content\Certificates'
+New-Item -ItemType Directory -Force -Path $caDir | Out-Null
+Copy-Item -LiteralPath $caSource -Destination (Join-Path $caDir 'cacert.pem') -Force
 $ninthBell = Join-Path $repo 'unreal\GrudgeBound\Content\Grudgebound\NinthBell.umap'
 $ninthLine = ''
 if (Test-Path -LiteralPath $ninthBell) { $ninthLine = '+MapsToCook=(FilePath="/Game/Grudgebound/NinthBell")' }
@@ -50,6 +61,7 @@ ServerUrl=$ServerUrl
 +MapsToCook=(FilePath="/Game/Grudgebound/LanternWard")
 $ninthLine
 +DirectoriesToAlwaysCook=(Path="/Game/Grudgebound")
++DirectoriesToAlwaysStageAsNonUFS=(Path="Certificates")
 bUseIoStore=True
 bShareMaterialShaderCode=True
 IncludeDebugFiles=False
@@ -69,6 +81,7 @@ finally {
 
 $windows = Join-Path $archive 'Windows'
 if (!(Test-Path -LiteralPath $windows)) { $windows = $archive }
+if (!(Get-ChildItem -LiteralPath $windows -Recurse -Filter 'cacert.pem' -ErrorAction SilentlyContinue)) { throw 'cacert.pem was not staged: HTTPS would fail in this build.' }
 $zip = Join-Path $archive "Grudgebound-Win64-$Version.zip"
 Compress-Archive -Path (Join-Path $windows '*') -DestinationPath $zip -Force
 $sizeMb = [math]::Round((Get-Item -LiteralPath $zip).Length / 1MB, 1)
