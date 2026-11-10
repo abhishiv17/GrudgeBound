@@ -140,8 +140,9 @@ Invoke-RestMethod "$gameOrigin/observatory?mode=preview"
 ## Point Unreal at the service
 
 For an editor/local executable, pass `-GbServer=https://OWNER_GAME_HOST`. For a packaged build, supply
-that URL to package-windows.ps1 when T-13 is ready, or configure ServerUrl under
-[/Script/GrudgeboundClient.GbSettings] in unreal/GrudgeBound/Config/DefaultGame.ini for that build.
+that URL to package-windows.ps1, or set `ServerUrl="https://OWNER_GAME_HOST"` under
+[/Script/GrudgeboundClient.GbSettings] in unreal/GrudgeBound/Config/DefaultGame.ini for that build. Keep the
+quotes: Unreal's ini reader treats an unquoted `//` as a comment and would read the URL as `https:`.
 The command-line override still wins. Retain localhost in development; no hosted URL is fabricated here.
 
 ## Configuration validation

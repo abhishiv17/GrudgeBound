@@ -5,8 +5,8 @@
 #   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl https://<game-server>
 #   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://127.0.0.1:8787 -Config Development
 #
-# KNOWN BUG (10 Nov, open): the packaged game ignores ServerUrl from every config file (it comes out empty, so
-# requests go to "/state"); launching with  GrudgeBound.exe -GbServer=<url>  works. See docs/TASKS.md T-13.
+# The URL is written QUOTED: Unreal's ini reader treats an unquoted "//" as a comment, so
+# ServerUrl=http://host would be read as "http:" (requests then go to "http:/state").
 # HTTPS needs a CA bundle in the package: the script copies the engine's cacert.pem to
 # Content/Certificates/ (git-ignored) and stages it as a loose file, where the engine looks for it.
 #
@@ -16,7 +16,7 @@
 # (git-ignored: packaged builds go on a GitHub Release, never into the repo).
 # This script never uploads, tags or publishes anything.
 param(
-    [Parameter(Mandatory = $true)][ValidatePattern('^https?://[A-Za-z0-9.\-:\[\]]+(/.*)?$')][string]$ServerUrl,
+    [Parameter(Mandatory = $true)][ValidatePattern('^https?://[A-Za-z0-9.\-:\[\]]+(/[^"\s]*)?$')][string]$ServerUrl,
     [ValidateSet('Shipping', 'Development')][string]$Config = 'Shipping',
     [string]$Version = (Get-Date -Format 'yyyy.MM.dd-HHmm'),
     [string]$Engine = 'C:\Program Files\Epic Games\UE_5.8',
@@ -55,7 +55,7 @@ $section = @"
 
 ; --- written by package-windows.ps1 for this package run only (restored afterwards) ---
 [/Script/GrudgeboundClient.GbSettings]
-ServerUrl=$ServerUrl
+ServerUrl="$ServerUrl"
 
 [/Script/UnrealEd.ProjectPackagingSettings]
 +MapsToCook=(FilePath="/Game/Grudgebound/LanternWard")
