@@ -50,6 +50,7 @@ void UGbApiSubsystem::HandleSessionChanged()
 	const FString NewToken = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetToken();
 	if (NewToken == SessionToken) return;
 	SessionToken = NewToken; ++SessionSerial;
+	bObservatoryPreviewInFlight = false; bObservatoryLiveInFlight = false;
 	SwearingVowJobs.Reset();
 	MenderJobs.Reset(); bSatchelMutationInFlight = false; PendingSatchelMessage.Reset(); ++SatchelSerial;
 	TradeJobs.Reset(); bTradeRequestInFlight = false;
@@ -87,6 +88,30 @@ void UGbApiSubsystem::Send(const FString& Verb, const FString& Path, const FStri
 			Done(Response->GetResponseCode(), Response->GetContentAsString());
 		});
 	Request->ProcessRequest();
+}
+
+void UGbApiSubsystem::FetchObservatory(bool bPreview)
+{
+	const FString Server=GetServerUrl();
+	if (ObservatoryServer!=Server) { ObservatoryPreview=FGbObservatoryData(); ObservatoryServer=Server; bObservatoryPreviewInFlight=false; bObservatoryLiveInFlight=false; }
+	if (bPreview && ObservatoryPreview.bValid) { OnObservatory.Broadcast(ObservatoryPreview); return; }
+	bool& InFlight=bPreview?bObservatoryPreviewInFlight:bObservatoryLiveInFlight;
+	if (InFlight) return;
+	InFlight=true;
+	Send(TEXT("GET"), bPreview?TEXT("/observatory?mode=preview"):TEXT("/observatory?mode=live"), FString(), [this,bPreview,Server](int32 Status,const FString& Text)
+	{
+		if (Server!=GetServerUrl()) return;
+		(bPreview?bObservatoryPreviewInFlight:bObservatoryLiveInFlight)=false;
+		TSharedPtr<FJsonObject> O;
+		FGbObservatoryData Data;
+		if (Status==200 && GbJson::ParseObject(Text,O)) Data=GbJson::Observatory(O);
+		if (!Data.bValid || Data.Mode!=(bPreview?TEXT("preview"):TEXT("live")))
+		{
+			OnError.Broadcast(TEXT("observatory"),Status,Status==0?TEXT("server not reachable"):GbJson::ErrorMessage(Text)); return;
+		}
+		if (bPreview) ObservatoryPreview=Data;
+		OnObservatory.Broadcast(Data);
+	});
 }
 
 void UGbApiSubsystem::SetOnline(bool bNowOnline)

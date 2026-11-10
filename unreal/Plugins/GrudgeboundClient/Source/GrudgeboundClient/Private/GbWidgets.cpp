@@ -6,6 +6,7 @@
 #include "GbGreyboxMaterials.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
+#include "GbSatchelWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -20,10 +21,55 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
+#include "Engine/FontFace.h"
+#include "Engine/Texture2D.h"
+#include "Fonts/CompositeFont.h"
+#include "Math/RandomStream.h"
 
 namespace
 {
 	namespace C = GbGreybox::Color;
+
+	UTexture2D* PaperGrain()
+	{
+		static UTexture2D* Texture = nullptr;
+		if (!Texture)
+		{
+			Texture = UTexture2D::CreateTransient(64,64,PF_B8G8R8A8);
+			Texture->AddToRoot(); Texture->SRGB=true; Texture->Filter=TF_Bilinear;
+			FColor* Pixels=static_cast<FColor*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+			FRandomStream Grain(301);
+			for (int32 Y=0;Y<64;++Y) for (int32 X=0;X<64;++X)
+			{
+				const int32 Edge=FMath::Min(FMath::Min(X,63-X),FMath::Min(Y,63-Y));
+				const uint8 V=Edge < 2+(X*17+Y*31)%3 ? Grain.RandRange(12,30) : Grain.RandRange(244,255);
+				Pixels[Y*64+X]=FColor(V,V,V,255);
+			}
+			Texture->GetPlatformData()->Mips[0].BulkData.Unlock(); Texture->UpdateResource();
+		}
+		return Texture;
+	}
+	FSlateBrush PaperBrush()
+	{
+		FSlateBrush Brush; Brush.SetResourceObject(PaperGrain()); Brush.ImageSize=FVector2D(64,64);
+		Brush.DrawAs=ESlateBrushDrawType::Box; Brush.Margin=FMargin(.125f); return Brush;
+	}
+	TSharedPtr<const FCompositeFont> UiFont(bool bTitle)
+	{
+		static TSharedPtr<FCompositeFont> Title,Body;
+		TSharedPtr<FCompositeFont>& Font=bTitle?Title:Body;
+		if (!Font)
+		{
+			const TCHAR* Regular=bTitle?TEXT("/Game/Grudgebound/UI/Fonts/YujiSyukuRegular.YujiSyukuRegular"):TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoRegular.ShipporiMinchoRegular");
+			const TCHAR* Bold=bTitle?Regular:TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoBold.ShipporiMinchoBold");
+			UFontFace* R=LoadObject<UFontFace>(nullptr,Regular); UFontFace* B=LoadObject<UFontFace>(nullptr,Bold);
+			if (!R || !B) return nullptr;
+			R->AddToRoot(); B->AddToRoot(); Font=MakeShared<FCompositeFont>();
+			FTypefaceEntry RE(FName(TEXT("Regular"))); RE.Font=FFontData(R); Font->DefaultTypeface.Fonts.Add(RE);
+			FTypefaceEntry BE(FName(TEXT("Bold"))); BE.Font=FFontData(B); Font->DefaultTypeface.Fonts.Add(BE);
+		}
+		return Font;
+	}
 
 	// Functions, not constants: the palette is only guaranteed to be initialised once the game runs.
 	FLinearColor PaperPanel() { return C::Paper; }
@@ -91,6 +137,95 @@ namespace
 	}
 }
 
+// ================================================================ building panels
+void UGbMenderWidget::BuildTree()
+{
+ UCanvasPanel* Root=WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget=Root;
+ UBorder* Card=MakePanel(C::Paper,FMargin(24)); UVerticalBox* Col=WidgetTree->ConstructWidget<UVerticalBox>();
+ Card->SetContent(Sized(Col,600,400)); Centre(Root,Card);
+ AddRow(Col,MakeText(TEXT("Mender's House"),28,C::Ink,true));
+ Selection=WidgetTree->ConstructWidget<UComboBoxString>(); AddRow(Col,Sized(Selection,0,38),12,12);
+ Selection->OnSelectionChanged.AddDynamic(this,&UGbMenderWidget::Select);
+ UTextBlock* Label=nullptr; RestoreButton=MakeButton(TEXT("Restore ink"),Label,C::Gold); RestoreLabel=Label;
+ RestoreButton->OnClicked.AddDynamic(this,&UGbMenderWidget::Restore); AddRow(Col,Sized(RestoreButton,0,44));
+ Status=MakeText(TEXT("Reading your pockets..."),16,C::Ink); Status->SetWrapTextAt(590); AddRow(Col,Sized(Status,0,140));
+ UButton* Back=MakeButton(TEXT("Return"),Label,C::Paper); Back->OnClicked.AddDynamic(this,&UGbMenderWidget::Close); AddRow(Col,Sized(Back,0,40));
+}
+void UGbMenderWidget::NativeConstruct()
+{
+ Super::NativeConstruct(); if (Player()) Player()->OnPlayerChanged.AddUniqueDynamic(this,&UGbMenderWidget::Refresh);
+ if (Api()) { Api()->OnSatchelAction.AddUniqueDynamic(this,&UGbMenderWidget::Action); Api()->OnError.AddUniqueDynamic(this,&UGbMenderWidget::Error); }
+}
+void UGbMenderWidget::NativeDestruct()
+{
+ if (Player()) Player()->OnPlayerChanged.RemoveDynamic(this,&UGbMenderWidget::Refresh);
+ if (Api()) { Api()->OnSatchelAction.RemoveDynamic(this,&UGbMenderWidget::Action); Api()->OnError.RemoveDynamic(this,&UGbMenderWidget::Error); } Super::NativeDestruct();
+}
+void UGbMenderWidget::Open() { Status->SetText(FText::GetEmpty()); Refresh(); if (Player()) Player()->RefreshFromChain(); }
+void UGbMenderWidget::Refresh()
+{
+ if (!Selection) return;
+ const int32 Old=Selection->GetSelectedIndex(); const FString Selected=Tokens.IsValidIndex(Old)?Tokens[Old]:FString();
+ bUpdating=true; Selection->ClearOptions(); Tokens.Reset();
+ const FGbSatchel Data=Player()?Player()->GetSatchel():FGbSatchel();
+ Tokens=Data.Carried; for (const FString& Id:Data.Case) Tokens.AddUnique(Id);
+ for (const FString& Id:Tokens)
+ {
+  FString Name=TEXT("Sealed talisman");
+  if (Player() && Api()) for (const FGbTalisman& T:Player()->GetTalismans()) if (UGbPlayerSubsystem::ServerTokenId(T)==Id) { Name=Api()->GetCurse(T.SpeciesId).Name; break; }
+  const FGbInk* Ink=Data.Ink.Find(Id);
+  Selection->AddOption(Ink?FString::Printf(TEXT("%s   %d / %d"),*Name,Ink->Hp,Ink->MaxHp):Name);
+ }
+ const int32 Index=Tokens.Contains(Selected)?Tokens.IndexOfByKey(Selected):0;
+ Selection->SetSelectedIndex(Index); bUpdating=false;
+ const FString Id=Tokens.IsValidIndex(Index)?Tokens[Index]:FString(); const FGbInk* Ink=Data.Ink.Find(Id);
+ const int32 Price=Api()?UGbSatchelWidget::MenderPriceFrom(Api()->GetWorldState()):-1;
+ RestoreLabel->SetText(FText::FromString(Price<0?FString(TEXT("Restore ink")):FString::Printf(TEXT("Restore ink (%d Ember)"),Price)));
+ RestoreButton->SetIsEnabled(Data.bValid && Ink && Ink->Hp<Ink->MaxHp && Price>=0 && Data.Ember>=Price && Api() && !Api()->IsSatchelBusy());
+}
+void UGbMenderWidget::Select(FString,ESelectInfo::Type) { if (!bUpdating) Refresh(); }
+void UGbMenderWidget::Restore()
+{
+ const int32 Index=Selection->GetSelectedIndex();
+ if (Api() && RestoreButton->GetIsEnabled() && Tokens.IsValidIndex(Index)) { RestoreButton->SetIsEnabled(false); Api()->RestoreInk(Tokens[Index]); }
+}
+void UGbMenderWidget::Close() { OnClose.Broadcast(); }
+void UGbMenderWidget::Action(const FString& Message) { if (IsVisible()) { Status->SetText(FText::FromString(Message)); Refresh(); } }
+void UGbMenderWidget::Error(const FString& What,int32,const FString& Message)
+{
+ if (!IsVisible() || (What!=TEXT("mender/restore") && What!=TEXT("satchel"))) return;
+ Status->SetText(FText::FromString(Message.Contains(TEXT("NEAR")) || Message.Contains(TEXT("chain"))?FString(TEXT("The town's ledger is unavailable. Refresh before trying again.")):Message)); Refresh();
+}
+
+void UGbRoomWidget::BuildTree()
+{
+ UCanvasPanel* Root=WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget=Root;
+ UBorder* Card=MakePanel(C::Paper,FMargin(24)); UVerticalBox* Col=WidgetTree->ConstructWidget<UVerticalBox>(); Card->SetContent(Sized(Col,600,420)); Centre(Root,Card);
+ AddRow(Col,MakeText(TEXT("Your room"),28,C::Ink,true)); AddRow(Col,MakeText(TEXT("Debt notice"),20,C::Ink,true));
+ AddRow(Col,MakeText(TEXT("You arrived with a debt notice folded inside your coat."),16,C::Ink));
+ UTextBlock* Label=nullptr; RestButton=MakeButton(TEXT("Rest until morning (free)"),Label,C::Gold); RestButton->OnClicked.AddDynamic(this,&UGbRoomWidget::Rest); AddRow(Col,Sized(RestButton,0,44),15,8);
+ UButton* Chest=MakeButton(TEXT("Talisman Case"),Label,C::Paper); Chest->OnClicked.AddDynamic(this,&UGbRoomWidget::Case); AddRow(Col,Sized(Chest,0,40));
+ Status=MakeText(TEXT(""),16,C::Ink); Status->SetWrapTextAt(590); AddRow(Col,Sized(Status,0,110));
+ UButton* Back=MakeButton(TEXT("Return"),Label,C::Paper); Back->OnClicked.AddDynamic(this,&UGbRoomWidget::Close); AddRow(Col,Sized(Back,0,40));
+}
+void UGbRoomWidget::NativeConstruct()
+{
+ Super::NativeConstruct(); if (Player()) Player()->OnPlayerChanged.AddUniqueDynamic(this,&UGbRoomWidget::RefreshState);
+ if (Api()) { Api()->OnSatchelAction.AddUniqueDynamic(this,&UGbRoomWidget::Action); Api()->OnError.AddUniqueDynamic(this,&UGbRoomWidget::Error); }
+}
+void UGbRoomWidget::NativeDestruct()
+{
+ if (Player()) Player()->OnPlayerChanged.RemoveDynamic(this,&UGbRoomWidget::RefreshState);
+ if (Api()) { Api()->OnSatchelAction.RemoveDynamic(this,&UGbRoomWidget::Action); Api()->OnError.RemoveDynamic(this,&UGbRoomWidget::Error); } Super::NativeDestruct();
+}
+void UGbRoomWidget::RefreshState() { if (RestButton) RestButton->SetIsEnabled(Api() && !Api()->IsSatchelBusy()); }
+void UGbRoomWidget::Open() { Status->SetText(FText::GetEmpty()); RefreshState(); }
+void UGbRoomWidget::Rest() { if (Api() && RestButton->GetIsEnabled()) { RestButton->SetIsEnabled(false); Api()->Rest(); } }
+void UGbRoomWidget::Case() { OnCase.Broadcast(); }
+void UGbRoomWidget::Close() { OnClose.Broadcast(); }
+void UGbRoomWidget::Action(const FString& Message) { if (IsVisible()) { Status->SetText(FText::FromString(Message)); RestButton->SetIsEnabled(Api() && !Api()->IsSatchelBusy()); } }
+void UGbRoomWidget::Error(const FString& What,int32,const FString& Message) { if (IsVisible() && What==TEXT("rest")) { Status->SetText(FText::FromString(Message)); RestButton->SetIsEnabled(Api() && !Api()->IsSatchelBusy()); } }
+
 // ================================================================ base
 
 void UGbWidgetBase::NativeOnInitialized()
@@ -100,6 +235,48 @@ void UGbWidgetBase::NativeOnInitialized()
 	{
 		BuildTree();
 	}
+	if (WidgetTree)
+	{
+		TArray<UWidget*> Widgets; WidgetTree->GetAllWidgets(Widgets);
+		for (UWidget* W:Widgets) if (UComboBoxString* Combo=Cast<UComboBoxString>(W))
+		{
+			if (!Combo->OnGenerateWidgetEvent.IsBound()) Combo->OnGenerateWidgetEvent.BindDynamic(this,&UGbWidgetBase::MakeChoice);
+			FComboBoxStyle Style=Combo->GetWidgetStyle();
+			Style.ComboButtonStyle.ButtonStyle.Normal=PaperBrush(); Style.ComboButtonStyle.ButtonStyle.Normal.TintColor=FSlateColor(C::Paper);
+			Style.ComboButtonStyle.ButtonStyle.Hovered=Style.ComboButtonStyle.ButtonStyle.Normal;
+			Style.ComboButtonStyle.ButtonStyle.Pressed=Style.ComboButtonStyle.ButtonStyle.Normal;
+			Style.ComboButtonStyle.DownArrowImage.TintColor=FSlateColor(C::Ink);
+			Style.ComboButtonStyle.MenuBorderBrush=Style.ComboButtonStyle.ButtonStyle.Normal; Combo->SetWidgetStyle(Style);
+			FTableRowStyle Row=Combo->GetItemStyle(); Row.EvenRowBackgroundBrush=PaperBrush(); Row.OddRowBackgroundBrush=PaperBrush();
+			Row.EvenRowBackgroundBrush.TintColor=FSlateColor(C::Paper); Row.OddRowBackgroundBrush.TintColor=FSlateColor(C::Paper);
+			Row.TextColor=FSlateColor(C::Ink); Row.SelectedTextColor=FSlateColor(C::Ink); Combo->SetItemStyle(Row);
+		}
+	}
+}
+
+UWidget* UGbWidgetBase::MakeChoice(FString Item) { return MakeText(Item,15,C::Ink); }
+
+void UGbWidgetBase::SetVisibility(ESlateVisibility InVisibility)
+{
+	TargetVisibility=InVisibility;
+	const bool bOpening=InVisibility!=ESlateVisibility::Collapsed && InVisibility!=ESlateVisibility::Hidden;
+	if (!bOpening && !bHasOpened)
+	{
+		VisibilityBlend=0; SetRenderOpacity(0); Super::SetVisibility(InVisibility); return;
+	}
+	if (bOpening) { if (!bHasOpened) { VisibilityBlend=0; SetRenderOpacity(0); } bHasOpened=true; Super::SetVisibility(InVisibility); }
+	else if (IsVisible()) Super::SetVisibility(ESlateVisibility::HitTestInvisible);
+	bFadingVisibility=true; SetRenderTransformPivot(FVector2D(.5,.5));
+}
+void UGbWidgetBase::NativeTick(const FGeometry& Geometry,float DeltaTime)
+{
+	Super::NativeTick(Geometry,DeltaTime);
+	if (!bFadingVisibility) return;
+	const bool bOpening=TargetVisibility!=ESlateVisibility::Collapsed && TargetVisibility!=ESlateVisibility::Hidden;
+	const float Target=bOpening?1.f:0.f;
+	VisibilityBlend=FMath::FInterpConstantTo(VisibilityBlend,Target,DeltaTime,1.f/.15f);
+	SetRenderOpacity(VisibilityBlend); SetRenderScale(FVector2D(.975f+.025f*VisibilityBlend));
+	if (FMath::IsNearlyEqual(VisibilityBlend,Target)) { bFadingVisibility=false; if (!bOpening) Super::SetVisibility(TargetVisibility); }
 }
 
 UGbApiSubsystem* UGbWidgetBase::Api() const
@@ -118,9 +295,11 @@ UTextBlock* UGbWidgetBase::MakeText(const FString& Text, int32 Size, const FLine
 {
 	UTextBlock* T = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 	T->SetText(FText::FromString(Text));
-	T->SetColorAndOpacity(FSlateColor(Color));
+	FLinearColor Readable=Color; Readable.A=FMath::Max(Readable.A,.85f);
+	T->SetColorAndOpacity(FSlateColor(Readable));
 	FSlateFontInfo Font = T->GetFont();
-	Font.Size = Size;
+	if (const TSharedPtr<const FCompositeFont> Family=UiFont(Size>=22 && bBold)) Font=FSlateFontInfo(Family,FMath::Max(Size,14));
+	Font.Size = FMath::Max(Size,14);
 	Font.TypefaceFontName = bBold ? FName(TEXT("Bold")) : FName(TEXT("Regular"));
 	T->SetFont(Font);
 	T->SetAutoWrapText(true);
@@ -129,7 +308,12 @@ UTextBlock* UGbWidgetBase::MakeText(const FString& Text, int32 Size, const FLine
 
 UBorder* UGbWidgetBase::MakePanel(const FLinearColor& Background, const FMargin& Inner)
 {
+	return MakeFrame(Background,Inner);
+}
+UBorder* UGbWidgetBase::MakeFrame(const FLinearColor& Background, const FMargin& Inner)
+{
 	UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+	B->SetBrush(PaperBrush());
 	B->SetBrushColor(Background);
 	B->SetPadding(Inner);
 	return B;
@@ -138,6 +322,10 @@ UBorder* UGbWidgetBase::MakePanel(const FLinearColor& Background, const FMargin&
 UButton* UGbWidgetBase::MakeButton(const FString& Label, UTextBlock*& OutLabel, const FLinearColor& Tint)
 {
 	UButton* B = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+	FButtonStyle Style=B->GetStyle(); Style.Normal=PaperBrush(); Style.Hovered=Style.Normal; Style.Pressed=Style.Normal; Style.Disabled=Style.Normal;
+	Style.Hovered.TintColor=FSlateColor(FLinearColor::White*1.08f); Style.Pressed.TintColor=FSlateColor(FLinearColor::White*.83f);
+	Style.Disabled.TintColor=FSlateColor(FLinearColor::White*.55f); Style.NormalPadding=FMargin(10,4); Style.PressedPadding=FMargin(11,5,9,3);
+	B->SetStyle(Style);
 	B->SetBackgroundColor(Tint);
 	OutLabel = MakeText(Label, 15, C::Ink, true);
 	OutLabel->SetJustification(ETextJustify::Center);
@@ -158,7 +346,12 @@ UWidget* UGbWidgetBase::Sized(UWidget* Content, float Width, float Height)
 {
 	USizeBox* Box = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
 	if (Width > 0.f) Box->SetWidthOverride(Width);
-	if (Height > 0.f) Box->SetHeightOverride(Height);
+	if (Height > 0.f)
+	{
+		// Text and framed content may grow for font metrics/wrapping; lists keep their scroll bounds.
+		if (Content && (Content->IsA<UTextBlock>() || Content->IsA<UBorder>() || Content->IsA<UVerticalBox>())) Box->SetMinDesiredHeight(Height);
+		else Box->SetHeightOverride(Height);
+	}
 	Box->SetContent(Content);
 	return Box;
 }
@@ -244,7 +437,7 @@ void UGbHudWidget::BuildTree()
 
 	// --- key hint, top right
 	UBorder* Hint = MakePanel(InkPanel(), FMargin(10.f, 6.f));
-	Hint->SetContent(MakeText(TEXT("B Satchel   T Case   R Rite   V Vows   I Story   L Proof   F10 Sign out"), 13, C::Paper, true));
+	Hint->SetContent(MakeText(TEXT("B Satchel   T Case   R Rite   V Vows   O Observatory   I Story   L Proof   F10 Sign out"), 13, C::Paper, true));
 	UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(Hint);
 	HintSlot->SetAnchors(FAnchors(1.f, 0.f));
 	HintSlot->SetAlignment(FVector2D(1.f, 0.f));
@@ -1321,3 +1514,73 @@ void UGbRulesWidget::HandlePrev2() { StepParam(2, -1); }
 void UGbRulesWidget::HandleNext2() { StepParam(2, 1); }
 void UGbRulesWidget::HandleClose() { OnClose.Broadcast(); }
 void UGbTalismanCaseWidget::HandleClose() { OnClose.Broadcast(); }
+
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#include "GbVowWidget.h"
+#include "GbIntroWidget.h"
+#include "Slate/WidgetRenderer.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "ImageUtils.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbUiMotionTest,"Grudgebound.Ui.SharedOpenCloseMotion",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FGbUiMotionTest::RunTest(const FString&)
+{
+ UGbWidgetBase* W=NewObject<UGbMenderWidget>(); W->AddToRoot(); W->Initialize(); W->NativeOnInitialized(); W->TakeWidget();
+ W->SetVisibility(ESlateVisibility::Collapsed); W->SetVisibility(ESlateVisibility::Visible);
+ W->NativeTick(FGeometry(),.075f); TestTrue(TEXT("Open opacity interpolates over 0.15 seconds"),FMath::IsNearlyEqual(W->GetRenderOpacity(),.5f,.01f));
+ W->NativeTick(FGeometry(),.075f); TestTrue(TEXT("Open finishes at full opacity"),FMath::IsNearlyEqual(W->GetRenderOpacity(),1.f));
+ W->SetVisibility(ESlateVisibility::Collapsed); W->NativeTick(FGeometry(),.15f);
+ TestEqual(TEXT("Close collapses only after the fade"),W->GetVisibility(),ESlateVisibility::Collapsed);
+ W->RemoveFromRoot(); return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbUiFontsTest,"Grudgebound.Ui.InlineFontsAndContrast",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FGbUiFontsTest::RunTest(const FString&)
+{
+ for (const TCHAR* Path:{TEXT("/Game/Grudgebound/UI/Fonts/YujiSyukuRegular.YujiSyukuRegular"),TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoRegular.ShipporiMinchoRegular"),TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoBold.ShipporiMinchoBold")})
+ {
+  const UFontFace* Face=LoadObject<UFontFace>(nullptr,Path);
+  if (TestNotNull(TEXT("OFL font face imported"),Face)) TestEqual(TEXT("Font bytes are inline"),Face->GetLoadingPolicy(),EFontLoadingPolicy::Inline);
+ }
+ const auto L=[](const FLinearColor& Color){return .2126f*Color.R+.7152f*Color.G+.0722f*Color.B;};
+ TestTrue(TEXT("Shared ink/paper contrast exceeds 4.5:1"),(L(C::Paper)+.05f)/(L(C::Ink)+.05f)>=4.5f);
+ return true;
+}
+#if WITH_EDITOR
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbUiRenderTest,"Grudgebound.Ui.AllPanels720And1080",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FGbUiRenderTest::RunTest(const FString&)
+{
+ const TArray<UClass*> Classes={UGbHudWidget::StaticClass(),UGbEncounterWidget::StaticClass(),UGbBattleWidget::StaticClass(),UGbSatchelWidget::StaticClass(),UGbTalismanCaseWidget::StaticClass(),UGbShopWidget::StaticClass(),UGbRulesWidget::StaticClass(),UGbVowWidget::StaticClass(),UGbSignInWidget::StaticClass(),UGbIntroWidget::StaticClass(),UGbMenderWidget::StaticClass(),UGbRoomWidget::StaticClass()};
+ FWidgetRenderer Renderer(false);
+ for (UClass* Class:Classes)
+ {
+  UGbWidgetBase* W=NewObject<UGbWidgetBase>(GetTransientPackage(),Class); W->AddToRoot(); W->Initialize(); W->NativeOnInitialized();
+  if (!TestNotNull(TEXT("Native panel tree built"),W->WidgetTree->RootWidget.Get())) { W->RemoveFromRoot(); return false; }
+  // Render the actual constructed tree without invoking live-game/session subscriptions in NativeConstruct.
+  const TSharedRef<SWidget> Slate=W->WidgetTree->RootWidget->TakeWidget();
+  if (UGbIntroWidget* Intro=Cast<UGbIntroWidget>(W)) Intro->Open();
+  TArray<UWidget*> Widgets; W->WidgetTree->GetAllWidgets(Widgets);
+  for (const UWidget* Widget:Widgets) if (const UTextBlock* Text=Cast<UTextBlock>(Widget)) TestTrue(TEXT("Shared text never falls below 14 pt"),Text->GetFont().Size>=14);
+  for (const FIntPoint Size:{FIntPoint(1280,720),FIntPoint(1920,1080)})
+  {
+   Renderer.DrawWidget(Slate,FVector2D(Size.X,Size.Y)); // settle AutoWrap's measured width before capture
+   Slate->Invalidate(EInvalidateWidgetReason::Layout); Slate->SlatePrepass(1.f);
+   UTextureRenderTarget2D* Target=Renderer.DrawWidget(Slate,FVector2D(Size.X,Size.Y));
+   if (!TestNotNull(TEXT("Native panel renders"),Target)) { W->RemoveFromRoot(); return false; }
+   TArray<FColor> Pixels; FReadSurfaceDataFlags Flags; Flags.SetLinearToGamma(false);
+   TestTrue(TEXT("Panel pixels readable"),Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels,Flags));
+   int32 VisiblePixels=0; for (const FColor& Pixel:Pixels) if (Pixel.A && int32(Pixel.R)+Pixel.G+Pixel.B>30) ++VisiblePixels;
+   TestTrue(TEXT("Preview contains visible panel content"),VisiblePixels>50);
+   TArray64<uint8> Png; FImageUtils::PNGCompressImageArray(Size.X,Size.Y,TArrayView64<const FColor>(Pixels.GetData(),Pixels.Num()),Png);
+   const FString Folder=FPaths::Combine(FPaths::ProjectSavedDir(),TEXT("UiPreview"),FString::FromInt(Size.Y)); IFileManager::Get().MakeDirectory(*Folder,true);
+   const FString File=FPaths::Combine(Folder,Class->GetName()+TEXT(".png")); TestTrue(TEXT("Panel preview saved"),FFileHelper::SaveArrayToFile(Png,*File)); AddInfo(File);
+  }
+  W->RemoveFromRoot();
+ }
+ return true;
+}
+#endif
+#endif

@@ -2,6 +2,7 @@
 #include "GbApiSubsystem.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
+#include "GbGreyboxMaterials.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -15,9 +16,9 @@
 
 namespace
 {
-	const FLinearColor Ink(0.12f, 0.10f, 0.09f);
-	const FLinearColor Paper(0.86f, 0.80f, 0.65f);
-	const FLinearColor Gold(0.72f, 0.56f, 0.25f);
+	const FLinearColor& Ink=GbGreybox::Color::Ink;
+	const FLinearColor& Paper=GbGreybox::Color::Paper;
+	const FLinearColor& Gold=GbGreybox::Color::Gold;
 }
 
 void UGbVowWidget::BuildTree()

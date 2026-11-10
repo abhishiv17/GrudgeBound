@@ -1,5 +1,6 @@
 #include "GbSatchelWidget.h"
 #include "GbApiSubsystem.h"
+#include "GbGreyboxMaterials.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -15,7 +16,8 @@
 
 namespace
 {
-	const FLinearColor Paper(.86f, .80f, .65f), Ink(.12f, .10f, .09f), Gold(.72f, .56f, .25f), Red(.62f, .20f, .17f), Blue(.18f, .34f, .44f);
+	const FLinearColor& Paper=GbGreybox::Color::Paper; const FLinearColor& Ink=GbGreybox::Color::Ink;
+	const FLinearColor& Gold=GbGreybox::Color::Gold; const FLinearColor& Red=GbGreybox::Color::Crimson; const FLinearColor& Blue=GbGreybox::Color::Sorrow;
 }
 
 void UGbSatchelWidget::BuildTree()
@@ -47,9 +49,6 @@ void UGbSatchelWidget::BuildTree()
 	CarryButton = MakeButton(TEXT("Carry"), Label, Gold); CarryLabel = Label; CarryButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::CarrySelected); Actions->AddChildToHorizontalBox(Sized(CarryButton, 380, 34));
 	PartnerButton = MakeButton(TEXT("Choose as partner"), Label, Paper); PartnerButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::ChoosePartner); Actions->AddChildToHorizontalBox(Sized(PartnerButton, 380, 34));
 	Rows = WidgetTree->ConstructWidget<UScrollBox>(); Tokens->AddChildToVerticalBox(Sized(Rows, 0, 180));
-	UHorizontalBox* Healing = WidgetTree->ConstructWidget<UHorizontalBox>(); Tokens->AddChildToVerticalBox(Sized(Healing, 0, 40));
-	MenderButton = MakeButton(TEXT("Mender"), Label, Paper); MenderLabel = Label; MenderButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::RestoreInk); Healing->AddChildToHorizontalBox(Sized(MenderButton, 380, 36));
-	RestButton = MakeButton(TEXT("Rest until morning (free)"), Label, Paper); RestButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::Rest); Healing->AddChildToHorizontalBox(Sized(RestButton, 380, 36));
 	UVerticalBox* Supplies = WidgetTree->ConstructWidget<UVerticalBox>(); Pockets->AddChild(Supplies);
 	SupplyText = MakeText(TEXT(""), 22, Ink, true); Supplies->AddChildToVerticalBox(Sized(SupplyText, 0, 125));
 	UTextBlock* SupplyHelp = MakeText(TEXT("Each seal attempt uses one blank or gilded talisman. An Ink Salve restores part of a talisman's ink."), 15, Ink);
@@ -63,9 +62,8 @@ void UGbSatchelWidget::BuildTree()
 	LedgerPocket->AddChildToVerticalBox(MakeText(TEXT("You arrived with a debt notice folded inside your coat."), 16, Ink));
 	Status = MakeText(TEXT(""), 14, Ink); Status->SetWrapTextAt(740); Col->AddChildToVerticalBox(Sized(Status, 0, 48));
 	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(); Col->AddChildToVerticalBox(Sized(Footer, 0, 40));
-	BrokerButton = MakeButton(TEXT("Broker"), Label, Gold); BrokerButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::Broker); Footer->AddChildToHorizontalBox(Sized(BrokerButton, 250, 38));
-	B = MakeButton(TEXT("Refresh"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Refresh); Footer->AddChildToHorizontalBox(Sized(B, 250, 38));
-	B = MakeButton(TEXT("Return to the Ward (B)"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Close); Footer->AddChildToHorizontalBox(Sized(B, 260, 38));
+	B = MakeButton(TEXT("Refresh"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Refresh); Footer->AddChildToHorizontalBox(Sized(B, 380, 38));
+	B = MakeButton(TEXT("Return (B)"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Close); Footer->AddChildToHorizontalBox(Sized(B, 380, 38));
 	Redraw();
 }
 
@@ -186,9 +184,6 @@ void UGbSatchelWidget::Redraw()
 	PartnerButton->SetIsEnabled(bReady && bCarried && SelectedToken != PartnerToken && TalismanFor(SelectedToken));
 	SalveButton->SetIsEnabled(bReady && Data.CanUseSalve(SelectedToken));
 	Selection->SetIsEnabled(bReady);
-	MenderLabel->SetText(FText::FromString(MenderPrice >= 0 ? FString::Printf(TEXT("Mender: restore ink (%d Ember)"), MenderPrice) : FString(TEXT("Mender: price unavailable"))));
-	MenderButton->SetIsEnabled(bReady && bHasInk && Value->Hp < Value->MaxHp && MenderPrice >= 0 && Data.Ember >= MenderPrice);
-	RestButton->SetIsEnabled(bReady); BrokerButton->SetIsEnabled(bReady);
 	SupplyText->SetText(FText::FromString(Data.bValid ? FString::Printf(TEXT("Blank talismans     %d\nGilded talismans    %d\nInk Salves               %d"), Data.Blank, Data.Gilded, Data.Salves) : FString(TEXT("Supplies unavailable"))));
 	SupplyTarget->SetText(FText::FromString(SelectedToken.IsEmpty() ? FString(TEXT("Choose a talisman in the Talismans pocket."))
 		: FString::Printf(TEXT("Selected: %s%s"), *NameFor(SelectedToken), bHasInk ? *FString::Printf(TEXT("  |  Ink %d / %d"), Value->Hp, Value->MaxHp) : TEXT(""))));
@@ -233,18 +228,9 @@ void UGbSatchelWidget::UseSalve()
 {
 	if (UGbApiSubsystem* A = Api()) if (SalveButton->GetIsEnabled()) { Submit(TEXT("Applying an Ink Salve...")); A->UseSalve(SelectedToken); }
 }
-void UGbSatchelWidget::RestoreInk()
-{
-	if (UGbApiSubsystem* A = Api()) if (MenderButton->GetIsEnabled()) { Submit(TEXT("Asking the Mender to restore your ink...")); A->RestoreInk(SelectedToken); }
-}
-void UGbSatchelWidget::Rest()
-{
-	if (UGbApiSubsystem* A = Api()) if (RestButton->GetIsEnabled()) { Submit(TEXT("Resting until morning...")); A->Rest(); }
-}
 void UGbSatchelWidget::Refresh()
 {
 	PullPlayer();
 	if (UGbPlayerSubsystem* P = Player()) P->RefreshFromChain();
 }
 void UGbSatchelWidget::Close() { OnClose.Broadcast(); }
-void UGbSatchelWidget::Broker() { if (BrokerButton->GetIsEnabled()) OnBroker.Broadcast(); }

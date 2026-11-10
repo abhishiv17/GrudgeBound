@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "GbTypes.h"
+#include "GbBuildings.h"
 #include "GbUiDirector.generated.h"
 
 class UGbHudWidget;
@@ -18,6 +19,9 @@ class UGbSignInWidget;
 class UGbVowWidget;
 class UGbIntroWidget;
 class UGbSatchelWidget;
+class UGbMenderWidget;
+class UGbRoomWidget;
+class UGbObservatoryWidget;
 
 UCLASS(NotPlaceable, Transient)
 class GRUDGEBOUNDCLIENT_API AGbUiDirector : public AActor
@@ -26,13 +30,21 @@ class GRUDGEBOUNDCLIENT_API AGbUiDirector : public AActor
 
 public:
 	AGbUiDirector();
+	void UseBuilding(AGbBuildingDoor* Door);
+	EGbBuilding GetCurrentBuilding() const { return CurrentBuilding; }
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 private:
-	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel };
+	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel, Mender, Room, Observatory };
+	void ToggleObservatory();
+	void CloseBuildingPanel();
+	void RoomCase();
+	EGbBuilding CurrentBuilding = EGbBuilding::Outside;
+	bool bBuildingTransition = false;
+	FTimerHandle BuildingTimer;
 	void ShowEntry();
 	void FinishIntro();
 	void ReplayIntro();
@@ -70,6 +82,9 @@ private:
 	UPROPERTY() TObjectPtr<UGbVowWidget> VowShrine;
 	UPROPERTY() TObjectPtr<UGbIntroWidget> Intro;
 	UPROPERTY() TObjectPtr<UGbSatchelWidget> Satchel;
+	UPROPERTY() TObjectPtr<UGbMenderWidget> Mender;
+	UPROPERTY() TObjectPtr<UGbRoomWidget> Room;
+	UPROPERTY() TObjectPtr<UGbObservatoryWidget> Observatory;
 
 	EScreen Current = EScreen::Ward;
 	/** False until the first dialog opens. */

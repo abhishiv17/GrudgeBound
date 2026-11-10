@@ -17,6 +17,7 @@ namespace GbJson
 	FString ErrorMessage(const FString& Text);
 
 	FGbWorldState WorldState(const TSharedPtr<FJsonObject>& O);
+	FGbObservatoryData Observatory(const TSharedPtr<FJsonObject>& O);
 	FGbTownEvent TownEvent(const TSharedPtr<FJsonObject>& O);
 	FGbCurseInfo Curse(const TSharedPtr<FJsonObject>& O);
 	FGbBattleView BattleView(const TSharedPtr<FJsonObject>& O);

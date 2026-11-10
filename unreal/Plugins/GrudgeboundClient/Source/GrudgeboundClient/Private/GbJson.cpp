@@ -115,6 +115,49 @@ namespace GbJson
 		return Text.Left(200);
 	}
 
+	FGbObservatoryData Observatory(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbObservatoryData D;
+		if (!O.IsValid()) return D;
+		D.Mode = Str(O, TEXT("mode"));
+		D.bValid = D.Mode == TEXT("live") || D.Mode == TEXT("preview");
+		D.Seed = Int(O, TEXT("seed"));
+		for (const auto& V : Arr(O, TEXT("samples")))
+		{
+			const auto S = AsObj(V); if (!S.IsValid()) continue;
+			auto& Sample = D.Samples.AddDefaulted_GetRef();
+			Sample.Tick=Int(S,TEXT("tick")); Sample.Day=Int(S,TEXT("day"),1); Sample.Hour=Int(S,TEXT("hour"));
+			Sample.Closed=Strings(S,TEXT("closed"));
+			for (const auto& W : Arr(S,TEXT("wards")))
+			{
+				const auto Ward=AsObj(W); if (!Ward.IsValid()) continue;
+				auto& Out=Sample.Wards.AddDefaulted_GetRef(); Out.Id=Str(Ward,TEXT("id"));
+				Out.Total=Num(Ward,TEXT("total")); Out.Grudge.Rage=Num(Ward,TEXT("rage"));
+				Out.Grudge.Sorrow=Num(Ward,TEXT("sorrow")); Out.Grudge.Dread=Num(Ward,TEXT("dread"));
+			}
+			if (const auto Prices=Obj(S,TEXT("prices")); Prices.IsValid()) for (const auto& Merchant:Prices->Values)
+			{
+				const auto Items=AsObj(Merchant.Value); if (!Items.IsValid()) continue;
+				auto& Out=Sample.Prices.Add(FString(Merchant.Key));
+				for (const auto& Item:Items->Values) { double Price=0; if (Item.Value->TryGetNumber(Price) && FMath::IsFinite(Price)) Out.Items.Add(FString(Item.Key),Price); }
+			}
+		}
+		for (const auto& V:Arr(O,TEXT("rules")))
+		{
+			const auto R=AsObj(V); if (!R.IsValid()) continue;
+			auto& Out=D.Rules.AddDefaulted_GetRef(); Out.Id=Str(R,TEXT("id")); Out.Text=Str(R,TEXT("text"));
+			Out.Author=Str(R,TEXT("author")); Out.AuthorKind=Str(R,TEXT("authorKind")); Out.Tick=Int(R,TEXT("tick"));
+			Out.Status=Str(R,TEXT("status")); Out.Reason=Str(R,TEXT("reason")); Out.Url=Str(R,TEXT("url"));
+		}
+		D.Rules.StableSort([](const auto& A,const auto& B){return A.Tick>B.Tick;});
+		for (const auto& V:Arr(O,TEXT("events")))
+		{
+			const auto E=AsObj(V); if (!E.IsValid()) continue;
+			auto& Out=D.Events.AddDefaulted_GetRef(); Out.Tick=Int(E,TEXT("tick")); Out.Type=Str(E,TEXT("type")); Out.Ward=Str(E,TEXT("ward")); Out.Text=Str(E,TEXT("text"));
+		}
+		return D;
+	}
+
 	EGbOutcome Outcome(const FString& Text)
 	{
 		if (Text == TEXT("won")) return EGbOutcome::Won;

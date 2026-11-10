@@ -11,3 +11,4 @@ unreal/**/*.ogg filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.fbx filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.png filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.psd filter=lfs diff=lfs merge=lfs -text
+unreal/GrudgeBound/Content/Grudgebound/UI/**/*.ttf filter=lfs diff=lfs merge=lfs -text

@@ -18,6 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleStartedEvent, const FGbBatt
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleTurn&, Turn);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbPlayerViewEvent, const FGbPlayerView&, Player);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbSatchelEvent, const FGbSatchel&, Satchel);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbObservatoryDataEvent, const FGbObservatoryData&, Data);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbShopEvent, const FGbShop&, Shop);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTradeEvent, const FGbTrade&, Trade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
@@ -34,6 +35,8 @@ class GRUDGEBOUNDCLIENT_API UGbApiSubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	void FetchObservatory(bool bPreview);
+	UPROPERTY() FGbObservatoryDataEvent OnObservatory;
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void FetchVows();
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void SwearVow(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void ReleaseVow(int32 VowId);
@@ -219,6 +222,10 @@ public:
 	FGbApiErrorEvent OnError;
 
 private:
+	FGbObservatoryData ObservatoryPreview;
+	FString ObservatoryServer;
+	bool bObservatoryPreviewInFlight = false;
+	bool bObservatoryLiveInFlight = false;
 	UFUNCTION() void HandleSessionChanged();
 	FString SessionToken;
 	uint32 SessionSerial = 0;

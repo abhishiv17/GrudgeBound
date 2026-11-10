@@ -7,6 +7,7 @@
 #include "Blueprint/UserWidget.h"
 #include "GbTypes.h"
 #include "GbPlayerSubsystem.h"
+#include "Components/ComboBoxString.h"
 #include "GbWidgets.generated.h"
 
 class UBorder;
@@ -28,9 +29,11 @@ UCLASS(Abstract)
 class GRUDGEBOUNDCLIENT_API UGbWidgetBase : public UUserWidget
 {
 	GENERATED_BODY()
-
+public:
+	virtual void SetVisibility(ESlateVisibility InVisibility) override;
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 	/** Create the widgets and set WidgetTree->RootWidget. */
 	virtual void BuildTree() {}
 
@@ -39,10 +42,68 @@ protected:
 
 	UTextBlock* MakeText(const FString& Text, int32 Size, const FLinearColor& Color, bool bBold = false);
 	UBorder* MakePanel(const FLinearColor& Background, const FMargin& Inner);
+	UBorder* MakeFrame(const FLinearColor& Background, const FMargin& Inner);
 	UButton* MakeButton(const FString& Label, UTextBlock*& OutLabel, const FLinearColor& Tint);
 	UProgressBar* MakeBar(const FLinearColor& Fill);
 	/** Wraps a widget in a size box of the given size (0 = leave that axis free). */
 	UWidget* Sized(UWidget* Content, float Width, float Height);
+	UFUNCTION() UWidget* MakeChoice(FString Item);
+private:
+	friend class FGbUiMotionTest;
+	friend class FGbUiRenderTest;
+	float VisibilityBlend = 1.f;
+	bool bFadingVisibility = false;
+	bool bHasOpened = false;
+	ESlateVisibility TargetVisibility = ESlateVisibility::Visible;
+};
+
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbMenderWidget : public UGbWidgetBase
+{
+ GENERATED_BODY()
+public:
+ void Open();
+ FSimpleMulticastDelegate OnClose;
+protected:
+ virtual void BuildTree() override;
+ virtual void NativeConstruct() override;
+ virtual void NativeDestruct() override;
+private:
+ UFUNCTION() void Refresh();
+ UFUNCTION() void Select(FString Option, ESelectInfo::Type Type);
+ UFUNCTION() void Restore();
+ UFUNCTION() void Close();
+ UFUNCTION() void Action(const FString& Message);
+ UFUNCTION() void Error(const FString& What,int32 Code,const FString& Message);
+ bool bUpdating=false;
+ TArray<FString> Tokens;
+ UPROPERTY() TObjectPtr<UComboBoxString> Selection;
+ UPROPERTY() TObjectPtr<UTextBlock> Status;
+ UPROPERTY() TObjectPtr<UButton> RestoreButton;
+ UPROPERTY() TObjectPtr<UTextBlock> RestoreLabel;
+};
+
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbRoomWidget : public UGbWidgetBase
+{
+ GENERATED_BODY()
+public:
+ void Open();
+ FSimpleMulticastDelegate OnClose;
+ FSimpleMulticastDelegate OnCase;
+protected:
+ virtual void BuildTree() override;
+ virtual void NativeConstruct() override;
+ virtual void NativeDestruct() override;
+private:
+ UFUNCTION() void RefreshState();
+ UFUNCTION() void Rest();
+ UFUNCTION() void Case();
+ UFUNCTION() void Close();
+ UFUNCTION() void Action(const FString& Message);
+ UFUNCTION() void Error(const FString& What,int32 Code,const FString& Message);
+ UPROPERTY() TObjectPtr<UTextBlock> Status;
+ UPROPERTY() TObjectPtr<UButton> RestButton;
 };
 
 UCLASS()

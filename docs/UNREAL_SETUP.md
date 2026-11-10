@@ -1,5 +1,25 @@
 # Unreal client: setup and first steps
 
+## Local CC0 district assets (T-11)
+
+Use only the owner-supplied Kenney packs in `%USERPROFILE%/GrudgeboundCC0`; inventory/licences:
+[ASSETS.md](ASSETS.md). With the editor closed, run UnrealEditor-Cmd against this project with
+`-run=pythonscript "-script=<repo>/unreal/tools/import-cc0.py --used-only" -RenderOffscreen -unattended`.
+Omit --used-only to import all FBX/GLB meshes from the three packs, or pass a different local source folder.
+Then run make-lantern-ward.py through the same commandlet. It updates an existing level in place, retains
+the actor/player-start/nav locations and does not delete its map asset. The actor's Rebuild Ward button
+reconstructs procedural instances after slot edits. Missing imports use the procedural fallback.
+
+If Git LFS has made LanternWard.umap read-only, make a local backup and clear its read-only attribute
+before running the authorized generator edit; the script fails if the map cannot be saved. T-11's original
+is preserved under Saved/T11Backup. Source builds are not committed or pushed by this workflow.
+
+Mesh slots use soft asset paths; Nanite is disabled at import. Original collision hulls and all four grass
+trigger bounds remain; decorative imports have no collision. The closed docks gate has a blocking fence.
+Lanterns use bounded, shadow-free dynamic point lights; the existing server day/night clock remains active.
+Owner play checks: all streets/grass patches, three locked-gate lines, den row/canal labels, night readability,
+and stat unit/stat gpu at 1080p. Performance and navigation acceptance require the phase-end Play test.
+
 From 2 Nov the game client is built in **Unreal Engine 5**. The parts that are not the game screen stay as they are:
 `server/` (world, ticks, battle checks), `shared/` (formulas, rules), `agents/` and `contracts/`.
 The Unreal game talks to the game server over HTTP, the same way the web client does.
@@ -103,15 +123,28 @@ complete the browser page, and return to the game. Sessions resume automatically
 Click to walk; walk through the dark-green tall grass; a curse appears; **Fight!**.
 Back in the Ward the points and the talisman show up (press **T**). The HUD says *Hollowmere is unreachable* if the server isn't running.
 **V** opens the native Vow Shrine (stake points, keep or release a promise; needs testnet signing).
-Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Satchel, **R** the Rite,
-**L** the latest ledger proof and **F10** signs out while in the Ward.
+Controls and the remaining acceptance checks: [`VOWS.md`](VOWS.md). **B** opens the Satchel, **R** the Rite
+and **V** the shrine inside the Rite Hall, **L** the latest ledger proof and **F10** signs out while walking.
+**O** opens/closes the native Observatory while walking. **This town** refreshes live history every ten
+seconds while open; **Seven days ahead** uses the server's isolated, cached seven-day preview. Grudge
+shows four Ward totals and the selected Ward's emotions; Prices shows the Broker and shop closures;
+Rules lists newest verdicts first, including available reasons and clickable testnet ledger proofs.
+The chart's Day 1-7 axis covers the displayed seven-day window; the header retains the world's actual day/hour.
+Native tab previews are written to `Saved/ObservatoryPreview` by `Grudgebound.Observatory` automation.
 The Satchel has four pockets: **Talismans**, **Supplies**, **Keepsakes**, and **Ledger**. Select a talisman
 to carry/leave it in the Case (five carried slots), choose a carried partner, or check its ink. The Supplies
-pocket uses a salve on that selection; full ink disables the button. **Broker** opens the existing shop,
-which now sells blanks, gilded talismans and Ink Salves as well as sealed talismans. **B** or its Back button
-returns from the Broker to the Satchel; **B** again returns to walking. **T** still opens the legacy Case.
-Until the buildings are wired, the Talismans pocket also offers **Mender** restoration for Ember (price
-follows Lantern Ward's Sorrow) and **Rest until morning** for free. Rest advances only your personal clock.
+pocket uses a salve on that selection; full ink disables the button. **T** still opens the legacy Case.
+Walk to a named door and press **E**, or click its marker while nearby. A 0.3-second fade moves the pawn
+to a small offsite room in the same map; its Exit marker returns to the outside doorway. No server route
+or level streaming is involved. Each room has its own bounded camera and navigation volume.
+The **Counting House** counter opens the Broker (talismans, blanks, gilded talismans and Ink Salves).
+The **Mender's House** counter restores selected ink for Ember; the pre-action estimate follows the existing
+Lantern Ward Sorrow formula, and the server's response supplies the actual restoration reason/receipt.
+The **Rite Hall** has Kessa and a separate Vow Shrine. R/V outside it show only the supplied OWNER TEXT line.
+**Your room** has the existing debt notice, free **Rest until morning**, and the Talisman Case. Rest advances
+only your personal clock. Broker/Mender/Rest shortcuts are removed from the Satchel. B/L/I/F10 still work
+while walking inside buildings; panels return to the same interior. Agent trades received while inside
+the Counting House show the named agent at the counter for five seconds.
 The server supplies every count and ink value. New players receive **3 blank / 0 gilded / 1 salve** once;
 existing accounts keep their supplies. A partner with zero ink cannot start a fight: visit the Mender,
 use a salve, or rest. The battle view shows its saved ink. **Slip away** from an encounter now attempts

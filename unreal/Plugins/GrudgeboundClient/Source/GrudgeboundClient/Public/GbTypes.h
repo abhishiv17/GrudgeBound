@@ -54,6 +54,62 @@ struct FGbWardSummary
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Wild = 0;
 };
 
+/** A merchant price map wrapped for reflected nested history data. */
+USTRUCT()
+struct FGbObservatoryPrices
+{
+ GENERATED_BODY()
+ UPROPERTY() TMap<FString, float> Items;
+};
+
+USTRUCT()
+struct FGbObservatorySample
+{
+ GENERATED_BODY()
+ UPROPERTY() int32 Tick = 0;
+ UPROPERTY() int32 Day = 1;
+ UPROPERTY() int32 Hour = 0;
+ UPROPERTY() TArray<FGbWardSummary> Wards;
+ UPROPERTY() TMap<FString, FGbObservatoryPrices> Prices;
+ UPROPERTY() TArray<FString> Closed;
+};
+
+USTRUCT()
+struct FGbObservatoryRule
+{
+ GENERATED_BODY()
+ UPROPERTY() FString Id;
+ UPROPERTY() FString Text;
+ UPROPERTY() FString Author;
+ UPROPERTY() FString AuthorKind;
+ UPROPERTY() int32 Tick = 0;
+ UPROPERTY() FString Status;
+ UPROPERTY() FString Reason;
+ UPROPERTY() FString Url;
+};
+
+USTRUCT()
+struct FGbObservatoryEvent
+{
+ GENERATED_BODY()
+ UPROPERTY() int32 Tick = 0;
+ UPROPERTY() FString Type;
+ UPROPERTY() FString Ward;
+ UPROPERTY() FString Text;
+};
+
+USTRUCT()
+struct FGbObservatoryData
+{
+ GENERATED_BODY()
+ UPROPERTY() bool bValid = false;
+ UPROPERTY() FString Mode;
+ UPROPERTY() int32 Seed = 0;
+ UPROPERTY() TArray<FGbObservatorySample> Samples;
+ UPROPERTY() TArray<FGbObservatoryRule> Rules;
+ UPROPERTY() TArray<FGbObservatoryEvent> Events;
+};
+
 USTRUCT(BlueprintType)
 struct FGbMerchantSummary
 {

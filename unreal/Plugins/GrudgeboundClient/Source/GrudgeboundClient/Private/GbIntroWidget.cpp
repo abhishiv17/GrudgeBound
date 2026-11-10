@@ -1,5 +1,6 @@
 #include "GbIntroWidget.h"
 #include "GbStory.h"
+#include "GbGreyboxMaterials.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -16,8 +17,8 @@
 
 namespace
 {
-	const FLinearColor Paper(0.90f, 0.83f, 0.68f), Ink(0.075f, 0.06f, 0.10f), Gold(0.75f, 0.47f, 0.14f);
-	const FLinearColor Crimson(0.53f, 0.09f, 0.12f), Sorrow(0.18f, 0.31f, 0.43f), Dread(0.31f, 0.20f, 0.38f);
+	const FLinearColor& Paper=GbGreybox::Color::Paper; const FLinearColor& Ink=GbGreybox::Color::Ink; const FLinearColor& Gold=GbGreybox::Color::Gold;
+	const FLinearColor& Crimson=GbGreybox::Color::Crimson; const FLinearColor& Sorrow=GbGreybox::Color::Sorrow; const FLinearColor& Dread=GbGreybox::Color::Dread;
 }
 
 class SGbStoryArt : public SLeafWidget

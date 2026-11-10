@@ -15,12 +15,12 @@ class GRUDGEBOUNDCLIENT_API UGbSatchelWidget : public UGbWidgetBase
 public:
 	void Open();
 	FSimpleMulticastDelegate OnClose;
-	FSimpleMulticastDelegate OnBroker;
 protected:
 	virtual void BuildTree() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 private:
+	friend class UGbMenderWidget;
 	friend class FGbSatchelCarryTest;
 	friend class FGbSatchelSalveTest;
 	friend class FGbSatchelVisualTest;
@@ -42,11 +42,8 @@ private:
 	UFUNCTION() void CarrySelected();
 	UFUNCTION() void ChoosePartner();
 	UFUNCTION() void UseSalve();
-	UFUNCTION() void RestoreInk();
-	UFUNCTION() void Rest();
 	UFUNCTION() void Refresh();
 	UFUNCTION() void Close();
-	UFUNCTION() void Broker();
 	FGbSatchel Data;
 	TArray<FGbTalisman> Talismans;
 	TMap<FString, FString> Names;
@@ -69,10 +66,6 @@ private:
 	UPROPERTY() TObjectPtr<UTextBlock> CarryLabel;
 	UPROPERTY() TObjectPtr<UButton> PartnerButton;
 	UPROPERTY() TObjectPtr<UButton> SalveButton;
-	UPROPERTY() TObjectPtr<UButton> MenderButton;
-	UPROPERTY() TObjectPtr<UTextBlock> MenderLabel;
-	UPROPERTY() TObjectPtr<UButton> RestButton;
-	UPROPERTY() TObjectPtr<UButton> BrokerButton;
 	UPROPERTY() TObjectPtr<UTextBlock> SupplyText;
 	UPROPERTY() TObjectPtr<UTextBlock> SupplyTarget;
 	UPROPERTY() TObjectPtr<UScrollBox> Keepsakes;

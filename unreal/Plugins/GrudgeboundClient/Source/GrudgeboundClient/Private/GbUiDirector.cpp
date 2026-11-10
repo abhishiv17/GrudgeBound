@@ -8,6 +8,7 @@
 #include "GbVowWidget.h"
 #include "GbIntroWidget.h"
 #include "GbSatchelWidget.h"
+#include "GbObservatoryWidget.h"
 #include "GbStorySubsystem.h"
 #include "GbCoopMission.h"
 #include "GameFramework/WorldSettings.h"
@@ -17,6 +18,10 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Camera/PlayerCameraManager.h"
+#include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -55,6 +60,9 @@ void AGbUiDirector::BeginPlay()
 	VowShrine = CreateWidget<UGbVowWidget>(PC, UGbVowWidget::StaticClass());
 	Intro = CreateWidget<UGbIntroWidget>(PC, UGbIntroWidget::StaticClass());
 	Satchel = CreateWidget<UGbSatchelWidget>(PC, UGbSatchelWidget::StaticClass());
+	Mender = CreateWidget<UGbMenderWidget>(PC, UGbMenderWidget::StaticClass());
+	Room = CreateWidget<UGbRoomWidget>(PC, UGbRoomWidget::StaticClass());
+	Observatory = CreateWidget<UGbObservatoryWidget>(PC, UGbObservatoryWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
@@ -66,6 +74,8 @@ void AGbUiDirector::BeginPlay()
 	VowShrine->AddToViewport(30);
 	Intro->AddToViewport(80);
 	Satchel->AddToViewport(30);
+	Mender->AddToViewport(30); Room->AddToViewport(30);
+	Observatory->AddToViewport(30);
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -76,7 +86,10 @@ void AGbUiDirector::BeginPlay()
 	VowShrine->OnClose.AddUObject(this, &AGbUiDirector::ToggleVows);
 	Intro->OnFinished.AddUObject(this, &AGbUiDirector::FinishIntro);
 	Satchel->OnClose.AddUObject(this, &AGbUiDirector::ToggleSatchel);
-	Satchel->OnBroker.AddUObject(this, &AGbUiDirector::ToggleShop);
+	Mender->OnClose.AddUObject(this, &AGbUiDirector::CloseBuildingPanel);
+	Room->OnClose.AddUObject(this, &AGbUiDirector::CloseBuildingPanel);
+	Room->OnCase.AddUObject(this, &AGbUiDirector::RoomCase);
+	Observatory->OnClose.AddUObject(this, &AGbUiDirector::ToggleObservatory);
 
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -100,6 +113,7 @@ void AGbUiDirector::BeginPlay()
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGbUiDirector::SignOut);
 		InputComponent->BindKey(EKeys::V, IE_Pressed, this, &AGbUiDirector::ToggleVows);
 		InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AGbUiDirector::ReplayIntro);
+		InputComponent->BindKey(EKeys::O, IE_Pressed, this, &AGbUiDirector::ToggleObservatory);
 	}
 
 	UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
@@ -144,6 +158,7 @@ void AGbUiDirector::SignOut()
 
 void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 {
+	GetWorldTimerManager().ClearTimer(BuildingTimer);
 	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.RemoveDynamic(this, &AGbUiDirector::HandleSessionChanged);
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -162,6 +177,7 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 
 void AGbUiDirector::ShowScreen(EScreen Screen)
 {
+	if (bBuildingTransition) return;
 	if (!GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) Screen = EScreen::SignIn;
 	Current = Screen;
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
@@ -176,6 +192,10 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	VowShrine->SetVisibility(Screen == EScreen::Vows ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Intro->SetVisibility(Screen == EScreen::Intro ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Satchel->SetVisibility(Screen == EScreen::Satchel ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	Mender->SetVisibility(Screen == EScreen::Mender ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	Room->SetVisibility(Screen == EScreen::Room ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	Observatory->SetVisibility(Screen == EScreen::Observatory ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Screen != EScreen::Observatory) Observatory->Stop();
 	Hud->SetVisibility(Screen == EScreen::Battle || Screen == EScreen::Intro || Screen == EScreen::SignIn ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
@@ -204,9 +224,12 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 			: Screen == EScreen::Vows ? static_cast<UUserWidget*>(VowShrine.Get())
 			: Screen == EScreen::Intro ? static_cast<UUserWidget*>(Intro.Get())
 			: Screen == EScreen::Satchel ? static_cast<UUserWidget*>(Satchel.Get())
+			: Screen == EScreen::Mender ? static_cast<UUserWidget*>(Mender.Get())
+			: Screen == EScreen::Room ? static_cast<UUserWidget*>(Room.Get())
+			: Screen == EScreen::Observatory ? static_cast<UUserWidget*>(Observatory.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
 			: Screen == EScreen::Shop ? static_cast<UUserWidget*>(Shop.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
-		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows || Screen == EScreen::Satchel)
+		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows || Screen == EScreen::Satchel || Screen == EScreen::Mender || Screen == EScreen::Room || Screen == EScreen::Observatory)
 		{
 			// Keep game input so T closes the case again.
 			FInputModeGameAndUI Mode;
@@ -243,6 +266,11 @@ void AGbUiDirector::ToggleTalismanCase()
 
 void AGbUiDirector::ToggleRules()
 {
+	if (Current == EScreen::Ward && !GbBuildings::Allows(CurrentBuilding, EGbBuildingUse::Rules))
+	{
+		// OWNER TEXT
+		if (UGbApiSubsystem* A=ApiOf(GetWorld())) A->SayAsKessa(TEXT("Kessa keeps the Rite in the Rite Hall.")); return;
+	}
 	if (Current == EScreen::Rules)
 	{
 		ShowScreen(EScreen::Ward);
@@ -266,24 +294,76 @@ void AGbUiDirector::ToggleSatchel()
 
 void AGbUiDirector::ToggleShop()
 {
-	if (Current == EScreen::Shop)
-	{
-		Satchel->Open(); ShowScreen(EScreen::Satchel);
-	}
-	else if (Current == EScreen::Satchel)
+	if (Current == EScreen::Shop) { Satchel->Open(); ShowScreen(EScreen::Satchel); }
+	else if (Current == EScreen::Ward && GbBuildings::Allows(CurrentBuilding, EGbBuildingUse::Broker))
 	{
 		Shop->Open();
 		ShowScreen(EScreen::Shop);
 	}
 }
 
+void AGbUiDirector::ToggleObservatory()
+{
+	if (Current == EScreen::Observatory) ShowScreen(EScreen::Ward);
+	else if (Current == EScreen::Ward) { Observatory->Open(); ShowScreen(EScreen::Observatory); }
+}
+
 void AGbUiDirector::ToggleVows()
 {
+	if (Current == EScreen::Ward && !GbBuildings::Allows(CurrentBuilding, EGbBuildingUse::Vows))
+	{
+		// OWNER TEXT (same Rite Hall placeholder)
+		if (UGbApiSubsystem* A=ApiOf(GetWorld())) A->SayAsKessa(TEXT("Kessa keeps the Rite in the Rite Hall.")); return;
+	}
 	if (Current == EScreen::Vows) ShowScreen(EScreen::Ward);
 	else if (Current == EScreen::Ward)
 	{
 		VowShrine->Open(); ShowScreen(EScreen::Vows);
 	}
+}
+
+void AGbUiDirector::CloseBuildingPanel() { ShowScreen(EScreen::Ward); }
+void AGbUiDirector::RoomCase() { ShowScreen(EScreen::Ward); ToggleTalismanCase(); }
+
+void AGbUiDirector::UseBuilding(AGbBuildingDoor* Door)
+{
+ if (!Door || Current!=EScreen::Ward || bBuildingTransition) return;
+ APlayerController* PC=GetWorld()->GetFirstPlayerController(); APawn* Pawn=PC?PC->GetPawn():nullptr;
+ if (!Pawn || FVector::DistSquared(Pawn->GetActorLocation(),Door->GetActorLocation())>FMath::Square(230.f)) return;
+ if (Door->Use==EGbBuildingUse::Enter || Door->Use==EGbBuildingUse::Exit)
+ {
+  const bool Enter=Door->Use==EGbBuildingUse::Enter;
+  if ((Enter && CurrentBuilding!=EGbBuilding::Outside) || (!Enter && CurrentBuilding!=Door->Building)) return;
+  bBuildingTransition=true; PC->StopMovement(); PC->SetIgnoreMoveInput(true);
+  if (PC->PlayerCameraManager) PC->PlayerCameraManager->StartCameraFade(0,1,.3f,FLinearColor::Black,false,true);
+  const FVector Target=Door->TargetFeet; const EGbBuilding Destination=Enter?Door->Building:EGbBuilding::Outside;
+  GetWorldTimerManager().SetTimer(BuildingTimer,FTimerDelegate::CreateWeakLambda(this,[this,Target,Destination]()
+  {
+   APlayerController* Controller=GetWorld()->GetFirstPlayerController(); APawn* P=Controller?Controller->GetPawn():nullptr;
+   if (P)
+   {
+    GbBuildings::Teleport(P,Target);
+    CurrentBuilding=Destination;
+    AActor* View=P;
+    if (Destination!=EGbBuilding::Outside) for (TActorIterator<AGbBuildingRoom> It(GetWorld());It;++It) if (It->Building==Destination) { View=*It; break; }
+    Controller->SetViewTarget(View); Controller->ResetIgnoreMoveInput();
+    if (Controller->PlayerCameraManager) Controller->PlayerCameraManager->StartCameraFade(1,0,.3f,FLinearColor::Black,false,false);
+   }
+   bBuildingTransition=false; ShowScreen(EScreen::Ward);
+  }),.3f,false);
+  return;
+ }
+ if (!GbBuildings::Allows(CurrentBuilding,Door->Use) || CurrentBuilding!=Door->Building) return;
+ switch (Door->Use)
+ {
+ case EGbBuildingUse::Broker: ToggleShop(); break;
+ case EGbBuildingUse::Mender: Mender->Open(); ShowScreen(EScreen::Mender); break;
+ case EGbBuildingUse::Rules: ToggleRules(); break;
+ case EGbBuildingUse::Vows: ToggleVows(); break;
+ case EGbBuildingUse::Room: Room->Open(); ShowScreen(EScreen::Room); break;
+ case EGbBuildingUse::Case: ToggleTalismanCase(); break;
+ default: break;
+ }
 }
 
 void AGbUiDirector::HandleTradeReceipt(const FString& JobId, const FGbChainReceipt& Receipt)
