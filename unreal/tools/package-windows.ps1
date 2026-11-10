@@ -5,7 +5,8 @@
 #   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl https://<game-server>
 #   powershell -ExecutionPolicy Bypass -File unreal\tools\package-windows.ps1 -ServerUrl http://127.0.0.1:8787 -Config Development
 #
-# Use 127.0.0.1, not localhost: the packaged game's HTTP library cannot resolve "localhost" (10 Nov test).
+# KNOWN BUG (10 Nov, open): the packaged game ignores ServerUrl from every config file (it comes out empty, so
+# requests go to "/state"); launching with  GrudgeBound.exe -GbServer=<url>  works. See docs/TASKS.md T-13.
 # HTTPS needs a CA bundle in the package: the script copies the engine's cacert.pem to
 # Content/Certificates/ (git-ignored) and stages it as a loose file, where the engine looks for it.
 #
@@ -30,7 +31,6 @@ $uat = Join-Path $Engine 'Engine\Build\BatchFiles\RunUAT.bat'
 if (!(Test-Path -LiteralPath $uat)) { throw "RunUAT.bat not found: set -Engine to your UE 5.8 folder." }
 if (Get-Process -Name 'UnrealEditor*' -ErrorAction SilentlyContinue) { throw 'Close every Unreal editor window first (UnrealEditor is running).' }
 if ($Config -eq 'Shipping' -and $ServerUrl -notmatch '^https://') { throw 'A Shipping build for judges must point at an HTTPS server.' }
-if ($ServerUrl -match '^https?://localhost([:/]|$)') { throw 'Use http://127.0.0.1:<port> instead of localhost: the packaged game cannot resolve "localhost".' }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 $archive = Join-Path $repo "unreal\Packaged\$stamp-$Config"
