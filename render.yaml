@@ -1,20 +1,18 @@
-# Owner applies after review. One process/disk; keep automatic deploys disabled.
+# Owner applies after review. One process; keep automatic deploys disabled.
+# Free plan (no card, no disk): the data files are kept in Upstash Redis (UPSTASH_REDIS_REST_URL/TOKEN,
+# see server/src/remoteFiles.ts and docs/HOSTING.md). The world state still resets on every restart.
 # yaml-language-server: $schema=https://render.com/schema/render.yaml.json
 services:
   - type: web
     name: grudgebound-server
     runtime: node
-    plan: starter
+    plan: free
     branch: main
     autoDeployTrigger: "off"
     buildCommand: npm ci
     startCommand: npm run server
     healthCheckPath: /health
     numInstances: 1
-    disk:
-      name: grudgebound-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         sync: false
@@ -69,6 +67,10 @@ services:
       - key: TRUST_PROXY
         sync: false
       - key: RULE_PROPOSAL_COOLDOWN_MS
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
         sync: false
       - key: AGENT_CHAIN
         sync: false

@@ -9,6 +9,7 @@
  * One JSON object per line in data/battles.jsonl (BATTLE_ARCHIVE to move it). Kept out of git: it's runtime data.
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { fileAppended } from "./remoteFiles";
 import { dirname, resolve } from "node:path";
 import { battleLogHash, type BattleRecord } from "./chain";
 
@@ -66,6 +67,8 @@ export class BattleArchive {
 
   private write(line: Line) {
     mkdirSync(dirname(this.file), { recursive: true });
-    appendFileSync(this.file, JSON.stringify(line) + "\n");
+    const text = JSON.stringify(line) + "\n";
+    appendFileSync(this.file, text);
+    fileAppended(this.file, text);
   }
 }

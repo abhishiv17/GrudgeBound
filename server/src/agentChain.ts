@@ -15,6 +15,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { fileChanged } from "./remoteFiles";
 import { dirname } from "node:path";
 import { KeyPair, type KeyPairString } from "near-api-js";
 import {
@@ -51,6 +52,7 @@ export class EncryptedAgentStore implements AgentStore {
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64"), { mode: 0o600 });
     renameSync(tmp, this.file);
+    fileChanged(this.file);
   }
 }
 

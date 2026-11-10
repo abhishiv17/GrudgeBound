@@ -1,5 +1,6 @@
 /** Server-owned Satchel and ink. One process, atomic JSON replacement, no keys or sessions in this file. */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { fileChanged } from "./remoteFiles";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -67,6 +68,7 @@ export class Satchels {
       const tmp = `${this.options.file}.tmp`;
       writeFileSync(tmp, JSON.stringify({ version: 1, players: [...next] }), { mode: 0o600 });
       renameSync(tmp, this.options.file);
+      fileChanged(this.options.file);
     }
     this.pockets = next;
   }

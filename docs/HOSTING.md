@@ -22,6 +22,26 @@ authorized. No actual host URLs, secrets or private account configuration belong
   [Render compute table](https://render.com/articles/set-up-self-hosted-github-actions-runners-on-render),
   [pricing](https://render.com/pricing), [disk restrictions](https://render.com/docs/disks).
 
+## Chosen setup (10 Nov): Render Free + Upstash Redis
+
+Render's paid plan needs a card the owner's bank would not accept, so render.yaml now uses the **free** plan
+(no card, no disk). Free web services sleep after about 15 minutes without requests and lose their files on
+every restart, so the server keeps its four data files in an **Upstash Redis** database (free tier, no card):
+
+- Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (from the database's REST API panel).
+  Point AUTH_STORE_PATH, SATCHEL_STORE_PATH, BATTLE_ARCHIVE and AGENT_STORE_PATH at `data/...` (no /var/data).
+- On start the server copies auth.enc, satchels.json, agents.enc and battles.jsonl from Redis to disk
+  (keys `gb:<file name>`); if Redis can't be read it refuses to start rather than start empty. Each later
+  write is copied back (whole file, debounced; the battle archive appends line by line). SIGTERM flushes.
+- auth.enc and agents.enc are uploaded exactly as on disk: AES-256-GCM ciphertext under AUTH_SECRET.
+- The shared world (tick, Grudge, stock, Observatory history) still resets on each restart, as before.
+- A sleeping service takes roughly 30-60 s to answer the first request. A free uptime monitor hitting
+  `/health` every 5 minutes keeps it awake (750 free instance hours a month covers one service).
+- Without the two UPSTASH variables nothing changes (local runs, tests, a paid disk).
+
+The paid-plan steps below remain valid if a card becomes available later (then remove the UPSTASH variables
+or keep them as a backup).
+
 ## Render game service
 
 1. After committing reviewed source, create a Blueprint from the repository's main branch using render.yaml,

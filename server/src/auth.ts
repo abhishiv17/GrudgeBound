@@ -3,6 +3,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { fileChanged } from "./remoteFiles";
 import { dirname, resolve } from "node:path";
 
 export const SESSION_MS = 7 * 24 * 60 * 60_000;
@@ -38,6 +39,7 @@ export class EncryptedAuthStore implements AuthStore {
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, Buffer.concat([iv, cipher.getAuthTag(), body]).toString("base64"), { mode: 0o600 });
     renameSync(tmp, this.file);
+    fileChanged(this.file);
   }
 }
 

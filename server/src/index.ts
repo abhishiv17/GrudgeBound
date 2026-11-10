@@ -40,7 +40,8 @@ import { ChainWriter, chainConfigFromEnv, custodialKey, type BattleRecord } from
 import { ChainRules, rulesOverview } from "./rules";
 import { playerView } from "./player";
 import { describeChainEvent } from "./chainEvents";
-import { BattleArchive } from "./battleArchive";
+import { BattleArchive, DEFAULT_ARCHIVE } from "./battleArchive";
+import { FileMirror, installMirror, remoteKvFromEnv } from "./remoteFiles";
 import { Shop } from "./shop";
 import { AuthError, AuthService, authKeyFromEnv, authStoreFromEnv, emailDelivery, playerBody } from "./auth";
 import { AgentChain, DEFAULT_AGENT_LIMITS, EncryptedAgentStore } from "./agentChain";
@@ -62,6 +63,24 @@ if (!["http:", "https:"].includes(signInUrl.protocol) || signInUrl.username || s
     (signInUrl.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(signInUrl.hostname))) throw new Error("AUTH_SIGN_IN_URL must use HTTPS or loopback HTTP");
 const HOST = process.env.HOST || (DEV ? "127.0.0.1" : "0.0.0.0");
 if (process.env.AUTH_EMAIL_MODE === "console" && !["127.0.0.1", "::1", "localhost"].includes(HOST)) throw new Error("Console email requires a loopback-only server");
+// Hosts without a persistent disk (Render's free service): bring the data files back from the remote store
+// before any store opens them. If the store can't be read this throws and the server does not start.
+const remoteKv = remoteKvFromEnv();
+const remoteMirror = remoteKv ? new FileMirror(remoteKv, { log: (m) => console.warn(m) }) : null;
+if (remoteMirror) {
+  const dataDir = dirname(resolve(process.env.AUTH_STORE_PATH || "data/auth.enc"));
+  await remoteMirror.restore([
+    resolve(process.env.AUTH_STORE_PATH || "data/auth.enc"),
+    resolve(process.env.SATCHEL_STORE_PATH || join(dataDir, "satchels.json")),
+    resolve(process.env.AGENT_STORE_PATH || join(dataDir, "agents.enc")),
+    resolve(process.env.BATTLE_ARCHIVE || DEFAULT_ARCHIVE),
+  ]);
+  installMirror(remoteMirror);
+  console.log("Data files restored from the remote store; every change is copied back to it.");
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => { void remoteMirror.flush().finally(() => process.exit(0)); });
+  }
+}
 const authStore = authStoreFromEnv();
 
 const world = createWorld(SEED);
