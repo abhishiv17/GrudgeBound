@@ -20,8 +20,17 @@ void AGbCoopController::BeginPlay()
 	if (!IsLocalController()) return;
 #if !UE_BUILD_SHIPPING
 	bBot = FParse::Param(FCommandLine::Get(),TEXT("GbCoopBot"));
+	// Movement rehearsal can yield R and 1/2 to the normal input bindings during play checks.
+	bBotManualKeys = FParse::Param(FCommandLine::Get(),TEXT("GbCoopBotManualKeys"));
 #endif
-	if (FApp::CanEverRender()) { Hud = CreateWidget<UGbCoopHud>(this,UGbCoopHud::StaticClass()); if (Hud) Hud->AddToViewport(); }
+	SetupLocalUi();
+}
+void AGbCoopController::SetupLocalUi()
+{
+	// CreateLocalPlayer may BeginPlay before attaching its ULocalPlayer. Wait until the next local tick.
+	if (bLocalUiReady || !GetLocalPlayer()) return;
+	bLocalUiReady = true;
+	if (FApp::CanEverRender()) { Hud = CreateWidget<UGbCoopHud>(this,UGbCoopHud::StaticClass()); if (Hud) Hud->AddToPlayerScreen(); }
 	FInputModeGameAndUI Mode; Mode.SetHideCursorDuringCapture(false); SetInputMode(Mode);
 }
 void AGbCoopController::SetupInputComponent()
@@ -37,6 +46,19 @@ void AGbCoopController::SetupInputComponent()
 void AGbCoopController::PlayerTick(float DeltaSeconds)
 {
 	Super::PlayerTick(DeltaSeconds); if (!IsLocalController()) return;
+	SetupLocalUi();
+#if !UE_BUILD_SHIPPING
+	if (const auto* S=GetWorld()->GetGameState<AGbCoopState>())
+	{
+		const auto& M=S->Mission;
+		if (LastObservedPhase!=static_cast<int32>(M.Phase) || LastObservedClues!=M.Clues || LastObservedParty!=S->PlayerArray.Num())
+		{
+			LastObservedPhase=static_cast<int32>(M.Phase); LastObservedClues=M.Clues; LastObservedParty=S->PlayerArray.Num();
+			if (bBot) PersonalLine.Reset();
+			UE_LOG(LogTemp,Display,TEXT("GB_COOP_CLIENT Phase=%d Clues=%d Party=%d"),LastObservedPhase,LastObservedClues,LastObservedParty);
+		}
+	}
+#endif
 	if (bBot) { BotTick(DeltaSeconds); return; }
 	auto* P = ::Cast<AGbCoopCharacter>(GetPawn()); if (!P || P->IsDown()) return;
 	FVector Direction((IsInputKeyDown(EKeys::W)?1:0)-(IsInputKeyDown(EKeys::S)?1:0),(IsInputKeyDown(EKeys::D)?1:0)-(IsInputKeyDown(EKeys::A)?1:0),0);
@@ -66,21 +88,16 @@ void AGbCoopController::BotTick(float DeltaSeconds)
 	if (BotAge>200) { UE_LOG(LogTemp,Error,TEXT("GB_COOP_BOT_TIMEOUT")); FPlatformMisc::RequestExitWithStatus(false,1); return; }
 	auto* P=::Cast<AGbCoopCharacter>(GetPawn()); auto* S=GetWorld()->GetGameState<AGbCoopState>(); if (!P || !S || !PlayerState) return;
 	const auto& M=S->Mission; const float Now=GetWorld()->GetTimeSeconds(), ServerNow=S->GetServerWorldTimeSeconds();
-	if (LastObservedPhase!=static_cast<int32>(M.Phase) || LastObservedClues!=M.Clues)
-	{
-		LastObservedPhase=static_cast<int32>(M.Phase); LastObservedClues=M.Clues; PersonalLine.Reset();
-		UE_LOG(LogTemp,Display,TEXT("GB_COOP_CLIENT Phase=%d Clues=%d Party=%d"),LastObservedPhase,LastObservedClues,S->PlayerArray.Num());
-	}
 	if (M.Phase==EGbBellPhase::Complete)
 	{
 		CompleteTime+=DeltaSeconds;
 		if (CompleteTime>3) { UE_LOG(LogTemp,Display,TEXT("GB_COOP_RESULT Complete Ending=%d Party=%d"),static_cast<int32>(M.Ending),S->PlayerArray.Num()); FPlatformMisc::RequestExit(false); }
 		return;
 	}
-	if (M.Phase==EGbBellPhase::Defeat) { ServerRetry(); return; }
+	if (M.Phase==EGbBellPhase::Defeat) { if (!bBotManualKeys) ServerRetry(); return; }
 	if (M.Phase==EGbBellPhase::Decision)
 	{
-		if (Now>=BotUseTime) { ServerVote(EGbBellEnding::ReturnNames); BotUseTime=Now+1; } return;
+		if (!bBotManualKeys && Now>=BotUseTime) { ServerVote(EGbBellEnding::ReturnNames); BotUseTime=Now+1; } return;
 	}
 	if (P->IsDown()) return;
 	EGbBellObject Goal=EGbBellObject::Mira;

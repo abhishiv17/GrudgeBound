@@ -21,8 +21,12 @@ world.get_world_settings().set_editor_property("default_game_mode", unreal.GbCoo
 existing = {a.get_actor_label(): a for a in actors.get_all_level_actors()}
 def spawn(label, cls, position):
     if label in existing:
-        return existing[label]
+        a = existing[label]
+        a.set_actor_location(unreal.Vector(*position), False, False)
+        return a
     a = actors.spawn_actor_from_class(cls, unreal.Vector(*position), unreal.Rotator())
+    if not a:
+        raise RuntimeError("Could not spawn " + label)
     a.set_actor_label(label)
     return a
 
@@ -45,9 +49,18 @@ for label, kind, position in objects:
 
 # Reuse the template start as binder one; add three distinct, non-overlapping starts.
 starts = [a for a in actors.get_all_level_actors() if isinstance(a, unreal.PlayerStart)]
-if starts:
-    starts[0].set_actor_location(unreal.Vector(-2700,-240,100), False, False)
+first = next((a for a in starts if not a.get_actor_label().startswith("GbCoop_Start")), None)
+if first:
+    first.set_actor_location(unreal.Vector(-2700,-240,100), False, False)
+else:
+    spawn("GbCoop_Start0", unreal.PlayerStart, (-2700,-240,100))
 for i in range(1,4):
     spawn("GbCoop_Start%d" % i, unreal.PlayerStart, (-2700,-240+i*160,100))
-levels.save_current_level()
+all_actors = actors.get_all_level_actors()
+if len([a for a in all_actors if isinstance(a, unreal.PlayerStart)]) != 4:
+    raise RuntimeError("Ninth Bell must have exactly four player starts; existing extras need owner review")
+if len([a for a in all_actors if isinstance(a, unreal.GbCoopObject)]) != 10:
+    raise RuntimeError("Ninth Bell must have exactly ten co-op objects")
+if not unreal.EditorLoadingAndSavingUtils.save_map(world, LEVEL):
+    raise RuntimeError("Could not save NinthBell (check write access / LFS read-only attribute)")
 unreal.log("GB_COOP_MAP_READY " + LEVEL)

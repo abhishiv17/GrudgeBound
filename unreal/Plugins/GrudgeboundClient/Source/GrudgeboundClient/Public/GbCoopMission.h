@@ -127,6 +127,8 @@ public:
 private:
 	void UsePressed(); void UseReleased(); void Cast(); void VoteNames(); void VoteBell(); void Retry();
 	void BotTick(float DeltaSeconds);
+	void SetupLocalUi();
+	bool bLocalUiReady = false;
 	float LastCast = -10;
 	float BotUseTime = 0;
 	float NextLocalCast = 0;
@@ -134,7 +136,9 @@ private:
 	float CompleteTime = 0;
 	int32 LastObservedPhase = -1;
 	int32 LastObservedClues = -1;
+	int32 LastObservedParty = -1;
 	bool bBot = false;
+	bool bBotManualKeys = false;
 	UPROPERTY() TObjectPtr<UGbCoopHud> Hud;
 	friend class AGbCoopMode;
 };

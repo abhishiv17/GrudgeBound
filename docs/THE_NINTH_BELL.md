@@ -100,7 +100,7 @@ fights linked to the clues; unique curse silhouettes; directed reveal shots; a m
 revive/channel effects; a safe lobby and ready check; and the ending's canal reveal. Add costs and rewards
 only after mission identity, authority and duplicate-settlement rules are integrated with the backend.
 
-## Implementation checkpoint · 7 Nov
+## Implementation checkpoint · 10 Nov
 
 Local source implements the replicated mission state, owned interaction/attack/vote RPCs, procedural
 district and character proxies, HUD, shared clues, ritual, boss openings/tolls, revives, retry and endings.
@@ -109,11 +109,59 @@ party-size anchor requirements and ending majority/ties. Together with the five 
 `Grudgebound` reports **8 passed, zero warnings, failures or skipped tests** in
 `unreal/GrudgeBound/Saved/Automation/T1/index.json`.
 
-This verifies compilation and the tested logic, not network play. The Ninth Bell `.umap` has not been
-generated; `unreal/tools/make-ninth-bell.py` and `play-ninth-bell.ps1` are unvalidated draft helpers.
-Map creation, placement/collision/camera checks, real host/client replication, late join, disconnect,
-revive/wipe/retry and both ending play-throughs remain open. Final art/audio and packaged acceptance
-also remain open. Lantern Ward is still the existing entry map.
+That was the 7 Nov source baseline. T-4 now generates `/Game/Grudgebound/NinthBell` with `GbCoopMode`,
+the district, ten objects at the existing `GbBell::Position` coordinates and four starts. Regeneration
+updates existing actors, validates counts and checks save success. Lantern Ward remains the default map.
+`unreal/tools/play-ninth-bell.ps1 -Host` and `-Join 127.0.0.1` select listen/join; `-Mode` remains compatible.
+The Host alias uses a different parameter name to avoid PowerShell's automatic variable.
+
+Verified in real local D3D12 game processes:
+
+- Ending A: both bots logged `GB_COOP_RESULT Complete Ending=1 Party=2`
+  (`Saved/Logs/T4-host-B.log`, `T4-client-B.log`, 9 Nov).
+- An idle third player held Decision open. Disconnecting it lowered the votes needed; both remaining
+  players completed Ending A (`T4-host-C.log`, `T4-client-C.log`).
+- A third process joined mid-Search and received the current two-clue snapshot:
+  `GB_COOP_CLIENT Phase=1 Clues=3` in `T4-late-E.log` (10 Nov).
+- Final two-process native check: authority damage wiped both pawns; both observed replicated Defeat,
+  R through the normal input binding returned to Ritual with all clues, and key 2 through the normal
+  binding completed Ending B. Each report has **1 passed, zero warnings/failures/skips**:
+  `Saved/Automation/T4-network-host-final` and `T4-network-client-final`, `2026.11.10-09.56.57` UTC.
+  These are automated input checks; physical manual voting remains an owner play check.
+- During the final check both pawns walked from about 704 units from the Collector with 1.3 seconds
+  left to about 950 units after the toll, retaining 100 health. The anchor positions, 800-unit radius,
+  walking speed and two-second warning are unchanged.
+
+Development-only `-GbCoopBotManualKeys` yields R and 1/2 to normal bindings; default bots still retry/vote 1.
+Diagnostics now report manual clients' phase/clues/party changes too. A play-test error with extra local
+players exposed BeginPlay preceding ULocalPlayer attachment; HUD/input setup now waits for attachment
+and uses that player's screen. Its extra-local-player follow-up remains constrained by the resource gap below.
+
+Two simultaneous 1920x1080 offscreen instances on the RTX 3050, about 41 seconds each:
+
+| Capture | Mean FPS | 99th-percentile frame | Worst frame | Mean GPU |
+| --- | ---: | ---: | ---: | ---: |
+| Host, 4,941 frames | 120.5 | 18.84 ms | 48.17 ms | 4.22 ms |
+| Client, 4,926 frames | 119.8 | 19.85 ms | 129.14 ms | 4.23 ms |
+
+CSVs: `Saved/Profiling/CSV/T4-host-23376.csv` and `T4-client-33264.csv`. GLOBAL/Basic capture replaced an
+earlier full-category capture that stalled its profiler. Three host and seven client frames exceeded
+33.3 ms; no guarantee of a 30 FPS floor or foreground Play performance is claimed. No gameplay/rendering
+tunables changed. The runtime logs confirm D3D12 adapter 0 is the RTX 3050.
+
+Final Development Editor build succeeded. Map regeneration: zero errors/warnings (`T4-map-final.log`).
+Full editor `Grudgebound` suite with `-RenderOffscreen`: **24 passed, zero warnings/failures/skips**,
+`Saved/Automation/T4-final/index.json`, `2026.11.10-09.58.00` UTC. Game-context process tests run separately.
+
+Remaining acceptance: an external fifth-player connection is unverified. E stopped before launching
+its probe when commit headroom fell below 1 GB. After packaging was idle, H's third editor still had
+not finished startup within the 90-second orchestration window; its own processes were stopped.
+The game-only party helper remains available with sufficient headroom (a 360-second test timeout);
+`-GbCoopLimitHookOnly` explicitly does not prove an external connection. No OS/page-file changes made.
+Owner phase-end checks: actual LAN/firewall play, fifth-player refusal, extra-local-player HUD,
+physical 1/2 voting, manual revive/wipe/R, camera/collision/readability and foreground 1080p performance.
+Final art/audio and packaged acceptance remain open. T-13's current package lacks this uncommitted map
+and has a separately recorded ServerUrl config blocker. The older draft-helper caveat below predates this checkpoint.
 
 ## Multiplayer references
 
