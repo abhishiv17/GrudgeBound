@@ -16,7 +16,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
 /**
  *  Player controller for a top-down perspective game.
- *  Implements point and click based controls
+ *  Implements point and click based controls, plus WASD walking relative to the camera
  */
 UCLASS(abstract)
 class AGrudgeBoundPlayerController : public APlayerController
@@ -61,6 +61,9 @@ protected:
 	/** Time that the click input has been pressed */
 	float FollowTime = 0.0f;
 
+	/** True while a WASD key is held; the first frame of keyboard walking cancels any click-to-move path. */
+	bool bKeyboardMoving = false;
+
 public:
 
 	/** Constructor */
@@ -70,7 +73,10 @@ protected:
 
 	/** Initialize input bindings */
 	virtual void SetupInputComponent() override;
-	
+
+	/** WASD walking: W is up the screen, whatever the camera's yaw. */
+	virtual void PlayerTick(float DeltaTime) override;
+
 	/** Input handlers */
 	void OnInputStarted();
 	void OnSetDestinationTriggered();

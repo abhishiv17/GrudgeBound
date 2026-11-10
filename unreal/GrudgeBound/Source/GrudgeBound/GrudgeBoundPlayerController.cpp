@@ -12,6 +12,8 @@
 #include "InputActionValue.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Camera/PlayerCameraManager.h"
+#include "InputCoreTypes.h"
 #include "GrudgeBound.h"
 
 AGrudgeBoundPlayerController::AGrudgeBoundPlayerController()
@@ -63,6 +65,38 @@ void AGrudgeBoundPlayerController::SetupInputComponent()
 			UE_LOG(LogGrudgeBound, Error, TEXT("'%s' Failed to find an Enhanced Input Component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
 		}
 	}
+}
+
+void AGrudgeBoundPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	APawn* ControlledPawn = GetPawn();
+	if (ControlledPawn == nullptr || PlayerCameraManager == nullptr)
+	{
+		return;
+	}
+
+	const float Forward = (IsInputKeyDown(EKeys::W) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::S) ? 1.f : 0.f);
+	const float Right = (IsInputKeyDown(EKeys::D) ? 1.f : 0.f) - (IsInputKeyDown(EKeys::A) ? 1.f : 0.f);
+	if (Forward == 0.f && Right == 0.f)
+	{
+		bKeyboardMoving = false;
+		return;
+	}
+
+	// Keys take over from a click: drop the path so the character doesn't drift back towards the old target.
+	if (!bKeyboardMoving)
+	{
+		StopMovement();
+		bKeyboardMoving = true;
+	}
+
+	// Screen-relative: only the camera's yaw matters, so W walks up the screen. AddMovementInput respects
+	// SetIgnoreMoveInput, so battles, the intro and building fades still lock the player in place.
+	const FRotator CameraYaw(0.f, PlayerCameraManager->GetCameraRotation().Yaw, 0.f);
+	const FVector WorldDirection = CameraYaw.RotateVector(FVector(Forward, Right, 0.f)).GetSafeNormal();
+	ControlledPawn->AddMovementInput(WorldDirection, 1.f);
 }
 
 void AGrudgeBoundPlayerController::OnInputStarted()

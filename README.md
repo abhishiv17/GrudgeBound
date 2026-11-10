@@ -34,7 +34,7 @@ Players never see a wallet, a seed phrase or a gas prompt.
 | Do this in the game | You'll see |
 |---|---|
 | First entry | A four-panel paper intro: you arrive in Hollowmere in debt, and Kessa, the Rite's referee, offers a way out. The HUD then shows your chapter and objective (**I** replays the intro). |
-| Walk (click to move) into the dark tall grass | A curse appears, chosen by the Ward's live Grudge (Rage, Sorrow or Dread). |
+| Walk (WASD, or click to move) into the dark tall grass | A curse appears, chosen by the Ward's live Grudge (Rage, Sorrow or Dread). |
 | **Fight!** → attack / ward → **Seal** when it's weak | A server-run battle. A successful seal mints the talisman to your NEAR account; the HUD shows your new points. Press **L** to open the transaction on the explorer. |
 | **B** (Satchel) | Your carried talismans with their ink (HP), supplies (blank talismans, Ink Salves), keepsakes and your ledger (Ember, points, debt). Binding uses up a blank talisman. Ink stays low after a fight. |
 | Enter the **Counting House** ⏳ | The AI Broker's prices, each with a one-line reason (scarcity, demand, fear). Buy and sell talismans and supplies for Ember. Agents appear at the counter when they trade. |
