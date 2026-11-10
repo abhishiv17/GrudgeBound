@@ -17,10 +17,17 @@
 #include "GameFramework/PlayerController.h"
 #include "Math/RandomStream.h"
 #include "TimerManager.h"
+#include "Components/BoxComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Components/TextRenderComponent.h"
+#include "Engine/StaticMesh.h"
+#include "Misc/PackageName.h"
 
 namespace
 {
 	constexpr float Tile = 100.f; // 1 web tile = 1 metre
+	// OWNER TEXT: owner may replace these three locked-gate lines.
+	const TCHAR* GateLines[] = { TEXT("Not that gate. Not tonight."), TEXT("Ash Ward is closed to debtors."), TEXT("The docks gate opens for the Tide Ward's business, not yours.") };
 
 	/** Tall-grass patches from buildLanternWard: column, row, width, height in tiles. */
 	const FIntRect GrassPatches[] = {
@@ -83,6 +90,30 @@ AGbWardGreybox::AGbWardGreybox()
 		Patch->SetupAttachment(Ground);
 		TallGrass.Add(Patch);
 	}
+	const TCHAR* Names[] = { TEXT("Bone"), TEXT("Ash"), TEXT("Tide") };
+	for (const TCHAR* Name : Names)
+	{
+		UBoxComponent* Gate = CreateDefaultSubobject<UBoxComponent>(*FString::Printf(TEXT("%sGate"), Name));
+		Gate->SetupAttachment(Ground); Gate->SetCollisionProfileName(TEXT("Trigger"));
+		Gate->SetCanEverAffectNavigation(false); Gate->OnComponentBeginOverlap.AddDynamic(this, &AGbWardGreybox::GateOverlap);
+		Gates.Add(Gate);
+	}
+	DocksBarrier = CreateDefaultSubobject<UBoxComponent>(TEXT("DocksBarrier"));
+	DocksBarrier->SetupAttachment(Ground); DocksBarrier->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+	DocksBarrier->SetBoxExtent(FVector(20,150,110)); DocksBarrier->SetRelativeLocation(TileToLocal(21.5f,28.7f,110));
+	MeshTable = {
+		{TEXT("stall"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/stall_red.stall_red"))},
+		{TEXT("house"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/wall_wood_window_shutters.wall_wood_window_shutters"))},
+		{TEXT("roof"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/roof_high.roof_high"))},
+		{TEXT("wall"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/wall.wall"))},
+		{TEXT("lantern"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/lantern.lantern"))},
+		{TEXT("crate"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Pirate/crate.crate"))},
+		{TEXT("barrel"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Pirate/barrel.barrel"))},
+		{TEXT("fountain"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/fountain_round.fountain_round"))},
+		{TEXT("plant"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Nature/plant_bush.plant_bush"))},
+		{TEXT("fence"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/fence.fence"))},
+		{TEXT("pier"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Pirate/platform_planks.platform_planks"))},
+	};
 }
 
 FVector AGbWardGreybox::TileToLocal(float Col, float Row, float Z)
@@ -227,6 +258,107 @@ void AGbWardGreybox::OnConstruction(const FTransform& Transform)
 	Paint(Houses, Color::Paper, this);
 	Paint(Roofs, Color::Ink, this);
 	Paint(GrassBlades, Color::TallGrass, this);
+	Dress();
+}
+
+void AGbWardGreybox::Slot(FName Name, float Col, float Row, float W, float H, float Bottom, float Height, bool bSolid)
+{
+	UInstancedStaticMeshComponent* Mesh = SlotMeshes.FindRef(Name);
+	if (!Mesh)
+	{
+		Mesh = NewObject<UInstancedStaticMeshComponent>(this); Mesh->SetupAttachment(RootComponent);
+		UStaticMesh* Asset = nullptr;
+		if (const FSoftObjectPath* Path = MeshTable.Find(Name); Path && FPackageName::DoesPackageExist(Path->GetLongPackageName())) Asset = Cast<UStaticMesh>(Path->TryLoad());
+		if (Asset) Mesh->SetStaticMesh(Asset); else GbGreybox::SetupMesh(Mesh, GbGreybox::EShape::Cube);
+		Mesh->SetCollisionEnabled(bSolid ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+		Mesh->SetCollisionResponseToAllChannels(ECR_Block); Mesh->SetCanEverAffectNavigation(bSolid);
+		AddInstanceComponent(Mesh); Mesh->RegisterComponent(); Dressing.Add(Mesh); SlotMeshes.Add(Name, Mesh);
+		if (!Asset) GbGreybox::Paint(Mesh, Name == TEXT("plant") ? GbGreybox::Color::Leaf : GbGreybox::Color::Wood, this);
+	}
+	const FBox Box = Mesh->GetStaticMesh()->GetBoundingBox();
+	const FVector Size = Box.GetSize().ComponentMax(FVector(1));
+	const FVector Scale(H * Tile / Size.X, W * Tile / Size.Y, Height / Size.Z);
+	const FVector Centre = TileToLocal(Col + W / 2, Row + H / 2, Bottom + Height / 2);
+	Mesh->AddInstance(FTransform(FRotator::ZeroRotator, Centre - Box.GetCenter() * Scale, Scale));
+}
+
+void AGbWardGreybox::Dress()
+{
+	// Older saved revisions did not serialize Dressing; recover only generated instance components.
+	const TArray<UActorComponent*> SavedInstances = GetInstanceComponents();
+	for (UActorComponent* C : SavedInstances)
+	{
+		if (C && (C->IsA<UInstancedStaticMeshComponent>() || C->IsA<UPointLightComponent>() || C->IsA<UTextRenderComponent>()))
+		{ Dressing.Remove(C); C->DestroyComponent(); }
+	}
+	for (UActorComponent* C : Dressing) if (C) C->DestroyComponent();
+	Dressing.Reset(); SlotMeshes.Reset();
+	// Keep the original collision hulls: the decorative kit never changes a street's footprint.
+	for (int X = 3; X < Cols - 3; X += 4)
+	{
+		if (X >= 14 && X <= 27) continue;
+		for (int Y : {11, 15})
+		{
+			Slot(TEXT("stall"), X, Y, 2, 1, 0, 210);
+			Slot(TEXT("lantern"), X + 2.3f, Y + 0.3f, .4f, .4f, 230, 40);
+			UPointLightComponent* Light = NewObject<UPointLightComponent>(this); Light->SetupAttachment(RootComponent);
+			Light->SetRelativeLocation(TileToLocal(X + 2.5f, Y + .5f, 240));
+			Light->SetMobility(EComponentMobility::Movable); Light->SetLightColor(GbGreybox::Color::Lantern);
+			Light->SetIntensity(1800); Light->SetAttenuationRadius(260); Light->SetCastShadows(false);
+			AddInstanceComponent(Light); Light->RegisterComponent(); Dressing.Add(Light);
+		}
+	}
+	// Imported roofs and window facades, fitted to the existing four house footprints.
+	const FIntRect HousesAt[] = { FIntRect(13,2,18,7), FIntRect(25,2,30,7), FIntRect(15,19,19,23), FIntRect(24,19,29,23) };
+	for (const FIntRect& R : HousesAt)
+	{
+		Slot(TEXT("house"), R.Min.X, R.Max.Y - .15f, R.Width(), .15f, 0, 300);
+		Slot(TEXT("roof"), R.Min.X - .2f, R.Min.Y - .2f, R.Width() + .4f, R.Height() + .4f, 300, 120);
+	}
+	for (int X = 1; X < Cols - 1; X += 2) Slot(TEXT("wall"), X, .8f, 2, .2f, 0, 300);
+	Slot(TEXT("fountain"), 17,15,2,2,0,85);
+	for (const FIntPoint P : {FIntPoint(16,9),FIntPoint(26,9),FIntPoint(16,17),FIntPoint(26,17)}) Slot(TEXT("plant"),P.X,P.Y,1,1,0,100);
+	for (const FIntRect& R : GrassPatches)
+	{
+		// Low visual fences at the back; all existing grass entrances/triggers stay accessible.
+		for (int X = R.Min.X; X < R.Max.X; X += 2) Slot(TEXT("fence"), X,R.Min.Y,2,.12f,0,65);
+	}
+	for (int Y = 24; Y < 29; ++Y) Slot(TEXT("pier"),20,Y,3,1,0,8);
+	Slot(TEXT("fence"),20,28.65f,3,.2f,0,180);
+	for (int X : {4,10,29,36}) { Slot(TEXT("crate"),X,23, .7f,.7f,0,70); Slot(TEXT("barrel"),X+1,23,.6f,.6f,0,80); }
+	// North-east den row: red lanterns, no additional dialogue.
+	for (int X : {25,27,29})
+	{
+		Slot(TEXT("lantern"),X,7,.35f,.35f,220,45);
+		UPointLightComponent* Light = NewObject<UPointLightComponent>(this); Light->SetupAttachment(RootComponent);
+		Light->SetRelativeLocation(TileToLocal(X+.175f,7.175f,240)); Light->SetMobility(EComponentMobility::Movable);
+		Light->SetLightColor(GbGreybox::Color::Crimson); Light->SetIntensity(1200); Light->SetAttenuationRadius(220); Light->SetCastShadows(false);
+		AddInstanceComponent(Light); Light->RegisterComponent(); Dressing.Add(Light);
+	}
+	const FVector GatePositions[] = { TileToLocal(21.5f,1.5f,100), TileToLocal(42.5f,13.5f,100), TileToLocal(21.5f,28.3f,100) };
+	for (int I = 0; I < Gates.Num(); ++I) { Gates[I]->SetRelativeLocation(GatePositions[I]); Gates[I]->SetBoxExtent(FVector(90,90,120)); }
+	const TCHAR* Labels[] = { TEXT("market street"), TEXT("gambling-den row"), TEXT("canal edge"), TEXT("tall-grass lots"), TEXT("Bone gate"), TEXT("Ash gate"), TEXT("Tide docks gate") };
+	const FVector LabelAt[] = {TileToLocal(7,13,170),TileToLocal(27,8,180),TileToLocal(10,23,150),TileToLocal(8,4,140),GatePositions[0],GatePositions[1],GatePositions[2]};
+	for (int I = 0; I < 7; ++I)
+	{
+		UTextRenderComponent* Label = NewObject<UTextRenderComponent>(this); Label->SetupAttachment(RootComponent);
+		Label->SetText(FText::FromString(Labels[I])); Label->SetWorldSize(32); Label->SetHorizontalAlignment(EHTA_Center);
+		Label->SetRelativeLocation(LabelAt[I] + FVector(0,0,150)); Label->SetRelativeRotation(FRotator(55,180,0));
+		Label->SetTextRenderColor(GbGreybox::Color::Paper.ToFColor(true)); Label->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		AddInstanceComponent(Label); Label->RegisterComponent(); Dressing.Add(Label);
+	}
+	const auto Imported = [this](FName Name) { const UInstancedStaticMeshComponent* M = SlotMeshes.FindRef(Name); return M && M->GetStaticMesh() && !M->GetStaticMesh()->GetPathName().StartsWith(TEXT("/Engine/BasicShapes/")); };
+	// Keep original collision, but let the CC0 slot provide the visible surface.
+	Wood->SetVisibility(!Imported(TEXT("stall"))); Awnings->SetVisibility(!Imported(TEXT("stall")));
+	Roofs->SetVisibility(!Imported(TEXT("roof"))); Fountain->SetVisibility(!Imported(TEXT("fountain"))); Plants->SetVisibility(!Imported(TEXT("plant")));
+}
+
+void AGbWardGreybox::GateOverlap(UPrimitiveComponent* Component, AActor* Other, UPrimitiveComponent*, int32, bool, const FHitResult&)
+{
+	const APawn* Pawn = Cast<APawn>(Other);
+	if (!Pawn || !Pawn->IsLocallyControlled() || !GetGameInstance()) return;
+	for (int I = 0; I < Gates.Num(); ++I) if (Gates[I] == Component)
+		if (UGbApiSubsystem* Api = GetGameInstance()->GetSubsystem<UGbApiSubsystem>()) Api->SayAsKessa(GateLines[I]);
 }
 
 void AGbWardGreybox::BeginPlay()
@@ -314,3 +446,31 @@ void AGbWardGreybox::MovePlayerToStart()
 	const float HalfHeight = Pawn->GetSimpleCollisionHalfHeight();
 	Pawn->SetActorLocation(GetPlayerStartLocation() + FVector(0.f, 0.f, HalfHeight + 5.f), false, nullptr, ETeleportType::TeleportPhysics);
 }
+
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbWardLayoutTest, "Grudgebound.Ward.LayoutAndFallback", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FGbWardLayoutTest::RunTest(const FString&)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Editor, false, FName(TEXT("GbWardLayoutFixture")), nullptr, true);
+	// CreateWorld already initializes its level and WorldSettings; never initialize it twice.
+	AGbWardGreybox* Ward = World->SpawnActor<AGbWardGreybox>();
+	if (!TestNotNull(TEXT("Native Ward spawns"), Ward)) { World->DestroyWorld(false); return false; }
+	TestEqual(TEXT("Tile/player mapping preserved"), Ward->GetPlayerStartLocation(), FVector(150,-50,0));
+	TArray<UBoxComponent*> Boxes; Ward->GetComponents(Boxes);
+	const UBoxComponent* Barrier = nullptr;
+	for (const UBoxComponent* Box : Boxes) if (Box->GetFName() == TEXT("DocksBarrier")) Barrier = Box;
+	TestTrue(TEXT("Closed docks gate blocks independently of decorative mesh collision"), Barrier && Barrier->GetCollisionEnabled() == ECollisionEnabled::QueryAndPhysics);
+	TArray<UGbTallGrassComponent*> Grass; Ward->GetComponents(Grass);
+	TestEqual(TEXT("Four original trigger patches"), Grass.Num(), 4);
+	TArray<FVector> Centres; for (const UGbTallGrassComponent* G : Grass) Centres.Add(G->GetRelativeLocation());
+	if (Grass.Num() == 4) TestTrue(TEXT("North-west grass bounds preserved"), Grass[0]->GetUnscaledBoxExtent().Equals(FVector(300,450,100)));
+	Ward->MeshTable.Reset(); Ward->RebuildWard();
+	for (int I=0; I<Grass.Num(); ++I) TestEqual(TEXT("Fallback does not move encounter triggers"), Grass[I]->GetRelativeLocation(), Centres[I]);
+	TArray<UPointLightComponent*> Lamps; Ward->GetComponents(Lamps);
+	TestTrue(TEXT("Lanterns stay inside dynamic-light budget"), Lamps.Num() > 0 && Lamps.Num() <= 24);
+	const int32 Count = Lamps.Num(); Ward->RebuildWard(); Lamps.Reset(); Ward->GetComponents(Lamps);
+	TestEqual(TEXT("Reconstruction cannot duplicate lanterns"), Lamps.Num(), Count);
+	World->DestroyWorld(false); return true;
+}
+#endif

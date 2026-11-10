@@ -18,6 +18,7 @@ class UGbTallGrassComponent;
 class ADirectionalLight;
 class ASkyLight;
 class APostProcessVolume;
+class UBoxComponent;
 
 UCLASS(ClassGroup = (Grudgebound))
 class GRUDGEBOUNDCLIENT_API AGbWardGreybox : public AActor
@@ -28,6 +29,8 @@ public:
 	AGbWardGreybox();
 
 	virtual void OnConstruction(const FTransform& Transform) override;
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Grudgebound|Environment")
+	void RebuildWard() { OnConstruction(GetActorTransform()); }
 
 	/** Ward whose Grudge picks the curses in this map's tall grass. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grudgebound")
@@ -45,6 +48,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grudgebound", meta = (ClampMin = "0", ClampMax = "12"))
 	int32 GrassBladesPerMetre = 4;
 
+	/** Optional CC0 slots; absent imports retain the procedural fallback. */
+	UPROPERTY(EditAnywhere, Category = "Grudgebound|Environment")
+	TMap<FName, FSoftObjectPath> MeshTable;
+
 	/** World position of the player start (feet). */
 	UFUNCTION(BlueprintPure, Category = "Grudgebound")
 	FVector GetPlayerStartLocation() const;
@@ -56,6 +63,13 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	void Dress();
+	void Slot(FName Name, float Col, float Row, float W, float H, float Bottom, float Height, bool bSolid = false);
+	UFUNCTION() void GateOverlap(UPrimitiveComponent* Component, AActor* Other, UPrimitiveComponent* OtherComponent, int32 BodyIndex, bool bFromSweep, const FHitResult& Sweep);
+	UPROPERTY() TArray<TObjectPtr<UActorComponent>> Dressing;
+	UPROPERTY(Transient) TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> SlotMeshes;
+	UPROPERTY() TArray<TObjectPtr<UBoxComponent>> Gates;
+	UPROPERTY() TObjectPtr<UBoxComponent> DocksBarrier;
 	/** Adds a block covering tiles [Col, Col+W) x [Row, Row+H), from BottomCm up HeightCm. */
 	void Block(UInstancedStaticMeshComponent* Mesh, float Col, float Row, float W, float H, float BottomCm, float HeightCm);
 	/** Local position of a tile-space point (column, row) at height Z. */
