@@ -412,7 +412,8 @@ class GRUDGEBOUNDCLIENT_API UGbShopRowWidget : public UGbWidgetBase
 	GENERATED_BODY()
 
 public:
-	void Setup(const FString& Title, const FString& Detail, const FString& Button, bool bEnabled, const FLinearColor& TitleColor);
+	/** Art is a picture in UI/Battle (an item icon or a curse); empty leaves the plate blank. */
+	void Setup(const FString& Art, const FString& Title, const FString& Detail, const FString& Button, bool bEnabled, const FLinearColor& TitleColor);
 
 	/** Called with nothing: the shop knows which row it built. */
 	TFunction<void()> OnClick;
@@ -423,6 +424,7 @@ protected:
 private:
 	UFUNCTION() void HandleClick();
 
+	UPROPERTY() TObjectPtr<UImage> ArtImage;
 	UPROPERTY() TObjectPtr<UTextBlock> TitleText;
 	UPROPERTY() TObjectPtr<UTextBlock> DetailText;
 	UPROPERTY() TObjectPtr<UButton> Action;
@@ -460,6 +462,10 @@ private:
 	void Redraw();
 	void Buy(const FString& ItemId);
 	void Sell(const FString& TokenId);
+	/** The picture for a stock line: emotion icon for talismans, the supply's own icon otherwise. */
+	static FString ItemArt(const FString& ItemId);
+
+	friend class FGbPanelPreviewTest;
 
 	UPROPERTY() TObjectPtr<UTextBlock> Title;
 	UPROPERTY() TObjectPtr<UTextBlock> Purse;

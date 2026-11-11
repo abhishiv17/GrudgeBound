@@ -1601,25 +1601,37 @@ void UGbTalismanCaseWidget::HandlePlayerChanged() { Refresh(); }
 
 void UGbShopRowWidget::BuildTree()
 {
-	UHorizontalBox* H = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = H;
+	UBorder* Row = MakePanel(GbUi::PaperHi(), FMargin(12.f, 10.f));
+	WidgetTree->RootWidget = Row;
+	UHorizontalBox* H = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	Row->SetContent(H);
+	UBorder* Plate = MakePanel(GbUi::Paper2(), FMargin(4.f)); Plate->SetContent(MakeArt(FString(), 56.f, ArtImage));
+	if (UHorizontalBoxSlot* PlateSlot = Cast<UHorizontalBoxSlot>(H->AddChildToHorizontalBox(Plate)))
+	{
+		PlateSlot->SetVerticalAlignment(VAlign_Top); PlateSlot->SetPadding(FMargin(0.f, 0.f, 14.f, 0.f));
+	}
 	UVerticalBox* Text = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	TitleText = MakeText(TEXT(""), 15, C::Ink, true);
-	DetailText = MakeText(TEXT(""), 12, Dim());
+	TitleText = MakeText(TEXT(""), 20, C::Ink, true);
+	DetailText = MakeText(TEXT(""), 15, C::Ink);
 	DetailText->SetAutoWrapText(true);
-	AddRow(Text, TitleText, 0.f, 0.f);
-	AddRow(Text, DetailText, 0.f, 4.f);
-	AddCol(H, Text, true);
+	AddRow(Text, TitleText, 0.f, 4.f);
+	AddRow(Text, DetailText, 0.f, 0.f);
+	AddCol(H, Text, true, 12.f);
 	UTextBlock* Label = nullptr;
-	Action = MakeButton(TEXT(""), Label, C::Gold);
+	Action = MakeKeyButton(TEXT(""), FString(), Label, C::Gold);
+	Label->SetFont(GbUi::Font(18, true));
 	ActionLabel = Label;
 	Action->OnClicked.AddDynamic(this, &UGbShopRowWidget::HandleClick);
-	AddCol(H, Sized(Action, 120.f, 36.f), false, 0.f);
+	if (UHorizontalBoxSlot* ButtonSlot = Cast<UHorizontalBoxSlot>(H->AddChildToHorizontalBox(Sized(Action, 150.f, 52.f))))
+	{
+		ButtonSlot->SetVerticalAlignment(VAlign_Center);
+	}
 }
 
-void UGbShopRowWidget::Setup(const FString& InTitle, const FString& Detail, const FString& Button, bool bEnabled, const FLinearColor& TitleColor)
+void UGbShopRowWidget::Setup(const FString& Art, const FString& InTitle, const FString& Detail, const FString& Button, bool bEnabled, const FLinearColor& TitleColor)
 {
 	if (!TitleText) return;
+	SetArt(ArtImage, Art, 56.f);
 	TitleText->SetText(FText::FromString(InTitle));
 	TitleText->SetColorAndOpacity(FSlateColor(TitleColor));
 	DetailText->SetText(FText::FromString(Detail));
@@ -1634,36 +1646,45 @@ void UGbShopRowWidget::HandleClick()
 
 void UGbShopWidget::BuildTree()
 {
-	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = Root;
+	UTextBlock* TitleText = nullptr; UHorizontalBox* Footer = nullptr;
+	UVerticalBox* Body = MakeShell(TEXT("The Talisman Broker"), TEXT("icon_seal"), 1280.f, TitleText, Purse, Footer);
+	Title = TitleText;
+	Purse->SetText(FText::FromString(TEXT("Counting your Ember...")));
 
-	UBorder* Card = MakePanel(PaperPanel(), FMargin(22.f, 16.f));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Card->SetContent(Sized(Col, 620.f, 0.f));
-
-	Title = MakeText(TEXT("The Talisman Broker"), 22, C::Ink, true);
-	AddRow(Col, Title);
-	Purse = MakeText(TEXT("Counting your Ember..."), 13, C::Ink);
-	AddRow(Col, Purse, 2.f, 8.f);
-
-	AddRow(Col, MakeText(TEXT("For sale"), 14, C::Ink, true), 4.f);
+	// Two columns: the Broker's stock on the left, your sealed talismans (to sell back) on the right.
+	UHorizontalBox* Cols = WidgetTree->ConstructWidget<UHorizontalBox>();
+	UVerticalBox* Left = WidgetTree->ConstructWidget<UVerticalBox>();
+	AddRow(Left, MakeSection(TEXT("For sale")), 0.f, 8.f);
 	Stock = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
-	AddRow(Col, Sized(Stock, 0.f, 230.f));
-
-	AddRow(Col, MakeText(TEXT("Your sealed talismans"), 14, C::Ink, true), 10.f);
+	AddRow(Left, Sized(Stock, 0.f, 500.f));
+	AddCol(Cols, Left, true, 24.f);
+	if (UHorizontalBoxSlot* LeftSlot = Cast<UHorizontalBoxSlot>(Left->Slot))
+	{
+		FSlateChildSize Wide(ESlateSizeRule::Fill); Wide.Value = 1.4f; LeftSlot->SetSize(Wide);
+	}
+	UVerticalBox* Right = WidgetTree->ConstructWidget<UVerticalBox>();
+	AddRow(Right, MakeSection(TEXT("Your sealed talismans")), 0.f, 8.f);
 	Yours = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
-	AddRow(Col, Sized(Yours, 0.f, 150.f));
+	AddRow(Right, Sized(Yours, 0.f, 500.f));
+	AddCol(Cols, Right, true, 0.f);
+	AddRow(Body, Cols);
 
-	Status = MakeText(TEXT(""), 13, C::Ink);
-	Status->SetAutoWrapText(true);
-	AddRow(Col, Status, 8.f);
+	// Trade progress and receipts go in the shell's ink note.
+	Status = ShellStatus;
 
-	UTextBlock* Ignored = nullptr;
-	UButton* Close = MakeButton(TEXT("Back to Satchel  (B)"), Ignored, C::Stone);
+	UTextBlock* Label = nullptr;
+	UButton* Close = MakeKeyButton(TEXT("Back to Satchel"), KeyName(TEXT("Satchel")), Label, GbUi::Paper2());
 	Close->OnClicked.AddDynamic(this, &UGbShopWidget::HandleClose);
-	AddRow(Col, Sized(Close, 0.f, 40.f), 10.f);
+	AddCol(Footer, Sized(Close, 320.f, 56.f), false, 0.f);
+}
 
-	Centre(Root, Card);
+FString UGbShopWidget::ItemArt(const FString& ItemId)
+{
+	if (ItemId.StartsWith(TEXT("talisman-"))) return TEXT("emo_") + ItemId.Mid(9);
+	if (ItemId == TEXT("blank-talisman") || ItemId == TEXT("binding-seal")) return TEXT("talisman");
+	if (ItemId == TEXT("gilded-talisman")) return TEXT("talisman_gilded");
+	if (ItemId == TEXT("ink-salve")) return TEXT("icon_salve");
+	return TEXT("wax_seal");
 }
 
 void UGbShopWidget::NativeConstruct()
@@ -1728,13 +1749,13 @@ void UGbShopWidget::Redraw()
 		UGbShopRowWidget* Row = CreateWidget<UGbShopRowWidget>(this, UGbShopRowWidget::StaticClass());
 		if (!Row) continue;
 		const bool bCan = (bTalisman || bSupply) && !bBusy && A && !A->IsSatchelBusy() && !Data.bClosed && It.Stock > 0 && Data.Ember >= It.Price;
-		const FString Detail = FString::Printf(TEXT("%d Ember  |  %d in stock  |  %s"), It.Price, It.Stock, *It.Text);
+		const FString Detail = FString::Printf(TEXT("%d Ember  |  %d in stock\n%s"), It.Price, It.Stock, *It.Text);
 		const FString Emotion = bTalisman ? It.Id.Mid(9) : FString();
-		Row->Setup(It.Name, bTalisman || bSupply ? Detail : Detail + TEXT("  (not sold to players yet)"),
+		Row->Setup(ItemArt(It.Id), It.Name, bTalisman || bSupply ? Detail : Detail + TEXT("  (not sold to players yet)"),
 			FString::Printf(TEXT("Buy  %d"), It.Price), bCan, bTalisman ? EmotionColor(Emotion) : C::Ink);
 		const FString ItemId = It.Id;
 		Row->OnClick = [this, ItemId]() { Buy(ItemId); };
-		Stock->AddChild(Row);
+		if (UScrollBoxSlot* RowSlot = Cast<UScrollBoxSlot>(Stock->AddChild(Row))) RowSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
 	}
 
 	Yours->ClearChildren();
@@ -1750,17 +1771,22 @@ void UGbShopWidget::Redraw()
 			UGbShopRowWidget* Row = CreateWidget<UGbShopRowWidget>(this, UGbShopRowWidget::StaticClass());
 			if (!Row) continue;
 			const bool bPartner = T.Id == P->GetPartner().Id;
-			Row->Setup(FString::Printf(TEXT("%s  (ledger %s)"), *Curse.Name, *T.ChainTokenId),
+			Row->Setup(CurseArt(T.SpeciesId), FString::Printf(TEXT("%s  (ledger %s)"), *Curse.Name, *T.ChainTokenId),
 				bPartner ? FString(TEXT("Your partner: choose another partner in the Satchel (B) before selling it."))
 					: Offer > 0 ? FString::Printf(TEXT("The Broker offers %d Ember"), Offer) : FString(TEXT("The Broker doesn't buy these")),
 				FString::Printf(TEXT("Sell  %d"), Offer), !bBusy && !A->IsSatchelBusy() && !bPartner && Offer > 0 && !Data.bClosed, EmotionColor(Curse.Emotion));
 			const FString TokenId = T.ChainTokenId;
 			Row->OnClick = [this, TokenId]() { Sell(TokenId); };
-			Yours->AddChild(Row);
+			if (UScrollBoxSlot* RowSlot = Cast<UScrollBoxSlot>(Yours->AddChild(Row))) RowSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
 			++Shown;
 		}
 	}
-	if (Shown == 0) Yours->AddChild(MakeText(TEXT("None yet: talismans sealed in the ledger show up here."), 13, Dim()));
+	if (Shown == 0)
+	{
+		UTextBlock* None = MakeText(TEXT("None yet: talismans sealed in the ledger show up here."), 17, C::Ink);
+		None->SetAutoWrapText(true);
+		Yours->AddChild(None);
+	}
 }
 
 void UGbShopWidget::Buy(const FString& ItemId)

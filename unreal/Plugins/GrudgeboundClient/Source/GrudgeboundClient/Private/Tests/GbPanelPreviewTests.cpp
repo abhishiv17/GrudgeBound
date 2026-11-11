@@ -137,6 +137,28 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 		W->RemoveFromRoot();
 	}
 
+	// ---- The Broker: the Lantern Ward stock (shared/src/engine.ts), 60 Ember, a trade waiting on the ledger.
+	{
+		UGbShopWidget* W = Cast<UGbShopWidget>(Make(UGbShopWidget::StaticClass()));
+		FGbShop Shop; Shop.MerchantId = UGbShopWidget::MerchantId; Shop.MerchantName = TEXT("the Talisman Broker"); Shop.Ember = 60;
+		const auto Item = [&Shop](const TCHAR* Id, const TCHAR* Name, int32 Price, int32 Stock, const TCHAR* Text)
+		{
+			FGbShopItem It; It.Id = Id; It.Name = Name; It.Price = Price; It.Stock = Stock; It.Text = Text; It.BuyBack = Price / 2; Shop.Items.Add(It);
+		};
+		Item(TEXT("talisman-rage"), TEXT("Rage talismans"), 34, 6, TEXT("Riot season; rage sells."));
+		Item(TEXT("talisman-sorrow"), TEXT("Sorrow talismans"), 28, 5, TEXT("Quiet week by the canal."));
+		Item(TEXT("talisman-dread"), TEXT("Dread talismans"), 30, 6, TEXT("Steady."));
+		Item(TEXT("blank-talisman"), TEXT("Blank talismans"), 15, 10, TEXT("Paper and ink."));
+		Item(TEXT("gilded-talisman"), TEXT("Gilded talismans"), 30, 0, TEXT("Sold out until the gilder returns."));
+		Item(TEXT("ink-salve"), TEXT("Ink Salves"), 10, 12, TEXT("Not for players yet."));
+		W->Data = Shop;
+		W->Redraw();
+		W->Status->SetText(FText::FromString(TEXT("You bought a blank talisman for 15 Ember. Sealing it in the ledger...")));
+		TestEqual(TEXT("Broker lists every stock line"), W->Stock->GetChildrenCount(), 6);
+		Capture(W, TEXT("Broker"));
+		W->RemoveFromRoot();
+	}
+
 	// ---- Your room.
 	{
 		UGbRoomWidget* W = Cast<UGbRoomWidget>(Make(UGbRoomWidget::StaticClass()));
