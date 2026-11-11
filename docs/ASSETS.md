@@ -39,3 +39,6 @@ screen's sky are generated in code (GbWidgets.cpp), no image files.
 Paper grain and the uneven brush frame are generated in GbWidgets.cpp as one deterministic 64x64 texture,
 shared by all panel/button helpers; no downloaded texture or AI asset. The palette remains in
 GbGreyboxMaterials.h. All panels use the shared type, frame, button and visibility-animation helpers.
+
+Battle art in Content/Grudgebound/UI/Battle is exported from the web client's own painters
+(unreal/tools/export-battle-art.ts); no downloaded or AI-generated asset.

@@ -1,0 +1,302 @@
+[
+  {
+    "name": "action-attack",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "action-attack@1x.png",
+      "action-attack@2x.png"
+    ]
+  },
+  {
+    "name": "action-ward",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "action-ward@1x.png",
+      "action-ward@2x.png"
+    ]
+  },
+  {
+    "name": "action-salve",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "action-salve@1x.png",
+      "action-salve@2x.png"
+    ]
+  },
+  {
+    "name": "action-seal",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "action-seal@1x.png",
+      "action-seal@2x.png"
+    ]
+  },
+  {
+    "name": "action-gilded-seal",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "action-gilded-seal@1x.png",
+      "action-gilded-seal@2x.png"
+    ]
+  },
+  {
+    "name": "action-flee",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "action-flee@1x.png",
+      "action-flee@2x.png"
+    ]
+  },
+  {
+    "name": "emotion-rage",
+    "width": 32,
+    "height": 32,
+    "alpha": true,
+    "files": [
+      "emotion-rage@1x.png",
+      "emotion-rage@2x.png"
+    ]
+  },
+  {
+    "name": "emotion-sorrow",
+    "width": 32,
+    "height": 32,
+    "alpha": true,
+    "files": [
+      "emotion-sorrow@1x.png",
+      "emotion-sorrow@2x.png"
+    ]
+  },
+  {
+    "name": "emotion-dread",
+    "width": 32,
+    "height": 32,
+    "alpha": true,
+    "files": [
+      "emotion-dread@1x.png",
+      "emotion-dread@2x.png"
+    ]
+  },
+  {
+    "name": "curse-weepwick",
+    "width": 48,
+    "height": 48,
+    "alpha": true,
+    "files": [
+      "curse-weepwick@1x.png",
+      "curse-weepwick@2x.png"
+    ]
+  },
+  {
+    "name": "curse-riot-bell",
+    "width": 64,
+    "height": 64,
+    "alpha": true,
+    "files": [
+      "curse-riot-bell@1x.png",
+      "curse-riot-bell@2x.png"
+    ]
+  },
+  {
+    "name": "night-market-backdrop",
+    "width": 1920,
+    "height": 720,
+    "alpha": false,
+    "files": [
+      "night-market-backdrop@1x.png",
+      "night-market-backdrop@2x.png"
+    ]
+  },
+  {
+    "name": "attack-hit-01",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "attack-hit-01@1x.png",
+      "attack-hit-01@2x.png"
+    ]
+  },
+  {
+    "name": "attack-hit-02",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "attack-hit-02@1x.png",
+      "attack-hit-02@2x.png"
+    ]
+  },
+  {
+    "name": "attack-hit-03",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "attack-hit-03@1x.png",
+      "attack-hit-03@2x.png"
+    ]
+  },
+  {
+    "name": "attack-hit-04",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "attack-hit-04@1x.png",
+      "attack-hit-04@2x.png"
+    ]
+  },
+  {
+    "name": "attack-hit-05",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "attack-hit-05@1x.png",
+      "attack-hit-05@2x.png"
+    ]
+  },
+  {
+    "name": "attack-hit-06",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "attack-hit-06@1x.png",
+      "attack-hit-06@2x.png"
+    ]
+  },
+  {
+    "name": "ward-shield-01",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "ward-shield-01@1x.png",
+      "ward-shield-01@2x.png"
+    ]
+  },
+  {
+    "name": "ward-shield-02",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "ward-shield-02@1x.png",
+      "ward-shield-02@2x.png"
+    ]
+  },
+  {
+    "name": "ward-shield-03",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "ward-shield-03@1x.png",
+      "ward-shield-03@2x.png"
+    ]
+  },
+  {
+    "name": "ward-shield-04",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "ward-shield-04@1x.png",
+      "ward-shield-04@2x.png"
+    ]
+  },
+  {
+    "name": "ward-shield-05",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "ward-shield-05@1x.png",
+      "ward-shield-05@2x.png"
+    ]
+  },
+  {
+    "name": "ward-shield-06",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "ward-shield-06@1x.png",
+      "ward-shield-06@2x.png"
+    ]
+  },
+  {
+    "name": "seal-01",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "seal-01@1x.png",
+      "seal-01@2x.png"
+    ]
+  },
+  {
+    "name": "seal-02",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "seal-02@1x.png",
+      "seal-02@2x.png"
+    ]
+  },
+  {
+    "name": "seal-03",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "seal-03@1x.png",
+      "seal-03@2x.png"
+    ]
+  },
+  {
+    "name": "seal-04",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "seal-04@1x.png",
+      "seal-04@2x.png"
+    ]
+  },
+  {
+    "name": "seal-05",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "seal-05@1x.png",
+      "seal-05@2x.png"
+    ]
+  },
+  {
+    "name": "seal-06",
+    "width": 128,
+    "height": 128,
+    "alpha": true,
+    "files": [
+      "seal-06@1x.png",
+      "seal-06@2x.png"
+    ]
+  }
+]
