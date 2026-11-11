@@ -1,4 +1,5 @@
 #include "GbCoopMission.h"
+#include "GbExorcistLook.h"
 #include "GbGreyboxMaterials.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
@@ -167,7 +168,13 @@ AGbCoopCharacter::AGbCoopCharacter()
 	Boom->SetUsingAbsoluteRotation(true); Boom->SetRelativeRotation(FRotator(-60,0,0)); Boom->TargetArmLength = 1500; Boom->bDoCollisionTest = false;
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera")); Camera->SetupAttachment(Boom, USpringArmComponent::SocketName);
 }
-void AGbCoopCharacter::BeginPlay() { Super::BeginPlay(); OnRep_Color(); OnRep_Health(); }
+void AGbCoopCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	// The exorcist's body replaces the greybox robe; binders differ by scarf colour.
+	if (UGbExorcistLook::Ensure(this)) { Robe->SetVisibility(false); Face->SetVisibility(false); }
+	OnRep_Color(); OnRep_Health();
+}
 void AGbCoopCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -182,10 +189,12 @@ void AGbCoopCharacter::OnRep_Color()
 {
 	const FLinearColor Colors[] = { GbGreybox::Color::Gold, GbGreybox::Color::Teal, GbGreybox::Color::Crimson, GbGreybox::Color::Leaf };
 	GbGreybox::Paint(Robe, Colors[FMath::Abs(BinderIndex)%4], this); GbGreybox::Paint(Face, GbGreybox::Color::Paper, this);
+	if (UGbExorcistLook* Look = FindComponentByClass<UGbExorcistLook>()) Look->SetScarfColor(Colors[FMath::Abs(BinderIndex)%4]);
 }
 void AGbCoopCharacter::OnRep_Health()
 {
 	if (IsDown()) GetCharacterMovement()->DisableMovement(); else GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+	if (UGbExorcistLook* Look = FindComponentByClass<UGbExorcistLook>()) Look->SetDowned(IsDown());
 }
 void AGbCoopCharacter::Hurt(float Damage) { if (HasAuthority() && !IsDown()) { Health = FMath::Max(0.f, Health-Damage); OnRep_Health(); } }
 void AGbCoopCharacter::Restore(float Amount) { if (HasAuthority()) { Health = FMath::Clamp(Amount,1.f,100.f); OnRep_Health(); } }

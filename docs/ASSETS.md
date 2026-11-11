@@ -42,3 +42,7 @@ GbGreyboxMaterials.h. All panels use the shared type, frame, button and visibili
 
 Battle art in Content/Grudgebound/UI/Battle is exported from the web client's own painters
 (unreal/tools/export-battle-art.ts); no downloaded or AI-generated asset.
+
+Player character and townsfolk (11 Nov): built in code from the engine basic shapes (GbExorcistLook.cpp),
+following the web client's own player sprite (client/game/playerArt.ts: palette and design). No downloaded or
+AI-generated asset.
