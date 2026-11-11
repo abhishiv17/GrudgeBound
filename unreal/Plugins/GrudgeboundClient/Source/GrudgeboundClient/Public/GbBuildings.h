@@ -11,7 +11,7 @@ class UTextRenderComponent;
 UENUM()
 enum class EGbBuilding : uint8 { Outside, CountingHouse, Mender, RiteHall, Room };
 UENUM()
-enum class EGbBuildingUse : uint8 { Enter, Exit, Broker, Mender, Rules, Vows, Room, Case };
+enum class EGbBuildingUse : uint8 { Enter, Exit, Broker, Mender, Rules, Vows, Room, Case, Travel };
 
 namespace GbBuildings
 {
@@ -32,6 +32,8 @@ public:
  UPROPERTY(EditAnywhere, Category="Building") EGbBuildingUse Use = EGbBuildingUse::Enter;
  UPROPERTY(EditAnywhere, Category="Building") FVector TargetFeet = FVector::ZeroVector;
  UPROPERTY(EditAnywhere, Category="Building") FString Label = TEXT("Counting House");
+ /** Use == Travel: the Ward at the other end ("tide", "lantern"). The door stands outside; TargetFeet is the landing. */
+ UPROPERTY(EditAnywhere, Category="Building") FString TravelWard;
  virtual void OnConstruction(const FTransform&) override;
 protected:
  virtual void BeginPlay() override;

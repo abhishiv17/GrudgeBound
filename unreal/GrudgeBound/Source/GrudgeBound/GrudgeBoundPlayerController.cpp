@@ -109,6 +109,7 @@ void AGrudgeBoundPlayerController::OnInputStarted()
 
 void AGrudgeBoundPlayerController::OnSetDestinationTriggered()
 {
+	if (IsMoveInputIgnored()) { FollowTime = 0.f; return; }
 	// We flag that the input is being pressed
 	FollowTime += GetWorld()->GetDeltaSeconds();
 	
@@ -126,6 +127,7 @@ void AGrudgeBoundPlayerController::OnSetDestinationTriggered()
 
 void AGrudgeBoundPlayerController::OnSetDestinationReleased()
 {
+	if (IsMoveInputIgnored()) { FollowTime = 0.f; return; }
 	// If it was a short press
 	if (FollowTime <= ShortPressThreshold)
 	{

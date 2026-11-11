@@ -59,18 +59,39 @@ public:
 	/** World position of the player start (feet). */
 	UFUNCTION(BlueprintPure, Category = "Grudgebound")
 	FVector GetPlayerStartLocation() const;
+	/** The same world-space routes used to spawn the cosmetic walkers. */
+	TArray<TArray<FVector>> GetTownsfolkPaths() const;
 
 	static constexpr int32 Cols = 44;
 	static constexpr int32 Rows = 30;
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+	UPROPERTY(Transient) TArray<TObjectPtr<class AGbTownsfolk>> Townsfolk;
 
-private:
-	struct FHouse;
+	// Shared with the other Wards built the same way (GbTideWard).
+	/** A house built from wall and roof pieces. Two cells deep (north-south), NX cells wide; a cell is S metres. */
+	struct FHouse
+	{
+		float Col, Row;
+		int32 NX;
+		float S;
+		int32 Floors;
+		/** 0 = door on the north face, 2 = on the south face. */
+		int32 DoorSide;
+		int32 DoorCell;
+		bool bHighRoof;
+		/** False for the houses outside the wall (backdrop only). */
+		bool bSolid;
+	};
 
 	/** Everything visible on top of the layout: kit pieces, lamps, scatter. */
 	void Dress();
+	/** Walks for the townsfolk, as tile-space points (column, row); one walker per walk. */
+	virtual void TownsfolkWalks(TArray<TArray<FVector2D>>& Out) const;
+	/** Throws away the last dressing and looks for the kits again. */
+	void ResetDressing();
 	void BuildHouse(const FHouse& House);
 	void BuildWalls();
 	void BuildHarbour(FRandomStream& Rand);

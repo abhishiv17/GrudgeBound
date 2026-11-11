@@ -3,6 +3,7 @@
 #include "GbApiSubsystem.h"
 #include "GbGreyboxMaterials.h"
 #include "GbTallGrassComponent.h"
+#include "GbTownsfolk.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/LightComponent.h"
 #include "Components/SkyLightComponent.h"
@@ -64,21 +65,6 @@ namespace
 		return FBox2D(FVector2D(Col, Row), FVector2D(Col + W, Row + H));
 	}
 }
-
-/** A house built from wall and roof pieces. Two cells deep (north-south), NX cells wide; a cell is S metres. */
-struct AGbWardGreybox::FHouse
-{
-	float Col, Row;
-	int32 NX;
-	float S;
-	int32 Floors;
-	/** 0 = door on the north face, 2 = on the south face. */
-	int32 DoorSide;
-	int32 DoorCell;
-	bool bHighRoof;
-	/** False for the houses outside the wall (backdrop only). */
-	bool bSolid;
-};
 
 AGbWardGreybox::AGbWardGreybox()
 {
@@ -439,13 +425,12 @@ void AGbWardGreybox::BuildHarbour(FRandomStream& Rand)
 
 	// boats at the pier, ships in the roads, a ghost of a ship further out
 	Put(TEXT("Pirate/boat_row_large"), 18.2f, 26.6f, -78.f, 8.f, 0.9f);
-	Put(TEXT("Pirate/boat_row_small"), 24.9f, 27.4f, -78.f, 172.f, 0.9f);
 	Put(TEXT("Pirate/boat_row_small"), 5.5f, 25.9f, -78.f, 80.f, 0.9f);
 	Put(TEXT("Pirate/ship_large"), 33.5f, 28.6f, -95.f, 0.f, 1.f);
 	Put(TEXT("Pirate/ship_small"), 8.5f, 30.5f, -95.f, 14.f, 1.f);
 	Put(TEXT("Pirate/ship_medium"), -14.f, 44.f, -95.f, 62.f, 1.f);
 	Put(TEXT("Pirate/ship_large"), 55.f, 47.f, -95.f, -28.f, 1.f);
-	Put(TEXT("Pirate/ship_ghost"), 22.f, 62.f, -95.f, 84.f, 1.1f);
+	Put(TEXT("Pirate/ship_ghost"), 6.f, 62.f, -95.f, 84.f, 1.1f); // west of the ferry's course
 	Put(TEXT("Pirate/rocks_a"), -5.f, 27.5f, -130.f, 40.f, 1.2f);
 	Put(TEXT("Pirate/rocks_b"), 48.5f, 28.f, -150.f, 200.f, 1.2f);
 	Put(TEXT("Pirate/rocks_c"), 13.f, 34.f, -110.f, 120.f, 1.f);
@@ -635,7 +620,7 @@ void AGbWardGreybox::BuildGreenery(FRandomStream& Rand)
 	}
 }
 
-void AGbWardGreybox::Dress()
+void AGbWardGreybox::ResetDressing()
 {
 	// Older saved revisions did not serialize Dressing; recover only generated instance components.
 	const TArray<UActorComponent*> SavedInstances = GetInstanceComponents();
@@ -647,6 +632,11 @@ void AGbWardGreybox::Dress()
 	for (UActorComponent* C : Dressing) if (C) C->DestroyComponent();
 	Dressing.Reset(); KitMeshes.Reset();
 	bKitFound = bUseKit && FPackageName::DoesPackageExist(TEXT("/Game/Grudgebound/Env/FantasyTown/roof_high_left"));
+}
+
+void AGbWardGreybox::Dress()
+{
+	ResetDressing();
 
 	// The four houses with doors (make-lantern-ward.py puts a door actor in front of each).
 	const FHouse Houses[] = {
@@ -675,13 +665,61 @@ void AGbWardGreybox::GateOverlap(UPrimitiveComponent* Component, AActor* Other, 
 {
 	const APawn* Pawn = Cast<APawn>(Other);
 	if (!Pawn || !Pawn->IsLocallyControlled() || !GetGameInstance()) return;
-	for (int I = 0; I < Gates.Num(); ++I) if (Gates[I] == Component)
+	// The docks gate (2) says nothing now: the ferry to the Tide Ward leaves from the pier in front of it.
+	for (int I = 0; I < Gates.Num() && I < 2; ++I) if (Gates[I] == Component)
 		if (UGbApiSubsystem* Api = GetGameInstance()->GetSubsystem<UGbApiSubsystem>()) Api->SayAsKessa(GateLines[I]);
+}
+
+void AGbWardGreybox::TownsfolkWalks(TArray<TArray<FVector2D>>& Out) const
+{
+	// Main street both ways, the cross street past the Rite board, round the plaza, down to the pier, along the stalls.
+	Out.Add({ FVector2D(3.f, 13.2f), FVector2D(18.f, 13.2f), FVector2D(26.f, 13.6f), FVector2D(41.f, 13.6f) });
+	Out.Add({ FVector2D(40.f, 12.4f), FVector2D(24.f, 12.4f), FVector2D(21.f, 12.8f), FVector2D(4.f, 12.5f) });
+	Out.Add({ FVector2D(22.75f, 2.5f), FVector2D(22.75f, 9.5f), FVector2D(23.4f, 11.9f), FVector2D(22.3f, 13.f), FVector2D(22.3f, 22.5f) });
+	Out.Add({ FVector2D(17.5f, 12.f), FVector2D(24.5f, 12.f), FVector2D(24.5f, 15.f), FVector2D(20.f, 15.f) });
+	Out.Add({ FVector2D(20.4f, 15.f), FVector2D(20.4f, 22.8f), FVector2D(21.5f, 24.5f), FVector2D(21.5f, 26.3f) });
+	Out.Add({ FVector2D(5.f, 14.4f), FVector2D(13.f, 14.4f) });
+	Out.Add({ FVector2D(30.f, 12.2f), FVector2D(40.f, 12.2f) });
+	Out.Add({ FVector2D(20.5f, 3.f), FVector2D(20.5f, 9.3f), FVector2D(19.6f, 11.9f), FVector2D(8.f, 13.8f) });
+}
+
+TArray<TArray<FVector>> AGbWardGreybox::GetTownsfolkPaths() const
+{
+	TArray<TArray<FVector2D>> Walks; TownsfolkWalks(Walks);
+	TArray<TArray<FVector>> Paths;
+	for (const TArray<FVector2D>& Walk : Walks)
+	{
+		TArray<FVector>& Path = Paths.AddDefaulted_GetRef();
+		for (const FVector2D& P : Walk) Path.Add(GetActorTransform().TransformPosition(TileToLocal(P.X, P.Y, 4.f)));
+	}
+	return Paths;
+}
+
+void AGbWardGreybox::EndPlay(const EEndPlayReason::Type Reason)
+{
+	for (AGbTownsfolk* Walker : Townsfolk) if (IsValid(Walker)) Walker->Destroy();
+	Townsfolk.Reset();
+	GetWorldTimerManager().ClearTimer(LightingTimer);
+	Super::EndPlay(Reason);
 }
 
 void AGbWardGreybox::BeginPlay()
 {
 	Super::BeginPlay();
+	// People on the streets: picture only, made new on every Play.
+	const TArray<TArray<FVector>> Paths = GetTownsfolkPaths();
+	for (int32 I = 0; I < Paths.Num(); ++I)
+	{
+		const TArray<FVector>& Path = Paths[I];
+		if (Path.Num() < 2) continue;
+		if (AGbTownsfolk* Walker = GetWorld()->SpawnActorDeferred<AGbTownsfolk>(AGbTownsfolk::StaticClass(), FTransform(Path[0]), this))
+		{
+			Walker->SetFlags(RF_Transient);
+			Walker->Setup(Path, GetTypeHash(WardId) + I * 7919);
+			Walker->FinishSpawning(Walker->GetActorTransform());
+			Townsfolk.Add(Walker);
+		}
+	}
 	if (bMovePlayerToStart)
 	{
 		// Next tick: the player's pawn may not be possessed yet when the level begins play.

@@ -108,6 +108,31 @@ for index, (kind, name, outside, counter_use, counter_name) in enumerate(buildin
         chest.set_editor_property("use", unreal.GbBuildingUse.CASE)
         chest.set_editor_property("label", "Talisman Case")
 
+# Tide Ward (P4-U11): a second district in the same level, 160 m south across the water, reached by ferry.
+# The door boards a runtime boat; the UI director carries the player across, then lands on the other pier.
+TIDE = unreal.Vector(-16000, 0, 0)
+for a in actors.get_all_level_actors():
+    if isinstance(a, unreal.GbTideWard):
+        actors.destroy_actor(a)
+tide = actors.spawn_actor_from_class(unreal.GbTideWard, TIDE, unreal.Rotator(0, 0, 0))
+tide.set_actor_label("TideWard")
+tide.rebuild_ward()
+tide_nav = named_actor("TideNavBounds", unreal.NavMeshBoundsVolume, TIDE + unreal.Vector(0, 0, 100))
+tide_nav.set_actor_location(TIDE + unreal.Vector(0, 0, 100), False, False)
+tide_nav.set_actor_scale3d(unreal.Vector(16, 23, 4))
+ferries = [
+    ("Ferry to Tide Ward", tile(21.5, 27.4), tide.get_landing_location(), "tide"),
+    ("Ferry to Lantern Ward", tide.get_ferry_location(), tile(21.5, 25.4), "lantern"),
+]
+for label, at, target, ward_id in ferries:
+    ferry = named_actor(label, unreal.GbBuildingDoor, at)
+    ferry.set_actor_location(at, False, False)
+    ferry.set_editor_property("building", unreal.GbBuilding.OUTSIDE)
+    ferry.set_editor_property("use", unreal.GbBuildingUse.TRAVEL)
+    ferry.set_editor_property("label", label)
+    ferry.set_editor_property("travel_ward", ward_id)
+    ferry.set_editor_property("target_feet", target)
+
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 if not unreal.EditorLoadingAndSavingUtils.save_map(world, LEVEL):
     raise RuntimeError("Could not save " + LEVEL)

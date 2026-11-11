@@ -28,10 +28,18 @@
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GbExorcistLook.h"
+#include "GbTideWard.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Character.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "UnrealClient.h"
 #include "UObject/UObjectIterator.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -51,6 +59,8 @@ namespace
 AGbUiDirector::AGbUiDirector()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> Boat(TEXT("/Game/Grudgebound/Env/Pirate/boat_row_large.boat_row_large"));
+	FerryMesh = Boat.Object;
 }
 
 void AGbUiDirector::Tick(float DeltaSeconds)
@@ -58,8 +68,11 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (bCrossing && (Pawn != CrossingPawn.Get() || PC != CrossingController.Get())) FinishCrossing(false);
 	if (!Pawn || !PC->IsLocalController()) return;
 	UGbUserSettings* Settings = UGbUserSettings::Get();
+	UGbExorcistLook::Ensure(Pawn); // the exorcist's body instead of the template mannequin
+	if (bCrossing) TickCrossing(DeltaSeconds, PC, Pawn);
 
 	// No walking or camera keys while a panel, the menu or a door fade has the player (the same rule as clicks).
 	if (Current == EScreen::Ward && !bBuildingTransition && !PC->IsMoveInputIgnored())
@@ -118,7 +131,8 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 	Boom->SetUsingAbsoluteRotation(true);
 	Boom->bUsePawnControlRotation = false;
 	Boom->bDoCollisionTest = false;
-	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, Settings->CameraDistance, DeltaSeconds, Ease);
+	// Pull back during the crossing for a wider view of the water and approaching shore.
+	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, Settings->CameraDistance * (bCrossing ? 1.45f : 1.f), DeltaSeconds, bCrossing ? 1.6f : Ease);
 	Boom->SetWorldRotation(FRotator(-SmoothedPitch, SmoothedYaw, 0.f));
 	Boom->bEnableCameraLag = Settings->bSmoothCamera;
 	Boom->CameraLagSpeed = 7.f;
@@ -130,6 +144,8 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 void AGbUiDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	if (UGbPlayerSubsystem* Player = PlayerOf(GetWorld())) Player->SetWardId(FString()); // every session starts in the configured Ward
+	MoorFerry();
 	CameraYaw = SmoothedYaw = UGbUserSettings::DefaultYaw;
 	SmoothedPitch = UGbUserSettings::Get()->CameraPitch;
 
@@ -221,6 +237,16 @@ void AGbUiDirector::BindKeys()
 void AGbUiDirector::RestoreInput()
 {
 	bInputTouched = true;
+	if (bCrossing)
+	{
+		if (APlayerController* PC = CrossingController.Get())
+		{
+			FInputModeGameAndUI Mode;
+			Mode.SetHideCursorDuringCapture(false);
+			PC->SetInputMode(Mode);
+		}
+		return;
+	}
 	ShowScreen(Current);
 }
 
@@ -240,6 +266,7 @@ bool AGbUiDirector::CloseTopPanel()
 void AGbUiDirector::HandleSessionChanged()
 {
 	const UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
+	if (bCrossing && !Auth->IsSignedIn()) FinishCrossing(false);
 	if (!Auth->IsSignedIn()) ShowScreen(EScreen::SignIn);
 	else if (Current == EScreen::SignIn && bEntered) ShowEntry();
 }
@@ -250,7 +277,7 @@ void AGbUiDirector::UpdateTitleCamera(bool bTitle)
 	if (!PC || bTitle == bTitleCamera) return;
 	if (bTitle && !TitleCamera)
 	{
-		for (TActorIterator<AGbWardGreybox> It(GetWorld()); It; ++It)
+		for (TActorIterator<AGbWardGreybox> It(GetWorld()); It; ++It) if (It->GetClass() == AGbWardGreybox::StaticClass()) // Lantern Ward, not the Tide Ward built on it
 		{
 			// Over the roofs toward the harbour, from the south-west.
 			const FTransform Ward = It->GetActorTransform();
@@ -295,6 +322,7 @@ void AGbUiDirector::FinishIntro()
 
 void AGbUiDirector::ReplayIntro()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::Ward) { Intro->Open(); ShowScreen(EScreen::Intro); }
 }
 
@@ -305,6 +333,8 @@ void AGbUiDirector::SignOut()
 
 void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 {
+	if (bCrossing) FinishCrossing(false);
+	if (FerryBoat) FerryBoat->Destroy();
 	GetWorldTimerManager().ClearTimer(BuildingTimer);
 	if (bCameraDirty) UGbUserSettings::Get()->SaveConfig();
 	UGbUserSettings::Get()->OnChanged.RemoveAll(this);
@@ -327,13 +357,13 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 void AGbUiDirector::ShowScreen(EScreen Screen)
 {
 	if (bBuildingTransition) return;
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!PC || !Hud) return;
 	if (!bEntered || !GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) Screen = EScreen::SignIn;
 	Current = Screen;
 	UpdateTitleCamera(Screen == EScreen::SignIn);
 	// The opening uses Esc to skip; everywhere else Esc is the menu.
 	if (AGbSettingsHost* Menu = AGbSettingsHost::Find(GetWorld())) Menu->bKeyBusy = Screen == EScreen::Intro;
-	APlayerController* PC = GetWorld()->GetFirstPlayerController();
-	if (!PC || !Hud) return;
 
 	Encounter->SetVisibility(Screen == EScreen::Encounter ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Battle->SetVisibility(Screen == EScreen::Battle ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -400,6 +430,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 
 void AGbUiDirector::ToggleTalismanCase()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::TalismanCase)
 	{
 		ShowScreen(EScreen::Ward);
@@ -418,6 +449,7 @@ void AGbUiDirector::ToggleTalismanCase()
 
 void AGbUiDirector::ToggleRules()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::Ward && !GbBuildings::Allows(CurrentBuilding, EGbBuildingUse::Rules))
 	{
 		// OWNER TEXT
@@ -436,6 +468,7 @@ void AGbUiDirector::ToggleRules()
 
 void AGbUiDirector::ToggleSatchel()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::Satchel) ShowScreen(EScreen::Ward);
 	else if (Current == EScreen::Shop) { Satchel->Open(); ShowScreen(EScreen::Satchel); }
 	else if (Current == EScreen::Ward)
@@ -446,6 +479,7 @@ void AGbUiDirector::ToggleSatchel()
 
 void AGbUiDirector::ToggleShop()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::Shop) { Satchel->Open(); ShowScreen(EScreen::Satchel); }
 	else if (Current == EScreen::Ward && GbBuildings::Allows(CurrentBuilding, EGbBuildingUse::Broker))
 	{
@@ -456,12 +490,14 @@ void AGbUiDirector::ToggleShop()
 
 void AGbUiDirector::ToggleObservatory()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::Observatory) ShowScreen(EScreen::Ward);
 	else if (Current == EScreen::Ward) { Observatory->Open(); ShowScreen(EScreen::Observatory); }
 }
 
 void AGbUiDirector::ToggleVows()
 {
+	if (bBuildingTransition) return;
 	if (Current == EScreen::Ward && !GbBuildings::Allows(CurrentBuilding, EGbBuildingUse::Vows))
 	{
 		// OWNER TEXT (same Rite Hall placeholder)
@@ -477,11 +513,109 @@ void AGbUiDirector::ToggleVows()
 void AGbUiDirector::CloseBuildingPanel() { ShowScreen(EScreen::Ward); }
 void AGbUiDirector::RoomCase() { ShowScreen(EScreen::Ward); ToggleTalismanCase(); }
 
+void AGbUiDirector::MoorFerry()
+{
+	// The boat waits at the ferry door that leads away from where the player is.
+	const UGbPlayerSubsystem* Player = PlayerOf(GetWorld());
+	const FString Here = Player ? Player->GetWardId() : FString();
+	const AGbBuildingDoor* Pier = nullptr;
+	for (TActorIterator<AGbBuildingDoor> It(GetWorld()); It; ++It) if (It->Use == EGbBuildingUse::Travel && It->TravelWard != Here) { Pier = *It; break; }
+	if (!Pier) return;
+	if (!FerryBoat)
+	{
+		if (!FerryMesh) return;
+		FActorSpawnParameters Params; Params.ObjectFlags |= RF_Transient;
+		FerryBoat = GetWorld()->SpawnActor<AStaticMeshActor>(Params);
+		if (!FerryBoat) return;
+		FerryBoat->SetMobility(EComponentMobility::Movable);
+		FerryBoat->GetStaticMeshComponent()->SetStaticMesh(FerryMesh);
+		FerryBoat->GetStaticMeshComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		FerryBoat->GetStaticMeshComponent()->SetCanEverAffectNavigation(false);
+		FerryBoat->SetActorScale3D(FVector(0.9f));
+	}
+	FerryBoat->SetActorLocationAndRotation(FerryMooring(Pier->GetActorLocation()), FRotator(0.f, 4.f, 0.f));
+}
+
+void AGbUiDirector::TickCrossing(float DeltaSeconds, APlayerController* PC, APawn* Pawn)
+{
+	CrossTime += DeltaSeconds;
+	const float T = FMath::Clamp(CrossTime / CrossingSeconds, 0.f, 1.f);
+	// Push off gently, row, glide in.
+	const float Eased = FMath::InterpEaseInOut(0.f, 1.f, T, 2.f);
+	FVector Boat = FMath::Lerp(CrossFrom, CrossTo, Eased);
+	const float Under = FMath::Sin(T * PI); // 0 at the piers, 1 in open water
+	Boat.Z += FMath::Sin(CrossTime * 2.3f) * 5.f * Under;
+	const FRotator Heading = (CrossTo - CrossFrom).Rotation();
+	if (FerryBoat) FerryBoat->SetActorLocationAndRotation(Boat, FRotator(FMath::Sin(CrossTime * 2.3f + 1.f) * 2.f * Under, Heading.Yaw + 90.f, FMath::Sin(CrossTime * 1.7f) * 2.5f * Under));
+	// The player stands in the boat, looking where it goes.
+	Pawn->SetActorLocationAndRotation(Boat + FVector(0.f, 0.f, 24.f + CrossHalfHeight), FRotator(0.f, Heading.Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	if (T < 1.f) return;
+
+	FinishCrossing(true);
+	const AGbSettingsHost* Menu = AGbSettingsHost::Find(GetWorld());
+	if (!Menu || !Menu->IsOpen()) ShowScreen(EScreen::Ward);
+}
+
+void AGbUiDirector::FinishCrossing(bool bArrived)
+{
+	if (!bCrossing) return;
+	UE_LOG(LogTemp, Display, TEXT("Grudgebound ferry: %s (%s)"), bArrived ? TEXT("arrived") : TEXT("cancelled"), *CrossWard);
+	bCrossing = false;
+	if (APawn* Pawn = CrossingPawn.Get())
+	{
+		// Collision first: without it the pawn reports no height and would be set down inside the pier.
+		Pawn->SetActorEnableCollision(bCrossCollision);
+		GbBuildings::Teleport(Pawn, bArrived ? CrossLanding : CrossReturn);
+		if (ACharacter* Character = Cast<ACharacter>(Pawn))
+			Character->GetCharacterMovement()->SetMovementMode(static_cast<EMovementMode>(CrossMovementMode), CrossCustomMode);
+	}
+	if (APlayerController* PC = CrossingController.Get())
+	{
+		PC->StopMovement(); // discard any click path queued while aboard
+		PC->SetIgnoreMoveInput(false); // release only the ferry's lock
+	}
+	if (bArrived) if (UGbPlayerSubsystem* Player = PlayerOf(GetWorld())) Player->SetWardId(CrossWard);
+	bBuildingTransition = false;
+	CrossingPawn.Reset(); CrossingController.Reset();
+	MoorFerry();
+}
+
 void AGbUiDirector::UseBuilding(AGbBuildingDoor* Door)
 {
  if (!Door || Current!=EScreen::Ward || bBuildingTransition) return;
  APlayerController* PC=GetWorld()->GetFirstPlayerController(); APawn* Pawn=PC?PC->GetPawn():nullptr;
  if (!Pawn || FVector::DistSquared(Pawn->GetActorLocation(),Door->GetActorLocation())>FMath::Square(230.f)) return;
+ if (Door->Use==EGbBuildingUse::Travel)
+ {
+  // Carry the player across; change the HUD's Ward only after landing.
+  if (CurrentBuilding!=EGbBuilding::Outside || Door->TravelWard.IsEmpty()) return;
+  // No cut: the boat carries the player across the water to the other pier (TickCrossing).
+  const AGbBuildingDoor* Far=nullptr;
+  const UGbPlayerSubsystem* Player=PlayerOf(GetWorld());
+  for (TActorIterator<AGbBuildingDoor> It(GetWorld());It;++It)
+   if (It->Use==EGbBuildingUse::Travel && *It!=Door && (!Player || It->TravelWard==Player->GetWardId())) { Far=*It; break; }
+  if (!Far) return;
+  MoorFerry();
+  if (!FerryBoat) return;
+  bBuildingTransition=true; bCrossing=true; CrossTime=0.f;
+  CrossingPawn=Pawn; CrossingController=PC;
+  CrossReturn=Pawn->GetActorLocation()-FVector(0,0,Pawn->GetSimpleCollisionHalfHeight()+5.f);
+  bCrossCollision=Pawn->GetActorEnableCollision(); CrossHalfHeight=Pawn->GetSimpleCollisionHalfHeight();
+  PC->StopMovement(); PC->SetIgnoreMoveInput(true);
+  CrossFrom=FerryMooring(Door->GetActorLocation());
+  CrossTo=FerryMooring(Far->GetActorLocation());
+  CrossLanding=Door->TargetFeet; CrossWard=Door->TravelWard;
+  UE_LOG(LogTemp, Display, TEXT("Grudgebound ferry: departing for %s"), *CrossWard);
+  Pawn->SetActorEnableCollision(false);
+  if (ACharacter* Character=Cast<ACharacter>(Pawn))
+  {
+   UCharacterMovementComponent* Movement=Character->GetCharacterMovement();
+   CrossMovementMode=Movement->MovementMode; CrossCustomMode=Movement->CustomMovementMode;
+   Movement->StopMovementImmediately(); Movement->DisableMovement();
+  }
+  TickCrossing(0.f,PC,Pawn);
+  return;
+ }
  if (Door->Use==EGbBuildingUse::Enter || Door->Use==EGbBuildingUse::Exit)
  {
   const bool Enter=Door->Use==EGbBuildingUse::Enter;
@@ -638,7 +772,7 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	if (FParse::Value(FCommandLine::Get(), TEXT("GbShot="), ShotFolder))
 	{
 		// Steps, 1.5 s apart: title.png (with UI), then per camera "move" and "shoot" (shotN.png, no UI), then
-		// hud.png (title hidden, HUD shown) and menu.png, then quit. A shot is taken a step after its camera moved.
+		// hud.png (title hidden, HUD shown), battle.png and battle-hit.png (a staged fight) and menu.png, then quit. A shot is taken a step after its camera moved.
 		struct FShots { TArray<FString> Cams; int32 Step = 0; int32 MenuTab = -1; FTimerHandle Timer; };
 		TSharedRef<FShots> Shots = MakeShared<FShots>();
 		FString Cams;
@@ -659,6 +793,45 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			{
 				if ((K - 1) % 2 == 1) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/shot%d.png"), *ShotFolder, V), false, false); return; }
 				TArray<FString> P; Shots->Cams[V].ParseIntoArray(P, TEXT(","));
+				// "f": board the ferry where the player is; follow with "p" views to watch the crossing.
+				if (Shots->Cams[V] == TEXT("f") && PC->GetPawn())
+				{
+					for (TObjectIterator<UGbSignInWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::Collapsed);
+					PC->SetViewTarget(PC->GetPawn());
+					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director)
+						for (TActorIterator<AGbBuildingDoor> Door(W); Door; ++Door)
+							if (Door->Use == EGbBuildingUse::Travel && Door->TravelWard == TEXT("tide"))
+							{
+								GbBuildings::Teleport(PC->GetPawn(), Door->GetActorLocation());
+								Director->Current = AGbUiDirector::EScreen::Ward;
+								Director->UseBuilding(*Door);
+							}
+					return;
+				}
+				// "t": stage the player on Tide's quay (does not exercise the ferry).
+				if (Shots->Cams[V] == TEXT("t") && PC->GetPawn())
+				{
+					for (TActorIterator<AGbTideWard> Tide(W); Tide; ++Tide)
+					{
+						GbBuildings::Teleport(PC->GetPawn(), Tide->GetLandingLocation() - FVector(900.f, 0.f, 0.f));
+						if (UGbPlayerSubsystem* Player = PlayerOf(W)) Player->SetWardId(TEXT("tide"));
+					}
+					if (UGbExorcistLook* Look = UGbExorcistLook::Ensure(PC->GetPawn())) Look->SetPreviewWalk(false);
+					PC->SetViewTarget(PC->GetPawn());
+					return;
+				}
+				// "c" / "cw" / "cb": the character up close (standing, walking, from behind).
+				if (Shots->Cams[V].StartsWith(TEXT("c")) && PC->GetPawn())
+				{
+					APawn* Me = PC->GetPawn();
+					if (UGbExorcistLook* Look = UGbExorcistLook::Ensure(Me)) Look->SetPreviewWalk(Shots->Cams[V].Contains(TEXT("w")));
+					const bool bBack = Shots->Cams[V].Contains(TEXT("b"));
+					const FVector Eye = Me->GetActorLocation() + Me->GetActorRotation().RotateVector(FVector(bBack ? -520.f : 560.f, bBack ? 260.f : 280.f, 170.f));
+					ACameraActor* Camera = W->SpawnActor<ACameraActor>(Eye, (Me->GetActorLocation() - FVector(0, 0, 8) - Eye).Rotation());
+					Camera->GetCameraComponent()->SetConstraintAspectRatio(false); Camera->GetCameraComponent()->SetFieldOfView(38.f);
+					PC->SetViewTarget(Camera);
+					return;
+				}
 				if (P.Num() >= 5)
 				{
 					ACameraActor* Camera = W->SpawnActor<ACameraActor>(FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])), FRotator(FCString::Atof(*P[3]), FCString::Atof(*P[4]), 0.f));
@@ -669,7 +842,25 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 				else PC->SetViewTarget(PC->GetPawn());
 				return;
 			}
-			switch (Shots->MenuTab >= 0 ? K - 1 - Views * 2 : 4)
+			// Steps after the views: 0-1 hud, 2-3 encounter poster, 4-6 battle, 7-8 menu.
+			const int32 Step = Shots->MenuTab >= 0 ? K - 1 - Views * 2 : 99;
+			if (Step == 2 || Step == 3)
+			{
+				for (TObjectIterator<UGbEncounterWidget> It; It; ++It)
+				{
+					if (It->GetWorld() != W) continue;
+					if (Step == 3) { FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("encounter.png"), true, false); continue; }
+					FGbBattleStart Start;
+					Start.Wild.Id = TEXT("riot-bell"); Start.Wild.Name = TEXT("Riot Bell"); Start.Wild.Emotion = TEXT("rage"); Start.Wild.Omen = TEXT("calamity");
+					Start.Wild.BornFrom = TEXT("a Ward where PvP never stops"); Start.Matchup = TEXT("disadvantage");
+					Start.View.Wild.SpeciesId = TEXT("riot-bell"); Start.View.Player.SpeciesId = TEXT("weepwick"); Start.View.Player.Name = TEXT("Weepwick");
+					Start.Lines = { TEXT("A wild Riot Bell tears out of the tall grass.") };
+					for (TObjectIterator<UGbHudWidget> Hud; Hud; ++Hud) if (Hud->GetWorld() == W) Hud->SetVisibility(ESlateVisibility::Collapsed);
+					It->Show(Start); It->SetVisibility(ESlateVisibility::Visible);
+				}
+				return;
+			}
+			switch (Step >= 4 ? Step - 2 : Step)
 			{
 			case 0:
 				PC->SetViewTarget(PC->GetPawn());
@@ -677,8 +868,48 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 				for (TObjectIterator<UGbHudWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::HitTestInvisible);
 				break;
 			case 1: FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("hud.png"), true, false); break;
-			case 2: if (AGbSettingsHost* Menu = AGbSettingsHost::Find(W)) Menu->Open(Shots->MenuTab); break;
-			case 3: FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("menu.png"), true, false); break;
+			case 2: case 4:
+			{
+				// A staged fight (no server needed): the opening, then one exchange caught mid-swing.
+				FGbBattleStart Start;
+				Start.View.Wild.SpeciesId = TEXT("riot-bell"); Start.View.Wild.Name = TEXT("Riot Bell"); Start.View.Wild.Emotion = TEXT("rage");
+				Start.View.Wild.Omen = TEXT("calamity"); Start.View.Wild.Hp = 62; Start.View.Wild.MaxHp = 80;
+				Start.View.Player.SpeciesId = TEXT("weepwick"); Start.View.Player.Name = TEXT("Weepwick"); Start.View.Player.Emotion = TEXT("sorrow");
+				Start.View.Player.Omen = TEXT("whisper"); Start.View.Player.Hp = 31; Start.View.Player.MaxHp = 40;
+				Start.View.Salves = 2; Start.View.GildedSeals = 1; Start.View.SealChance = 0.42f; Start.View.GildedSealChance = 0.71f; Start.View.FleeChance = 0.8f;
+				Start.View.bCanAttack = Start.View.bCanWard = Start.View.bCanSeal = Start.View.bCanGildedSeal = Start.View.bCanSalve = Start.View.bCanFlee = true;
+				Start.Lines = { TEXT("A wild Riot Bell tears out of the tall grass."), TEXT("Weepwick steps onto the binding circle.") };
+				for (TObjectIterator<UGbBattleWidget> It; It; ++It)
+				{
+					if (It->GetWorld() != W) continue;
+					if (Step == 4)
+					{
+						for (TObjectIterator<UGbEncounterWidget> E; E; ++E) if (E->GetWorld() == W) E->SetVisibility(ESlateVisibility::Collapsed);
+					}
+					if (Step == 4)
+					{
+						for (TObjectIterator<UGbHudWidget> Hud; Hud; ++Hud) if (Hud->GetWorld() == W) Hud->SetVisibility(ESlateVisibility::Collapsed);
+						It->ShowStart(Start); It->SetVisibility(ESlateVisibility::Visible);
+					}
+					else
+					{
+						FGbBattleTurn Turn; Turn.Action = TEXT("attack"); Turn.View = Start.View;
+						Turn.View.Wild.Hp = 48; Turn.View.Player.Hp = 22;
+						Turn.Lines = { TEXT("Weepwick strikes for 14."), TEXT("Riot Bell answers for 9.") };
+						It->ApplyTurn(Turn);
+						FTimerHandle Mid;
+						W->GetTimerManager().SetTimer(Mid, FTimerDelegate::CreateLambda([ShotFolder]() { FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("battle-hit.png"), true, false); }), 0.28f, false);
+					}
+				}
+				break;
+			}
+			case 3: FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("battle.png"), true, false); break;
+			case 5:
+				for (TObjectIterator<UGbBattleWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::Collapsed);
+				for (TObjectIterator<UGbHudWidget> Hud; Hud; ++Hud) if (Hud->GetWorld() == W) Hud->SetVisibility(ESlateVisibility::HitTestInvisible);
+				if (AGbSettingsHost* Menu = AGbSettingsHost::Find(W)) Menu->Open(Shots->MenuTab);
+				break;
+			case 6: FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("menu.png"), true, false); break;
 			default: FPlatformMisc::RequestExit(false);
 			}
 		}), 1.5f, true, 7.f);

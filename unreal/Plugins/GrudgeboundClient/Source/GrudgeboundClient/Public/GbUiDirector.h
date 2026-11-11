@@ -45,12 +45,39 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 private:
+	friend class UGbGameFlowSubsystem;
+	friend class FGbFerryRoundTripTest;
 	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel, Mender, Room, Observatory };
 	void ToggleObservatory();
 	void CloseBuildingPanel();
 	void RoomCase();
 	EGbBuilding CurrentBuilding = EGbBuilding::Outside;
 	bool bBuildingTransition = false;
+	// The ferry between the Wards: one boat, moored at whichever pier the player can leave from.
+	void MoorFerry();
+	void TickCrossing(float DeltaSeconds, APlayerController* PC, APawn* Pawn);
+	void FinishCrossing(bool bArrived);
+	UPROPERTY() TObjectPtr<class AStaticMeshActor> FerryBoat;
+	UPROPERTY() TObjectPtr<class UStaticMesh> FerryMesh;
+	TWeakObjectPtr<APawn> CrossingPawn;
+	TWeakObjectPtr<APlayerController> CrossingController;
+	FVector CrossReturn = FVector::ZeroVector;
+	bool bCrossCollision = true;
+	float CrossHalfHeight = 0.f;
+	uint8 CrossMovementMode = 0;
+	uint8 CrossCustomMode = 0;
+	bool bCrossing = false;
+	float CrossTime = 0.f;
+	FVector CrossFrom = FVector::ZeroVector;
+	FVector CrossTo = FVector::ZeroVector;
+	FVector CrossLanding = FVector::ZeroVector;
+	FString CrossWard;
+public:
+	/** How long the ferry takes, and where its boat lies for a ferry door (world): beside the pier, on the water. */
+	static constexpr float CrossingSeconds = 10.f;
+	static FVector FerryMooring(const FVector& Door) { return Door + FVector(0.f, 310.f, -78.f); }
+	bool IsCrossing() const { return bCrossing; }
+private:
 	FTimerHandle BuildingTimer;
 	void ShowEntry();
 	/** Title screen > Enter: sign in first if needed (browser), then the opening or the Ward. */
