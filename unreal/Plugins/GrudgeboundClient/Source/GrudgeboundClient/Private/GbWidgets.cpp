@@ -1847,68 +1847,54 @@ void UGbShopWidget::HandleClose() { OnClose.Broadcast(); }
 
 void UGbRulesWidget::BuildTree()
 {
-	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = Root;
+	UTextBlock* TitleText = nullptr; UHorizontalBox* Footer = nullptr;
+	UVerticalBox* Body = MakeShell(TEXT("The Rite"), TEXT("stamp_tool"), 1320.f, TitleText, Info, Footer);
+	Info->SetText(FText::FromString(TEXT("Asking the Rite...")));
 
-	UBorder* Card = MakePanel(PaperPanel(), FMargin(22.f, 16.f));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Card->SetContent(Sized(Col, 600.f, 0.f));
+	UTextBlock* Ignored = nullptr;
+	auto Arrow = [this, &Ignored](const TCHAR* Label) { return MakeKeyButton(Label, FString(), Ignored, GbUi::Paper2()); };
+	UHorizontalBox* Cols = WidgetTree->ConstructWidget<UHorizontalBox>();
 
-	AddRow(Col, MakeText(TEXT("The Rite"), 22, C::Ink, true));
-	Info = MakeText(TEXT("Asking the Rite..."), 13, C::Ink);
-	AddRow(Col, Info, 2.f, 8.f);
-
-	AddRow(Col, MakeText(TEXT("In force"), 14, C::Ink, true), 4.f);
+	// Left: the rules in force as slips, and the repeal stepper under them.
+	UVerticalBox* Left = WidgetTree->ConstructWidget<UVerticalBox>();
+	AddRow(Left, MakeSection(TEXT("In force")), 0.f, 8.f);
 	ActiveList = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 	UScrollBox* ActiveScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
 	ActiveScroll->AddChild(ActiveList);
-	AddRow(Col, Sized(ActiveScroll, 0.f, 120.f));
+	AddRow(Left, Sized(ActiveScroll, 0.f, 400.f), 0.f, 12.f);
 
-	UTextBlock* Ignored = nullptr;
-	auto Arrow = [this, &Ignored](const TCHAR* Label) { return MakeButton(Label, Ignored, C::Stone); };
-
-	// Repeal row: Strike  < #3 >  [Repeal (100 pts)]
+	UBorder* StrikeStrip = MakePanel(GbUi::Paper2(), FMargin(14.f, 10.f));
 	UHorizontalBox* Strike = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	StrikeStrip->SetContent(Strike);
 	UButton* PrevR = Arrow(TEXT("<"));
 	UButton* NextR = Arrow(TEXT(">"));
 	PrevR->OnClicked.AddDynamic(this, &UGbRulesWidget::HandlePrevRepeal);
 	NextR->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleNextRepeal);
-	AddCol(Strike, Sized(MakeText(TEXT("Strike"), 13, Dim()), 60.f, 0.f), false);
-	AddCol(Strike, Sized(PrevR, 36.f, 32.f), false, 4.f);
-	RepealPick = MakeText(TEXT("-"), 14, C::Ink, true);
-	AddCol(Strike, Sized(RepealPick, 60.f, 0.f), false, 4.f);
-	AddCol(Strike, Sized(NextR, 36.f, 32.f), false, 8.f);
-	UTextBlock* RepealText = nullptr;
-	RepealButton = MakeButton(TEXT("Repeal"), RepealText, C::Stone);
-	RepealLabel = RepealText;
+	RepealPick = MakeText(TEXT("-"), 20, C::Ink, true);
+	AddCol(Strike, MakeStepper(MakeText(TEXT("Strike"), 18, C::Ink, true), PrevR, RepealPick, NextR, 80.f), true, 14.f);
+	RepealButton = MakeKeyButton(TEXT("Repeal"), FString(), RepealLabel, C::Crimson);
 	RepealButton->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleRepeal);
-	AddCol(Strike, Sized(RepealButton, 200.f, 32.f), false);
-	RepealRow = Strike;
-	AddRow(Col, Strike, 4.f);
+	AddCol(Strike, Sized(RepealButton, 230.f, 52.f), false, 0.f);
+	RepealRow = StrikeStrip;
+	AddRow(Left, StrikeStrip);
+	AddCol(Cols, Left, true, 28.f)->SetVerticalAlignment(VAlign_Top);
 
-	AddRow(Col, MakeText(TEXT("Propose a rule"), 14, C::Ink, true), 10.f);
-
-	// Template row: < R8 >
-	UHorizontalBox* TemplateRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	// Right: the rule builder. Parameter buttons bind by function name (AddDynamic needs a literal member).
+	UVerticalBox* Right = WidgetTree->ConstructWidget<UVerticalBox>();
+	AddRow(Right, MakeSection(TEXT("Propose a rule")), 0.f, 8.f);
 	UButton* PrevT = Arrow(TEXT("<"));
 	UButton* NextT = Arrow(TEXT(">"));
 	PrevT->OnClicked.AddDynamic(this, &UGbRulesWidget::HandlePrevTemplate);
 	NextT->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleNextTemplate);
-	AddCol(TemplateRow, MakeText(TEXT("Rule"), 13, Dim()), false);
-	AddCol(TemplateRow, Sized(PrevT, 36.f, 32.f), false, 4.f);
-	TemplateId = MakeText(TEXT("-"), 14, C::Ink, true);
-	AddCol(TemplateRow, Sized(TemplateId, 60.f, 0.f), false, 4.f);
-	AddCol(TemplateRow, Sized(NextT, 36.f, 32.f), false);
-	AddRow(Col, TemplateRow, 4.f);
+	TemplateId = MakeText(TEXT("-"), 20, C::Ink, true);
+	AddRow(Right, MakeStepper(MakeText(TEXT("Rule"), 18, C::Ink, true), PrevT, TemplateId, NextT), 0.f, 8.f);
 
-	// Parameter rows: key  < value >. Buttons bind by function name (AddDynamic needs a literal member).
 	static const TCHAR* PrevName[MaxParams] = { TEXT("HandlePrev0"), TEXT("HandlePrev1"), TEXT("HandlePrev2") };
 	static const TCHAR* NextName[MaxParams] = { TEXT("HandleNext0"), TEXT("HandleNext1"), TEXT("HandleNext2") };
 	for (int32 i = 0; i < MaxParams; ++i)
 	{
-		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-		UTextBlock* Key = MakeText(TEXT(""), 13, Dim());
-		UTextBlock* Value = MakeText(TEXT(""), 14, C::Ink, true);
+		UTextBlock* Key = MakeText(TEXT(""), 18, C::Ink, true);
+		UTextBlock* Value = MakeText(TEXT(""), 20, C::Ink, true);
 		UButton* P = Arrow(TEXT("<"));
 		UButton* N = Arrow(TEXT(">"));
 		FScriptDelegate PD;
@@ -1917,34 +1903,54 @@ void UGbRulesWidget::BuildTree()
 		FScriptDelegate ND;
 		ND.BindUFunction(this, FName(NextName[i]));
 		N->OnClicked.Add(ND);
-		AddCol(Row, Sized(Key, 110.f, 0.f), false);
-		AddCol(Row, Sized(P, 36.f, 32.f), false, 4.f);
-		AddCol(Row, Sized(Value, 260.f, 0.f), false, 4.f);
-		AddCol(Row, Sized(N, 36.f, 32.f), false);
-		AddRow(Col, Row, 2.f);
+		UHorizontalBox* Row = MakeStepper(Key, P, Value, N);
+		AddRow(Right, Row, 0.f, 8.f);
 		ParamRows.Add(Row);
 		ParamKeys.Add(Key);
 		ParamValues.Add(Value);
 	}
 
-	Preview = MakeText(TEXT(""), 16, C::Ink, true);
+	// The decree as it would read, on a sealed slip.
+	UBorder* Decree = MakePanel(GbUi::PaperHi(), FMargin(16.f, 14.f));
+	UHorizontalBox* DecreeRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+	Decree->SetContent(DecreeRow);
+	UImage* Seal = nullptr;
+	UWidget* SealArt = MakeArt(TEXT("wax_seal"), 40.f, Seal);
+	AddCol(DecreeRow, SealArt, false, 14.f);
+	if (UHorizontalBoxSlot* SealSlot = Cast<UHorizontalBoxSlot>(SealArt->Slot)) SealSlot->SetVerticalAlignment(VAlign_Top);
+	Preview = MakeText(TEXT(""), 20, C::Ink, true);
 	Preview->SetAutoWrapText(true);
-	AddRow(Col, Preview, 8.f, 4.f);
+	AddCol(DecreeRow, Preview, true, 0.f);
+	AddRow(Right, Sized(Decree, 0.f, 120.f), 4.f, 12.f);
 
 	UTextBlock* ProposeLabel = nullptr;
-	ProposeButton = MakeButton(TEXT("Propose"), ProposeLabel, C::Gold);
+	ProposeButton = MakeKeyButton(TEXT("Propose"), FString(), ProposeLabel, C::Crimson);
 	ProposeButton->OnClicked.AddDynamic(this, &UGbRulesWidget::HandlePropose);
-	AddRow(Col, Sized(ProposeButton, 0.f, 40.f), 4.f);
+	AddRow(Right, Sized(ProposeButton, 0.f, 56.f));
+	AddCol(Cols, Right, true, 0.f)->SetVerticalAlignment(VAlign_Top);
+	AddRow(Body, Cols);
 
-	Status = MakeText(TEXT(""), 13, C::Ink);
-	Status->SetAutoWrapText(true);
-	AddRow(Col, Status, 6.f);
+	// Kessa's answers and ledger receipts go in the shell's ink note.
+	Status = ShellStatus;
 
-	UButton* Close = MakeButton(TEXT("Close  (R)"), Ignored, C::Stone);
+	UTextBlock* Label = nullptr;
+	UButton* Close = MakeKeyButton(TEXT("Close"), KeyName(TEXT("Rite")), Label, GbUi::Paper2());
 	Close->OnClicked.AddDynamic(this, &UGbRulesWidget::HandleClose);
-	AddRow(Col, Sized(Close, 0.f, 40.f), 10.f);
+	AddCol(Footer, Sized(Close, 240.f, 56.f), false, 0.f);
+}
 
-	Centre(Root, Card);
+UHorizontalBox* UGbRulesWidget::MakeStepper(UTextBlock* Key, UButton* Prev, UTextBlock* Value, UButton* Next, float KeyWidth)
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+	AddCol(Row, Sized(Key, KeyWidth, 0.f), false, 8.f);
+	AddCol(Row, Sized(Prev, 52.f, 52.f), false, 6.f);
+	UBorder* Face = MakePanel(GbUi::PaperHi(), FMargin(12.f, 0.f));
+	Face->SetHorizontalAlignment(HAlign_Center); Face->SetVerticalAlignment(VAlign_Center);
+	Value->SetJustification(ETextJustify::Center);
+	Face->SetContent(Value);
+	AddCol(Row, Sized(Face, 0.f, 52.f), true, 6.f);
+	AddCol(Row, Sized(Next, 52.f, 52.f), false, 0.f);
+	return Row;
 }
 
 void UGbRulesWidget::NativeConstruct()
@@ -2013,13 +2019,28 @@ void UGbRulesWidget::HandleRules(const FGbRulesOverview& Rules)
 	Info->SetText(FText::FromString(Line));
 
 	ActiveList->ClearChildren();
-	if (Data.Active.Num() == 0) ActiveList->AddChild(MakeText(TEXT("No rules yet. The Rite is waiting."), 13, Dim()));
+	ActiveSlips.Reset();
+	ActiveIds.Reset();
+	if (Data.Active.Num() == 0) ActiveList->AddChild(MakeText(TEXT("No rules yet. The Rite is waiting."), 17, C::Ink));
 	for (const FGbActiveRule& R : Data.Active)
 	{
 		const FString Who = R.Author.Contains(TEXT(".")) ? R.Author.Left(R.Author.Find(TEXT("."))) : R.Author;
-		UTextBlock* T = MakeText(FString::Printf(TEXT("#%d  %s   (%s, %d pts)"), R.Id, *R.Text, *Who, R.Cost), 13, C::Ink);
+		UBorder* Slip = MakePanel(GbUi::PaperHi(), FMargin(14.f, 10.f));
+		UHorizontalBox* In = WidgetTree->ConstructWidget<UHorizontalBox>();
+		Slip->SetContent(In);
+		UTextBlock* NumText = nullptr;
+		UBorder* Num = MakeChip(FString::Printf(TEXT("#%d"), R.Id), C::Crimson, NumText);
+		AddCol(In, Num, false, 12.f);
+		if (UHorizontalBoxSlot* NumSlot = Cast<UHorizontalBoxSlot>(Num->Slot)) NumSlot->SetVerticalAlignment(VAlign_Top);
+		UVerticalBox* Lines = WidgetTree->ConstructWidget<UVerticalBox>();
+		UTextBlock* T = MakeText(R.Text, 18, C::Ink, true);
 		T->SetAutoWrapText(true);
-		ActiveList->AddChild(T);
+		AddRow(Lines, T, 0.f, 4.f);
+		AddRow(Lines, MakeText(FString::Printf(TEXT("%s, %d pts"), *Who, R.Cost), 15, C::Ink));
+		AddCol(In, Lines, true, 0.f);
+		if (UVerticalBoxSlot* SlipSlot = Cast<UVerticalBoxSlot>(ActiveList->AddChild(Slip))) SlipSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
+		ActiveSlips.Add(Slip);
+		ActiveIds.Add(R.Id);
 	}
 	Redraw();
 }
@@ -2056,6 +2077,12 @@ void UGbRulesWidget::Redraw()
 		RepealLabel->SetText(FText::FromString(FString::Printf(TEXT("Repeal (%d pts)"), R->RepealCost)));
 		const bool bAfford = Data.Points < 0 || Data.Points >= R->RepealCost;
 		RepealButton->SetIsEnabled(!bBusy && bAfford);
+	}
+	// Mark the slip the repeal stepper points at.
+	const int32 Marked = Data.bChain && Strikable.Num() > 0 ? Strikable[RepealIndex]->Id : INDEX_NONE;
+	for (int32 i = 0; i < ActiveSlips.Num(); ++i)
+	{
+		if (ActiveSlips[i]) ActiveSlips[i]->SetBrushColor(ActiveIds[i] == Marked ? GbUi::Paper2() : GbUi::PaperHi());
 	}
 }
 

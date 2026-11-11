@@ -529,9 +529,16 @@ private:
 	void Redraw();
 	void SetBusy(bool bNowBusy);
 	const FGbRuleTemplate* Current() const;
+	/** A framed stepper row: key label, [<] value [>]. */
+	UHorizontalBox* MakeStepper(UTextBlock* Key, UButton* Prev, UTextBlock* Value, UButton* Next, float KeyWidth = 140.f);
+
+	friend class FGbPanelPreviewTest;
 
 	UPROPERTY() TObjectPtr<UTextBlock> Info;
 	UPROPERTY() TObjectPtr<UVerticalBox> ActiveList;
+	/** One slip per rule in force (same order as ActiveIds); the one picked for repeal is marked. */
+	UPROPERTY() TArray<TObjectPtr<UBorder>> ActiveSlips;
+	TArray<int32> ActiveIds;
 	UPROPERTY() TObjectPtr<UTextBlock> TemplateId;
 	UPROPERTY() TObjectPtr<UTextBlock> Preview;
 	UPROPERTY() TArray<TObjectPtr<UWidget>> ParamRows;

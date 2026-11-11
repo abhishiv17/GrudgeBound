@@ -159,6 +159,36 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 		W->RemoveFromRoot();
 	}
 
+	// ---- The Rite: two rules in force on the ledger, R1 being built (shared/src/rules.ts), Kessa answering.
+	{
+		UGbRulesWidget* W = Cast<UGbRulesWidget>(Make(UGbRulesWidget::StaticClass()));
+		FGbRulesOverview Rules; Rules.bChain = true; Rules.Cost = 20; Rules.Points = 42;
+		const auto Param = [](const TCHAR* Key, std::initializer_list<const TCHAR*> Labels)
+		{
+			FGbRuleParam P; P.Key = Key;
+			for (const TCHAR* L : Labels) { FGbRuleOption O; O.Value = L; O.Label = L; P.Options.Add(O); }
+			return P;
+		};
+		FGbRuleTemplate R1; R1.Id = TEXT("R1"); R1.Text = TEXT("{action} in {ward} gives x{multiplier} points");
+		R1.Params = { Param(TEXT("action"), { TEXT("binding"), TEXT("exorcising") }), Param(TEXT("ward"), { TEXT("Lantern Ward"), TEXT("Tide Ward") }),
+			Param(TEXT("multiplier"), { TEXT("1.5"), TEXT("2") }) };
+		FGbRuleTemplate R8; R8.Id = TEXT("R8"); R8.Text = TEXT("No PvP in {ward}"); R8.Params = { Param(TEXT("ward"), { TEXT("Lantern Ward") }) };
+		Rules.Templates = { R1, R8 };
+		const auto Active = [&Rules](int32 Id, const TCHAR* Text, const TCHAR* Author, int32 Cost)
+		{
+			FGbActiveRule R; R.Id = Id; R.ChainId = Id - 1; R.Text = Text; R.Author = Author; R.Cost = Cost; R.RepealCost = Cost * 2; Rules.Active.Add(R);
+		};
+		Active(1, TEXT("No PvP in Lantern Ward"), TEXT("fen.grudgebound.testnet"), 20);
+		Active(2, TEXT("Fleeing a battle costs 5 points"), TEXT("player.testnet"), 20);
+		W->HandleRules(Rules);
+		W->Status->SetText(FText::FromString(TEXT("Kessa is reading your rule...")));
+		TestEqual(TEXT("Rite shows a slip per rule in force"), W->ActiveSlips.Num(), 2);
+		TestTrue(TEXT("Rite can propose with the ledger up"), W->ProposeButton->GetIsEnabled());
+		TestTrue(TEXT("Repeal row shown for ledger rules"), W->RepealRow->GetVisibility() != ESlateVisibility::Collapsed);
+		Capture(W, TEXT("Rite"));
+		W->RemoveFromRoot();
+	}
+
 	// ---- Your room.
 	{
 		UGbRoomWidget* W = Cast<UGbRoomWidget>(Make(UGbRoomWidget::StaticClass()));
