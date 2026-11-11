@@ -5,6 +5,7 @@
 #include "GbWidgets.h"
 #include "GbSatchelWidget.h"
 #include "GbVowWidget.h"
+#include "GbObservatoryWidget.h"
 #include "Components/WidgetSwitcher.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
@@ -224,6 +225,38 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 		Capture(W, TEXT("Vows"));
 		W->HandleNextTemplate();
 		TestTrue(TEXT("V4 stakes 25 of 42 points"), W->Swear->GetIsEnabled());
+		W->RemoveFromRoot();
+	}
+
+	// ---- The Observatory: a week of four Wards and the Broker's prices, a bankruptcy, a Calamity, two rules.
+	{
+		UGbObservatoryWidget* W = Cast<UGbObservatoryWidget>(Make(UGbObservatoryWidget::StaticClass()));
+		W->bOpen = true;
+		FGbObservatoryData D; D.bValid = true; D.Mode = TEXT("live");
+		for (int32 Tick = 1; Tick <= 168; ++Tick)
+		{
+			FGbObservatorySample& S = D.Samples.AddDefaulted_GetRef(); S.Tick = Tick; S.Day = Tick / 24 + 1; S.Hour = Tick % 24;
+			int32 Shift = 0;
+			for (const TCHAR* Id : { TEXT("lantern"), TEXT("tide"), TEXT("ash"), TEXT("bone") })
+			{
+				auto& Ward = S.Wards.AddDefaulted_GetRef(); Ward.Id = Id;
+				Ward.Grudge.Rage = 12 + (Tick + Shift) % 30 / 2; Ward.Grudge.Sorrow = 18 + FMath::RoundToInt(6 * FMath::Sin(Tick / 9.f + Shift)); Ward.Grudge.Dread = 8 + Tick / 24;
+				Ward.Total = Ward.Grudge.Rage + Ward.Grudge.Sorrow + Ward.Grudge.Dread; Shift += 7;
+			}
+			auto& Broker = S.Prices.Add(TEXT("broker"));
+			Broker.Items = { { TEXT("blank-talisman"), 15.f }, { TEXT("talisman-rage"), float(34 + Tick % 24 / 3) }, { TEXT("talisman-sorrow"), 28.f + Tick / 40 },
+				{ TEXT("talisman-dread"), 30.f }, { TEXT("gilded-talisman"), 30.f + Tick / 30 }, { TEXT("ink-salve"), 10.f } };
+		}
+		FGbObservatoryEvent E; E.Tick = 49; E.Type = TEXT("bankruptcy"); E.Ward = TEXT("tide"); D.Events.Add(E);
+		E.Tick = 73; E.Type = TEXT("calamity"); E.Ward = TEXT("lantern"); D.Events.Add(E);
+		FGbObservatoryRule R; R.Id = TEXT("1"); R.Tick = 24; R.Author = TEXT("Old Mother Fen"); R.AuthorKind = TEXT("agent"); R.Text = TEXT("No PvP in Lantern Ward"); R.Status = TEXT("active"); D.Rules.Add(R);
+		R.Id = TEXT("2"); R.Tick = 72; R.Text = TEXT("Every talisman trade pays 10% Ember to author"); R.Status = TEXT("rejected");
+		R.Reason = TEXT("A toll on every trade for its author alone."); R.Url = TEXT("https://testnet.nearblocks.io/txns/fixture"); D.Rules.Add(R);
+		W->Receive(D);
+		const TCHAR* Names[] = { TEXT("Observatory-Grudge"), TEXT("Observatory-Prices"), TEXT("Observatory-Rules") };
+		for (int32 Tab = 0; Tab < 3; ++Tab) { W->Tab = Tab; W->Redraw(); Capture(W, Names[Tab]); }
+		TestEqual(TEXT("Observatory offers a button per Ward"), W->WardButtons.Num(), 4);
+		W->Stop();
 		W->RemoveFromRoot();
 	}
 

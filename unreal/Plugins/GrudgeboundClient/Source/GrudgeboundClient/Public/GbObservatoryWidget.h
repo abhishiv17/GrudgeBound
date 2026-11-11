@@ -52,13 +52,18 @@ protected:
  virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 private:
  friend class FGbObservatoryRenderTest;
+ friend class FGbPanelPreviewTest;
  UFUNCTION() void Live();
  UFUNCTION() void Preview();
  UFUNCTION() void Grudge();
  UFUNCTION() void Prices();
  UFUNCTION() void Rules();
  UFUNCTION() void Close();
- UFUNCTION() void SelectWard(FString Option, ESelectInfo::Type Type);
+ UFUNCTION() void WardLantern();
+ UFUNCTION() void WardTide();
+ UFUNCTION() void WardAsh();
+ UFUNCTION() void WardBone();
+ void SelectWard(const FString& Id);
  UFUNCTION() void Receive(const FGbObservatoryData& Incoming);
  UFUNCTION() void Error(const FString& What, int32 Code, const FString& Message);
  void SetMode(bool bNewPreview);
@@ -67,15 +72,19 @@ private:
  void AddChart(const FString& Title, TArray<FGbPlotLine> Lines, float Height, const FString& Ward);
  bool bOpen = false;
  bool bPreview = false;
- bool bUpdating = false;
  int32 Tab = 0;
  float RefreshElapsed = 0.f;
  FGbObservatoryData Data;
  FString SelectedWard = TEXT("lantern");
  UPROPERTY() TObjectPtr<UTextBlock> Status;
  UPROPERTY() TObjectPtr<UVerticalBox> Content;
- UPROPERTY() TObjectPtr<UComboBoxString> WardPicker;
+ /** The Ward buttons (Grudge tab): the picked Ward's chart also draws its three emotions. */
+ UPROPERTY() TObjectPtr<UWidget> WardRow;
+ UPROPERTY() TArray<TObjectPtr<UButton>> WardButtons;
+ UPROPERTY() TArray<TObjectPtr<UTextBlock>> WardLabels;
  UPROPERTY() TArray<TObjectPtr<UButton>> ModeButtons;
+ UPROPERTY() TArray<TObjectPtr<UTextBlock>> ModeLabels;
  UPROPERTY() TArray<TObjectPtr<UButton>> TabButtons;
+ UPROPERTY() TArray<TObjectPtr<UTextBlock>> TabLabels;
  UPROPERTY() TArray<TObjectPtr<UGbObservatoryProof>> Proofs;
 };

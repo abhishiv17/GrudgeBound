@@ -1,22 +1,34 @@
 #include "GbObservatoryWidget.h"
 #include "GbApiSubsystem.h"
 #include "GbGreyboxMaterials.h"
+#include "GbUiStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
-#include "Components/ScaleBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/Spacer.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Widgets/SLeafWidget.h"
 #include "Rendering/DrawElements.h"
 
 namespace
 {
  using namespace GbGreybox::Color;
+ UVerticalBoxSlot* ObsRow(UVerticalBox* Box,UWidget* W,float Top=2.f,float Bottom=2.f)
+ {
+  UVerticalBoxSlot* S=Box->AddChildToVerticalBox(W); S->SetPadding(FMargin(0.f,Top,0.f,Bottom)); S->SetHorizontalAlignment(HAlign_Fill); return S;
+ }
+ UHorizontalBoxSlot* ObsCol(UHorizontalBox* Box,UWidget* W,bool bFill,float Right=8.f)
+ {
+  UHorizontalBoxSlot* S=Box->AddChildToHorizontalBox(W); S->SetPadding(FMargin(0.f,0.f,Right,0.f)); S->SetVerticalAlignment(VAlign_Center);
+  if (bFill) S->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); return S;
+ }
  FString WardName(const FString& Id)
  {
   if (Id==TEXT("lantern")) return TEXT("Lantern Ward");
@@ -77,24 +89,43 @@ void UGbObservatoryProof::Open()
 
 void UGbObservatoryWidget::BuildTree()
 {
- UCanvasPanel* Root=WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget=Root;
- UScaleBox* Fit=WidgetTree->ConstructWidget<UScaleBox>(); Fit->SetStretch(EStretch::ScaleToFit);
- UCanvasPanelSlot* FitSlot=Root->AddChildToCanvas(Fit); FitSlot->SetAnchors(FAnchors(.03f,.03f,.97f,.97f)); FitSlot->SetOffsets(FMargin(0));
- UBorder* Card=MakePanel(Paper,FMargin(20)); Fit->AddChild(Card);
- UVerticalBox* Col=WidgetTree->ConstructWidget<UVerticalBox>(); Card->SetContent(Sized(Col,920,620));
- Col->AddChildToVerticalBox(MakeText(TEXT("The Observatory"),28,Ink,true));
- UTextBlock* Label=nullptr; UHorizontalBox* Modes=WidgetTree->ConstructWidget<UHorizontalBox>(); Col->AddChildToVerticalBox(Sized(Modes,0,38));
- UButton* B=MakeButton(TEXT("This town"),Label,Gold); B->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Live); Modes->AddChildToHorizontalBox(Sized(B,460,34)); ModeButtons.Add(B);
- B=MakeButton(TEXT("Seven days ahead"),Label,Paper); B->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Preview); Modes->AddChildToHorizontalBox(Sized(B,460,34)); ModeButtons.Add(B);
- UHorizontalBox* Tabs=WidgetTree->ConstructWidget<UHorizontalBox>(); Col->AddChildToVerticalBox(Sized(Tabs,0,38));
- B=MakeButton(TEXT("Grudge"),Label,Gold); B->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Grudge); Tabs->AddChildToHorizontalBox(Sized(B,306,34)); TabButtons.Add(B);
- B=MakeButton(TEXT("Prices"),Label,Paper); B->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Prices); Tabs->AddChildToHorizontalBox(Sized(B,306,34)); TabButtons.Add(B);
- B=MakeButton(TEXT("Rules"),Label,Paper); B->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Rules); Tabs->AddChildToHorizontalBox(Sized(B,308,34)); TabButtons.Add(B);
- Status=MakeText(TEXT("Reading the town..."),14,Ink); Col->AddChildToVerticalBox(Sized(Status,0,30));
- WardPicker=WidgetTree->ConstructWidget<UComboBoxString>(); for (const FString& Id:WardIds) WardPicker->AddOption(WardName(Id));
- WardPicker->SetSelectedOption(WardName(SelectedWard)); WardPicker->OnSelectionChanged.AddDynamic(this,&UGbObservatoryWidget::SelectWard); Col->AddChildToVerticalBox(Sized(WardPicker,0,30));
- UScrollBox* Scroll=WidgetTree->ConstructWidget<UScrollBox>(); Col->AddChildToVerticalBox(Sized(Scroll,0,380)); Content=WidgetTree->ConstructWidget<UVerticalBox>(); Scroll->AddChild(Content);
- B=MakeButton(TEXT("Return (O)"),Label,Paper); B->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Close); Col->AddChildToVerticalBox(Sized(B,0,36));
+ UTextBlock* TitleText=nullptr; UHorizontalBox* Footer=nullptr;
+ UVerticalBox* Body=MakeShell(TEXT("The Observatory"),TEXT("icon_ward"),1480.f,TitleText,Status,Footer);
+ Status->SetText(FText::FromString(TEXT("Reading the town...")));
+
+ // One row: which history (this town / seven days ahead) on the left, which view on the right.
+ UHorizontalBox* Tabs=WidgetTree->ConstructWidget<UHorizontalBox>();
+ const auto AddTab=[this,Tabs](const TCHAR* Name,float Width,TArray<TObjectPtr<UButton>>& Buttons,TArray<TObjectPtr<UTextBlock>>& Labels,float Gap)
+ {
+  UTextBlock* Text=nullptr; UButton* B=MakeKeyButton(Name,FString(),Text,GbUi::Paper2());
+  Buttons.Add(B); Labels.Add(Text); ObsCol(Tabs,Sized(B,Width,52.f),false,Gap); return B;
+ };
+ AddTab(TEXT("This town"),250.f,ModeButtons,ModeLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Live);
+ AddTab(TEXT("Seven days ahead"),300.f,ModeButtons,ModeLabels,0.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Preview);
+ ObsCol(Tabs,WidgetTree->ConstructWidget<USpacer>(),true,0.f);
+ AddTab(TEXT("Grudge"),200.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Grudge);
+ AddTab(TEXT("Prices"),200.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Prices);
+ AddTab(TEXT("Rules"),200.f,TabButtons,TabLabels,0.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Rules);
+ ObsRow(Body,Tabs,0.f,12.f);
+
+ // Ward buttons (Grudge only): the picked Ward's chart also draws rage, sorrow and dread.
+ UHorizontalBox* Wards=WidgetTree->ConstructWidget<UHorizontalBox>();
+ static const TCHAR* WardHandlers[]={TEXT("WardLantern"),TEXT("WardTide"),TEXT("WardAsh"),TEXT("WardBone")};
+ for (int32 I=0;I<WardIds.Num();++I)
+ {
+  UTextBlock* Text=nullptr; UButton* B=MakeKeyButton(WardName(WardIds[I]),FString(),Text,GbUi::Paper2());
+  Text->SetFont(GbUi::Font(17,true));
+  FScriptDelegate Pick; Pick.BindUFunction(this,FName(WardHandlers[I])); B->OnClicked.Add(Pick);
+  WardButtons.Add(B); WardLabels.Add(Text); ObsCol(Wards,Sized(B,210.f,44.f),false,8.f);
+ }
+ WardRow=Wards; ObsRow(Body,Wards,0.f,10.f);
+
+ UScrollBox* Scroll=WidgetTree->ConstructWidget<UScrollBox>(); ObsRow(Body,Sized(Scroll,0.f,540.f));
+ Content=WidgetTree->ConstructWidget<UVerticalBox>(); Scroll->AddChild(Content);
+
+ UTextBlock* Label=nullptr;
+ UButton* Back=MakeKeyButton(TEXT("Return"),KeyName(TEXT("Observatory")),Label,GbUi::Paper2());
+ Back->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Close); ObsCol(Footer,Sized(Back,240.f,56.f),false,0.f);
  Redraw();
 }
 void UGbObservatoryWidget::NativeConstruct()
@@ -123,12 +154,11 @@ void UGbObservatoryWidget::Grudge() { Tab=0; Redraw(); }
 void UGbObservatoryWidget::Prices() { Tab=1; Redraw(); }
 void UGbObservatoryWidget::Rules() { Tab=2; Redraw(); }
 void UGbObservatoryWidget::Close() { Stop(); OnClose.Broadcast(); }
-void UGbObservatoryWidget::SelectWard(FString Option,ESelectInfo::Type)
-{
- if (bUpdating) return;
- for (const auto& Id:WardIds) if (WardName(Id)==Option) SelectedWard=Id;
- Redraw();
-}
+void UGbObservatoryWidget::SelectWard(const FString& Id) { SelectedWard=Id; Redraw(); }
+void UGbObservatoryWidget::WardLantern() { SelectWard(TEXT("lantern")); }
+void UGbObservatoryWidget::WardTide() { SelectWard(TEXT("tide")); }
+void UGbObservatoryWidget::WardAsh() { SelectWard(TEXT("ash")); }
+void UGbObservatoryWidget::WardBone() { SelectWard(TEXT("bone")); }
 void UGbObservatoryWidget::Receive(const FGbObservatoryData& Incoming)
 {
  if (!bOpen || Incoming.Mode!=(bPreview?TEXT("preview"):TEXT("live"))) return;
@@ -141,18 +171,27 @@ void UGbObservatoryWidget::Error(const FString& What,int32,const FString& Messag
 void UGbObservatoryWidget::AddChart(const FString& Title,TArray<FGbPlotLine> Lines,float Height,const FString& Ward)
 {
  const FVector2D Range=UGbObservatoryChart::ValueRange(Lines);
- Content->AddChildToVerticalBox(MakeText(FString::Printf(TEXT("%s   %.0f - %.0f"),*Title,Range.X,Range.Y),14,Ink,true));
+ UBorder* Slip=MakePanel(GbUi::PaperHi(),FMargin(14.f,8.f,14.f,6.f)); UVerticalBox* In=WidgetTree->ConstructWidget<UVerticalBox>(); Slip->SetContent(In);
+ ObsRow(In,MakeText(FString::Printf(TEXT("%s   %.0f - %.0f"),*Title,Range.X,Range.Y),17,Ink,true),0.f,2.f);
  auto* Chart=WidgetTree->ConstructWidget<UGbObservatoryChart>(); Chart->Lines=MoveTemp(Lines);
  Chart->LastTick=Data.Samples.IsEmpty()?168:FMath::Max(168,Data.Samples.Last().Tick); Chart->FirstTick=Chart->LastTick-168;
  for (const auto& Event:Data.Events) if ((Event.Type==TEXT("bankruptcy") || Event.Type==TEXT("calamity")) && (Ward.IsEmpty() || Event.Ward==Ward)) Chart->Markers.Emplace(Event.Tick,Event.Type==TEXT("calamity")?Crimson:Gold);
- Content->AddChildToVerticalBox(Sized(Chart,0,Height));
+ ObsRow(In,Sized(Chart,0,Height),0.f,0.f);
+ ObsRow(Content,Slip,0.f,8.f);
 }
 void UGbObservatoryWidget::Redraw()
 {
  if (!Content) return;
- for (int32 I=0;I<ModeButtons.Num();++I) ModeButtons[I]->SetBackgroundColor(I==int32(bPreview)?Gold:Paper);
- for (int32 I=0;I<TabButtons.Num();++I) TabButtons[I]->SetBackgroundColor(I==Tab?Gold:Paper);
- WardPicker->SetVisibility(Tab==0?ESlateVisibility::Visible:ESlateVisibility::Hidden);
+ const auto Paint=[](UButton* B,UTextBlock* L,bool bOn,const FLinearColor& On)
+ {
+  if (!B || !L) return;
+  B->SetBackgroundColor(bOn?On:GbUi::Paper2());
+  L->SetColorAndOpacity(FSlateColor(bOn && On==Crimson?GbUi::PaperHi():Ink));
+ };
+ for (int32 I=0;I<ModeButtons.Num();++I) Paint(ModeButtons[I],ModeLabels[I],I==int32(bPreview),Crimson);
+ for (int32 I=0;I<TabButtons.Num();++I) Paint(TabButtons[I],TabLabels[I],I==Tab,Crimson);
+ for (int32 I=0;I<WardButtons.Num();++I) Paint(WardButtons[I],WardLabels[I],WardIds.IsValidIndex(I) && WardIds[I]==SelectedWard,Gold);
+ WardRow->SetVisibility(Tab==0?ESlateVisibility::Visible:ESlateVisibility::Hidden);
  Content->ClearChildren(); Proofs.Reset();
  Status->SetText(FText::FromString(!Data.bValid?TEXT("Reading the town..."):Data.Samples.IsEmpty()?TEXT("No history yet."):FString::Printf(TEXT("%s | %d hours | day %d, %02d:00"),bPreview?TEXT("Seven days ahead"):TEXT("This town"),Data.Samples.Num(),Data.Samples.Last().Day,Data.Samples.Last().Hour)));
  if (Tab==0)
@@ -160,20 +199,20 @@ void UGbObservatoryWidget::Redraw()
   for (const auto& Id:WardIds)
   {
    TArray<FGbPlotLine> Lines; FGbPlotLine Total; Total.Color=Ink; Total.Width=2.5f;
-   FGbPlotLine R,S,D; R.Color=Rage; S.Color=Sorrow; D.Color=Dread;
+   FGbPlotLine R,S,D; R.Color=Rage; S.Color=Sorrow; D.Color=Dread; R.Width=S.Width=D.Width=2.f;
    for (const auto& Sample:Data.Samples) for (const auto& W:Sample.Wards) if (W.Id==Id)
    { Total.Points.Emplace(Sample.Tick,W.Total); R.Points.Emplace(Sample.Tick,W.Grudge.Rage); S.Points.Emplace(Sample.Tick,W.Grudge.Sorrow); D.Points.Emplace(Sample.Tick,W.Grudge.Dread); }
    Lines.Add(Total); if (Id==SelectedWard) { Lines.Add(R); Lines.Add(S); Lines.Add(D); }
-   AddChart(WardName(Id),MoveTemp(Lines),40,Id);
+   AddChart(WardName(Id),MoveTemp(Lines),Id==SelectedWard?96.f:40.f,Id);
   }
-  Content->AddChildToVerticalBox(MakeText(TEXT("Total (ink)   Rage (red)   Sorrow (blue)   Dread (violet)"),14,Ink));
+  ObsRow(Content,MakeText(TEXT("Total (ink)   Rage (red)   Sorrow (blue)   Dread (violet)"),16,Ink),2.f,2.f);
  }
  else if (Tab==1)
  {
   TArray<FGbPlotLine> Lines;
   for (int32 I=0;I<ItemIds.Num();++I)
   {
-   FGbPlotLine Line; Line.Color=ItemColors[I]; Line.Width=2;
+   FGbPlotLine Line; Line.Color=ItemColors[I]; Line.Width=2.5f;
    for (const auto& Sample:Data.Samples)
    {
     const auto* Broker=Sample.Prices.Find(TEXT("broker")); const float* Price=Broker?Broker->Items.Find(ItemIds[I]):nullptr;
@@ -182,37 +221,44 @@ void UGbObservatoryWidget::Redraw()
    }
    if (!Line.Points.IsEmpty()) Lines.Add(Line);
   }
-  AddChart(TEXT("The Talisman Broker / Ember"),MoveTemp(Lines),125,TEXT(""));
-  for (int32 I=0;I<ItemNames.Num();I+=2)
-  {
-   auto* Legend=WidgetTree->ConstructWidget<UHorizontalBox>(); Content->AddChildToVerticalBox(Legend);
-   Legend->AddChildToHorizontalBox(Sized(MakeText(ItemNames[I],14,ItemColors[I],true),460,0));
-   Legend->AddChildToHorizontalBox(Sized(MakeText(ItemNames[I+1],14,ItemColors[I+1],true),460,0));
-  }
+  AddChart(TEXT("The Talisman Broker / Ember"),MoveTemp(Lines),260,TEXT(""));
+  UHorizontalBox* Legend=WidgetTree->ConstructWidget<UHorizontalBox>(); ObsRow(Content,Legend,2.f,4.f);
+  for (int32 I=0;I<ItemNames.Num();++I) ObsCol(Legend,MakeText(ItemNames[I],16,ItemColors[I],true),true,8.f);
   TArray<FString> Closed; for (const auto& Sample:Data.Samples) for (const auto& Id:Sample.Closed) Closed.AddUnique(Id);
-  Content->AddChildToVerticalBox(MakeText(Closed.IsEmpty()?TEXT("No shop closures in this history."):TEXT("Closed during this history: ")+FString::Join(Closed,TEXT(", ")),14,Ink));
+  ObsRow(Content,MakeText(Closed.IsEmpty()?TEXT("No shop closures in this history."):TEXT("Closed during this history: ")+FString::Join(Closed,TEXT(", ")),16,Ink),2.f,2.f);
  }
  else
  {
-  if (Data.Rules.IsEmpty()) Content->AddChildToVerticalBox(MakeText(TEXT("No rules in this history."),16,Ink));
+  if (Data.Rules.IsEmpty()) ObsRow(Content,MakeText(TEXT("No rules in this history."),17,Ink));
   for (const auto& Rule:Data.Rules)
   {
-   UBorder* Frame=MakeFrame(Paper,FMargin(8)); UVerticalBox* Row=WidgetTree->ConstructWidget<UVerticalBox>(); Frame->SetContent(Row); Content->AddChildToVerticalBox(Frame);
-   Row->AddChildToVerticalBox(MakeText(Rule.Text,16,Ink,true));
+   UBorder* Slip=MakePanel(GbUi::PaperHi(),FMargin(14.f,10.f)); UHorizontalBox* In=WidgetTree->ConstructWidget<UHorizontalBox>(); Slip->SetContent(In);
    const FString Mark=Rule.Status==TEXT("active")?TEXT("Accepted"):Rule.Status==TEXT("rejected")?TEXT("Rejected"):TEXT("Repealed");
-   Row->AddChildToVerticalBox(MakeText(FString::Printf(TEXT("%s [%s] | day %d, %02d:00 | %s"),*Rule.Author,*Rule.AuthorKind,Rule.Tick/24+1,Rule.Tick%24,*Mark),14,Ink));
-   if (!Rule.Reason.IsEmpty()) Row->AddChildToVerticalBox(MakeText(Rule.Reason,14,Crimson));
+   UTextBlock* ChipText=nullptr;
+   UBorder* Chip=MakeChip(Mark,Rule.Status==TEXT("active")?Leaf:Rule.Status==TEXT("rejected")?Crimson:GbUi::Paper3(),ChipText);
+   ObsCol(In,Chip,false,12.f)->SetVerticalAlignment(VAlign_Top);
+   UVerticalBox* Row=WidgetTree->ConstructWidget<UVerticalBox>(); ObsCol(In,Row,true,12.f);
+   UTextBlock* Words=MakeText(Rule.Text,18,Ink,true); Words->SetAutoWrapText(true); ObsRow(Row,Words,0.f,4.f);
+   ObsRow(Row,MakeText(FString::Printf(TEXT("%s [%s] | day %d, %02d:00"),*Rule.Author,*Rule.AuthorKind,Rule.Tick/24+1,Rule.Tick%24),15,Ink),0.f,2.f);
+   if (!Rule.Reason.IsEmpty()) { UTextBlock* Why=MakeText(Rule.Reason,15,Crimson); Why->SetAutoWrapText(true); ObsRow(Row,Why,2.f,0.f); }
    if (Rule.Url.StartsWith(TEXT("https://testnet.nearblocks.io/")) || Rule.Url.StartsWith(TEXT("https://explorer.testnet.near.org/")))
    {
     auto* Proof=NewObject<UGbObservatoryProof>(this); Proof->Url=Rule.Url; Proofs.Add(Proof);
-    UTextBlock* Label=nullptr; UButton* B=MakeButton(TEXT("Ledger proof"),Label,Paper); B->OnClicked.AddDynamic(Proof,&UGbObservatoryProof::Open); Row->AddChildToVerticalBox(Sized(B,0,32));
+    UTextBlock* Label=nullptr; UButton* B=MakeKeyButton(TEXT("Ledger proof"),FString(),Label,GbUi::Paper2()); Label->SetFont(GbUi::Font(17,true));
+    B->OnClicked.AddDynamic(Proof,&UGbObservatoryProof::Open); ObsCol(In,Sized(B,210.f,48.f),false,0.f);
    }
+   ObsRow(Content,Slip,0.f,8.f);
   }
  }
  if (Tab!=2)
  {
-  UHorizontalBox* Axis=WidgetTree->ConstructWidget<UHorizontalBox>(); Content->AddChildToVerticalBox(Axis);
-  for (int32 Day=1;Day<=7;++Day) Axis->AddChildToHorizontalBox(Sized(MakeText(FString::Printf(TEXT("Day %d"),Day),14,Ink),920.f/7.f,0));
-  Content->AddChildToVerticalBox(MakeText(TEXT("Gold tick: bankruptcy   Crimson tick: Calamity"),14,Ink));
+  // Day labels centred under the chart's seven day columns (slip padding 14 + plot inset 6).
+  UHorizontalBox* Axis=WidgetTree->ConstructWidget<UHorizontalBox>(); ObsRow(Content,Axis,0.f,2.f)->SetPadding(FMargin(20.f,0.f,20.f,2.f));
+  for (int32 Day=1;Day<=7;++Day)
+  {
+   UTextBlock* DayText=MakeText(FString::Printf(TEXT("Day %d"),Day),15,Ink); DayText->SetJustification(ETextJustify::Center);
+   ObsCol(Axis,DayText,true,0.f);
+  }
+  ObsRow(Content,MakeText(TEXT("Gold tick: bankruptcy   Crimson tick: Calamity"),16,Ink),2.f,2.f);
  }
 }
