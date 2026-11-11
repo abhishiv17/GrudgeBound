@@ -21,6 +21,8 @@ use underscores in Unreal asset names. Missing packs retain the procedural geome
 |---|---|---|---|
 | Yuji Syuku Regular (titles) | The Yuji Project Authors; https://github.com/Kinutafontfactory/Yuji | SIL OFL 1.1 | YujiSyuku-Regular.ttf, 109,476 bytes |
 | Shippori Mincho Regular / Bold (body) | The Shippori Mincho Project Authors; https://github.com/fontdasu/ShipporiMincho | SIL OFL 1.1 | 73,544 / 73,620 bytes |
+| Pixelify Sans SemiBold / Bold (headings, buttons) | The Pixelify Sans Project Authors; https://github.com/eifetx/Pixelify-Sans | SIL OFL 1.1 | 51,664 / 51,468 bytes (static cuts at wght 600 and 700 of the variable font) |
+| Courier Prime Regular (body text) | The Courier Prime Project Authors; https://github.com/quoteunquoteapps/CourierPrime | SIL OFL 1.1 | 71,188 bytes (unmodified) |
 
 The owner supplied the original TTFs under GrudgeboundCC0/Fonts. fontTools subsets retain the font names
 and name tables, covering U+0000–00FF, U+2000–206F and U+2190–21FF. The supplied OFL texts declare no
@@ -28,6 +30,11 @@ Reserved Font Name and are copied beside the subsets under Content/Grudgebound/U
 were downloaded. Three inline UFontFace assets carry their bytes; the runtime SourceFilename is cleared.
 import-fonts.py runs with the full offscreen editor's -ExecutePythonScript flag (the Python commandlet
 does not initialize Slate, which Unreal's font importer requires), then exits the editor.
+
+11 Nov: the UI moved to the web client's pixel-paper look, so Pixelify Sans and Courier Prime (the web
+client's two fonts, from Google Fonts) are now the fonts in use; the Mincho faces stay as the fallback when the
+new faces are not imported. Their OFL texts are beside the TTFs. Panel frames, button faces and the title
+screen's sky are generated in code (GbWidgets.cpp), no image files.
 
 Paper grain and the uneven brush frame are generated in GbWidgets.cpp as one deterministic 64x64 texture,
 shared by all panel/button helpers; no downloaded texture or AI asset. The palette remains in

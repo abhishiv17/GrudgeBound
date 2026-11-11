@@ -1,4 +1,5 @@
 #include "GbCoopMission.h"
+#include "GbUserSettings.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
@@ -61,7 +62,8 @@ void AGbCoopController::PlayerTick(float DeltaSeconds)
 #endif
 	if (bBot) { BotTick(DeltaSeconds); return; }
 	auto* P = ::Cast<AGbCoopCharacter>(GetPawn()); if (!P || P->IsDown()) return;
-	FVector Direction((IsInputKeyDown(EKeys::W)?1:0)-(IsInputKeyDown(EKeys::S)?1:0),(IsInputKeyDown(EKeys::D)?1:0)-(IsInputKeyDown(EKeys::A)?1:0),0);
+	const UGbUserSettings* Keys=UGbUserSettings::Get();
+	FVector Direction((Keys->IsDown(this,TEXT("MoveUp"))?1:0)-(Keys->IsDown(this,TEXT("MoveDown"))?1:0),(Keys->IsDown(this,TEXT("MoveRight"))?1:0)-(Keys->IsDown(this,TEXT("MoveLeft"))?1:0),0);
 	P->AddMovementInput(Direction.GetSafeNormal());
 	if (IsInputKeyDown(EKeys::LeftMouseButton)) Cast();
 }

@@ -3,7 +3,8 @@ from pathlib import Path
 import unreal
 
 folder = Path(__file__).parent / "Fonts"
-names = {"YujiSyuku-Regular": "YujiSyukuRegular", "ShipporiMincho-Regular": "ShipporiMinchoRegular", "ShipporiMincho-Bold": "ShipporiMinchoBold"}
+names = {"YujiSyuku-Regular": "YujiSyukuRegular", "ShipporiMincho-Regular": "ShipporiMinchoRegular", "ShipporiMincho-Bold": "ShipporiMinchoBold",
+         "PixelifySans-SemiBold": "PixelifySansSemiBold", "PixelifySans-Bold": "PixelifySansBold", "CourierPrime-Regular": "CourierPrimeRegular"}
 destination = "/Game/Grudgebound/UI/Fonts"
 for filename, asset_name in names.items():
     path = destination + "/" + asset_name

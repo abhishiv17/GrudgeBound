@@ -40,6 +40,8 @@ private:
  UFUNCTION() void LeaveRange(UPrimitiveComponent* Component, AActor* Other, UPrimitiveComponent* OtherComponent, int32 BodyIndex);
  UFUNCTION() void Clicked(UPrimitiveComponent* Component, FKey Key);
  void Interact();
+ void FaceCamera();
+ FTimerHandle FaceTimer;
  TWeakObjectPtr<APawn> Nearby;
  UPROPERTY() TObjectPtr<UBoxComponent> Trigger;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Marker;

@@ -22,6 +22,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Misc/PackageName.h"
+#include "Misc/Paths.h"
 
 namespace
 {
@@ -36,6 +37,9 @@ namespace
 		FIntRect(4, 18, 4 + 10, 18 + 4),
 		FIntRect(30, 18, 30 + 10, 18 + 4),
 	};
+
+	/** Market stalls: first column of each two-tile stall, on both sides of the main street. */
+	const int32 StallCols[] = { 3, 7, 11, 31, 35, 39 };
 
 	UInstancedStaticMeshComponent* MakePart(AActor* Owner, USceneComponent* Parent, const TCHAR* Name, GbGreybox::EShape Shape, bool bSolid)
 	{
@@ -54,7 +58,27 @@ namespace
 		}
 		return Mesh;
 	}
+
+	FBox2D TileRect(float Col, float Row, float W, float H)
+	{
+		return FBox2D(FVector2D(Col, Row), FVector2D(Col + W, Row + H));
+	}
 }
+
+/** A house built from wall and roof pieces. Two cells deep (north-south), NX cells wide; a cell is S metres. */
+struct AGbWardGreybox::FHouse
+{
+	float Col, Row;
+	int32 NX;
+	float S;
+	int32 Floors;
+	/** 0 = door on the north face, 2 = on the south face. */
+	int32 DoorSide;
+	int32 DoorCell;
+	bool bHighRoof;
+	/** False for the houses outside the wall (backdrop only). */
+	bool bSolid;
+};
 
 AGbWardGreybox::AGbWardGreybox()
 {
@@ -64,25 +88,23 @@ AGbWardGreybox::AGbWardGreybox()
 	Ground = MakePart(this, nullptr, TEXT("Ground"), EShape::Cube, true);
 	RootComponent = Ground;
 
-	Streets = MakePart(this, Ground, TEXT("Streets"), EShape::Cube, false);
-	Plaza = MakePart(this, Ground, TEXT("Plaza"), EShape::Cube, false);
+	Yard = MakePart(this, Ground, TEXT("Yard"), EShape::Cube, false);
+	FlagA = MakePart(this, Ground, TEXT("FlagA"), EShape::Cube, false);
+	FlagB = MakePart(this, Ground, TEXT("FlagB"), EShape::Cube, false);
+	StreetA = MakePart(this, Ground, TEXT("StreetA"), EShape::Cube, false);
+	StreetB = MakePart(this, Ground, TEXT("StreetB"), EShape::Cube, false);
 	Mosaic = MakePart(this, Ground, TEXT("Mosaic"), EShape::Cube, false);
-	Walls = MakePart(this, Ground, TEXT("Walls"), EShape::Cube, true);
-	Banners = MakePart(this, Ground, TEXT("Banners"), EShape::Cube, false);
-	Water = MakePart(this, Ground, TEXT("Water"), EShape::Cube, true);
+	Rug = MakePart(this, Ground, TEXT("Rug"), EShape::Cube, false);
+	Water = MakePart(this, Ground, TEXT("Water"), EShape::Cube, false);
 	Quay = MakePart(this, Ground, TEXT("Quay"), EShape::Cube, true);
-	Wood = MakePart(this, Ground, TEXT("Wood"), EShape::Cube, true);
-	Awnings = MakePart(this, Ground, TEXT("Awnings"), EShape::Cube, false);
-	Posts = MakePart(this, Ground, TEXT("Posts"), EShape::Cylinder, true);
-	Lights = MakePart(this, Ground, TEXT("Lights"), EShape::Sphere, false);
-	Plants = MakePart(this, Ground, TEXT("Plants"), EShape::Sphere, true);
-	Fountain = MakePart(this, Ground, TEXT("Fountain"), EShape::Cylinder, true);
 	Board = MakePart(this, Ground, TEXT("Board"), EShape::Cube, true);
-	Houses = MakePart(this, Ground, TEXT("Houses"), EShape::Cube, true);
-	Roofs = MakePart(this, Ground, TEXT("Roofs"), EShape::Cube, false);
+	Blockers = MakePart(this, Ground, TEXT("Blockers"), EShape::Cube, true);
 	GrassBlades = MakePart(this, Ground, TEXT("GrassBlades"), EShape::Cone, false);
-	GrassBlades->SetCastShadow(false);
 	GrassFloor = MakePart(this, Ground, TEXT("GrassFloor"), EShape::Cube, false);
+	for (UInstancedStaticMeshComponent* Flat : { Yard.Get(), FlagA.Get(), FlagB.Get(), StreetA.Get(), StreetB.Get(), Mosaic.Get(), Rug.Get(), GrassBlades.Get(), GrassFloor.Get(), Water.Get() })
+	{
+		Flat->SetCastShadow(false);
+	}
 
 	for (int32 i = 0; i < static_cast<int32>(UE_ARRAY_COUNT(GrassPatches)); ++i)
 	{
@@ -101,19 +123,6 @@ AGbWardGreybox::AGbWardGreybox()
 	DocksBarrier = CreateDefaultSubobject<UBoxComponent>(TEXT("DocksBarrier"));
 	DocksBarrier->SetupAttachment(Ground); DocksBarrier->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 	DocksBarrier->SetBoxExtent(FVector(20,150,110)); DocksBarrier->SetRelativeLocation(TileToLocal(21.5f,28.7f,110));
-	MeshTable = {
-		{TEXT("stall"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/stall_red.stall_red"))},
-		{TEXT("house"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/wall_wood_window_shutters.wall_wood_window_shutters"))},
-		{TEXT("roof"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/roof_high.roof_high"))},
-		{TEXT("wall"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/wall.wall"))},
-		{TEXT("lantern"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/lantern.lantern"))},
-		{TEXT("crate"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Pirate/crate.crate"))},
-		{TEXT("barrel"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Pirate/barrel.barrel"))},
-		{TEXT("fountain"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/fountain_round.fountain_round"))},
-		{TEXT("plant"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Nature/plant_bush.plant_bush"))},
-		{TEXT("fence"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/FantasyTown/fence.fence"))},
-		{TEXT("pier"), FSoftObjectPath(TEXT("/Game/Grudgebound/Env/Pirate/platform_planks.platform_planks"))},
-	};
 }
 
 FVector AGbWardGreybox::TileToLocal(float Col, float Row, float Z)
@@ -139,79 +148,70 @@ void AGbWardGreybox::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
-	for (UInstancedStaticMeshComponent* Mesh : { Ground.Get(), Streets.Get(), Plaza.Get(), Mosaic.Get(), Walls.Get(), Banners.Get(),
-		Water.Get(), Quay.Get(), Wood.Get(), Awnings.Get(), Posts.Get(), Lights.Get(), Plants.Get(), Fountain.Get(), Board.Get(),
-		Houses.Get(), Roofs.Get(), GrassBlades.Get(), GrassFloor.Get() })
+	for (UInstancedStaticMeshComponent* Mesh : { Ground.Get(), Yard.Get(), FlagA.Get(), FlagB.Get(), StreetA.Get(), StreetB.Get(), Mosaic.Get(),
+		Rug.Get(), Water.Get(), Quay.Get(), Board.Get(), Blockers.Get(), GrassBlades.Get(), GrassFloor.Get() })
 	{
 		Mesh->ClearInstances();
 	}
+	Occupied.Reset();
 
-	// --- ground: the town (rows 0-23) and the pier; the harbour (rows 24-29) is a pit with water at the bottom
-	Block(Ground, 0, 0, Cols, 24, -20.f, 20.f);
-	Block(Ground, 20, 24, 3, 5, -20.f, 20.f);
-	Block(Water, 0, 24, Cols, 6, -90.f, 20.f);
-	// quay wall along the water, open where the pier starts; low rails along the pier
-	Block(Quay, 0, 24, 20, 1, -70.f, 120.f);
-	Block(Quay, 23, 24, Cols - 23, 1, -70.f, 120.f);
-	Block(Quay, 19.8f, 25, 0.2f, 4, 0.f, 50.f);
-	Block(Quay, 23.0f, 25, 0.2f, 4, 0.f, 50.f);
-	Block(Quay, 20, 28.8f, 3, 0.2f, 0.f, 50.f);
+	// --- land and sea: the town sits on a shore that runs far past the wall, so the camera never sees an edge
+	Block(Ground, -90, -90, 224, 114, -40.f, 40.f);
+	Block(Ground, 20, 24, 3, 5, -40.f, 40.f); // the pier's core
+	Block(Water, -90, 24, 224, 110, -90.f, 20.f);
+	Block(Yard, 0.5f, 0.5f, 43, 23.5f, 0.f, 1.f);
+	// quay wall along the water, open where the pier starts
+	Block(Quay, -1.8f, 24, 21.8f, 1, -70.f, 120.f);
+	Block(Quay, 23, 24, 22.8f, 1, -70.f, 120.f);
 
-	// --- streets: main street (east-west) and cross street (north-south), flat, walk-through
-	Block(Streets, 1, 12, Cols - 2, 3, 0.f, 1.f);
-	Block(Streets, 20, 1, 3, 23, 0.f, 1.f);
-
-	// --- plaza with the Rite board, rug, fountain, plants, banner posts, a crate
-	Block(Plaza, 16, 9, 11, 9, 0.f, 2.f);
-	Block(Mosaic, 19, 12, 5, 3, 0.f, 3.f);
-	Block(Awnings, 20, 11, 3, 1, 0.f, 3.f); // rug, same crimson as the awnings
-	Block(Board, 21.1f, 10.4f, 0.8f, 0.2f, 0.f, 200.f);
-	Block(Fountain, 17, 15, 2, 2, 0.f, 70.f);
-	for (const FIntPoint P : { FIntPoint(16, 9), FIntPoint(26, 9), FIntPoint(16, 17), FIntPoint(26, 17) })
+	// --- flagstones: lighter on the two streets and the plaza, sandier in the yards; the tall-grass lots stay earth
+	FRandomStream Tone(77);
+	for (int32 Row = 1; Row < 24; ++Row)
 	{
-		Block(Plants, P.X + 0.1f, P.Y + 0.1f, 0.8f, 0.8f, 0.f, 90.f);
-	}
-	for (const FIntPoint P : { FIntPoint(18, 9), FIntPoint(24, 9) })
-	{
-		Block(Posts, P.X + 0.4f, P.Y + 0.4f, 0.2f, 0.2f, 0.f, 300.f);
-		Block(Banners, P.X + 0.5f, P.Y + 0.25f, 0.6f, 0.05f, 140.f, 140.f);
-	}
-	Block(Wood, 25.1f, 16.1f, 0.8f, 0.8f, 0.f, 80.f);
-
-	// --- market stalls (two tiles each) along both sides of the main street, a lantern after each
-	for (int32 X = 3; X < Cols - 3; X += 4)
-	{
-		if (X >= 14 && X <= 27) continue;
-		for (const int32 Y : { 11, 15 })
+		for (int32 Col = 1; Col < Cols - 1; ++Col)
 		{
-			Block(Wood, X, Y + 0.15f, 2, 0.7f, 0.f, 110.f);
-			Block(Awnings, X - 0.1f, Y - 0.05f, 2.2f, 1.1f, 200.f, 8.f);
-			Block(Posts, X + 0.05f, Y + 0.45f, 0.1f, 0.1f, 0.f, 200.f);
-			Block(Posts, X + 1.85f, Y + 0.45f, 0.1f, 0.1f, 0.f, 200.f);
-			Block(Posts, X + 2.45f, Y + 0.45f, 0.1f, 0.1f, 0.f, 240.f);
-			Block(Lights, X + 2.3f, Y + 0.3f, 0.4f, 0.4f, 230.f, 40.f);
+			bool bLot = false;
+			for (const FIntRect& R : GrassPatches) bLot |= Col >= R.Min.X && Col < R.Max.X && Row >= R.Min.Y && Row < R.Max.Y;
+			if (bLot) continue;
+			const bool bStreet = (Row >= 12 && Row <= 14) || (Col >= 20 && Col <= 22) || (Col >= 16 && Col < 27 && Row >= 9 && Row < 18);
+			const bool bPick = Tone.FRand() < 0.5f;
+			const float Inset = Tone.FRandRange(0.025f, 0.055f);
+			Block(bStreet ? (bPick ? StreetA : StreetB) : (bPick ? FlagA : FlagB), Col + Inset, Row + Inset, 1.f - 2.f * Inset, 1.f - 2.f * Inset, 0.f, bStreet ? 3.5f : 2.5f);
 		}
 	}
-
-	// --- houses (greybox only; the web map has none): paper walls, crimson roofs
-	const FIntRect HouseRects[] = {
-		FIntRect(13, 2, 13 + 5, 2 + 5), FIntRect(25, 2, 25 + 5, 2 + 5),
-		FIntRect(15, 19, 15 + 4, 19 + 4), FIntRect(24, 19, 24 + 5, 19 + 4),
-	};
-	for (const FIntRect& R : HouseRects)
+	// roads that leave by the two gates
+	for (int32 Step = 1; Step < 46; ++Step)
 	{
-		Block(Houses, R.Min.X, R.Min.Y, R.Width(), R.Height(), 0.f, 300.f);
-		Block(Roofs, R.Min.X - 0.2f, R.Min.Y - 0.2f, R.Width() + 0.4f, R.Height() + 0.4f, 300.f, 30.f);
+		for (int32 Lane = 0; Lane < 3; ++Lane)
+		{
+			if (Tone.FRand() < 0.8f) Block(Tone.FRand() < 0.5f ? FlagA : FlagB, 20.04f + Lane, -1.f - Step, 0.92f, 0.92f, 0.f, 2.f);
+			if (Tone.FRand() < 0.8f) Block(Tone.FRand() < 0.5f ? FlagA : FlagB, 45.f + Step, 12.04f + Lane, 0.92f, 0.92f, 0.f, 2.f);
+		}
 	}
-
-	// --- town wall with crimson banners (north), and the west and east walls down to the quay
-	Block(Walls, 0, 0, Cols, 1, 0.f, 300.f);
-	Block(Walls, 0, 0, 1, 24, 0.f, 300.f);
-	Block(Walls, Cols - 1, 0, 1, 24, 0.f, 300.f);
-	for (int32 X = 3; X < Cols; X += 6)
+	// plaza inlay under the player start, and the rug before the Rite board
+	for (int32 Col = 19; Col < 24; ++Col)
 	{
-		Block(Banners, X + 0.2f, 1.0f, 0.6f, 0.05f, 80.f, 180.f);
+		for (int32 Row = 12; Row < 15; ++Row) if ((Col + Row) % 2 == 1) Block(Mosaic, Col + 0.22f, Row + 0.22f, 0.56f, 0.56f, 0.f, 4.5f);
 	}
+	Block(Rug, 20.1f, 10.75f, 2.8f, 1.1f, 0.f, 4.5f);
+	Block(Board, 20.6f, 10.36f, 1.8f, 0.12f, 75.f, 135.f);
+
+	// --- what you cannot walk through (drawn only when the kits are missing)
+	Solid(0, 0, Cols, 1, 300.f);
+	Solid(0, 0, 1, 24, 300.f);
+	Solid(Cols - 1, 0, 1, 24, 300.f);
+	Solid(17, 15, 2, 2, 70.f); // fountain
+	Solid(20.6f, 10.3f, 1.8f, 0.25f, 210.f); // Rite board
+	Solid(19.8f, 25, 0.2f, 4, 60.f); Solid(23.0f, 25, 0.2f, 4, 60.f); Solid(20, 28.8f, 3, 0.2f, 60.f); // pier rails
+	for (const int32 X : StallCols)
+	{
+		Solid(X + 0.1f, 10.3f, 1.8f, 1.5f, 200.f);
+		Solid(X + 0.1f, 15.2f, 1.8f, 1.5f, 200.f);
+	}
+	Occupied.Add(TileRect(1, 10, Cols - 2, 7)); // main street and both stall rows
+	Occupied.Add(TileRect(19.5f, 0, 4, 30)); // cross street and the pier
+	Occupied.Add(TileRect(16, 9, 11, 9)); // plaza
+	for (const FIntRect& R : GrassPatches) Occupied.Add(TileRect(R.Min.X, R.Min.Y, R.Width(), R.Height()));
 
 	// --- tall grass: trigger boxes + blades
 	FRandomStream Rand(1234);
@@ -233,53 +233,406 @@ void AGbWardGreybox::OnConstruction(const FTransform& Transform)
 			const FRotator Lean(Rand.FRandRange(-12.f, 12.f), Rand.FRandRange(0.f, 360.f), Rand.FRandRange(-12.f, 12.f));
 			GrassBlades->AddInstance(FTransform(Lean, TileToLocal(Col, Row, Height * 50.f), FVector(Width, Width, Height)));
 		}
-		// A darker floor under the blades so the patch reads from the top-down camera.
-		Block(GrassFloor, R.Min.X, R.Min.Y, R.Width(), R.Height(), 0.f, 1.5f);
+		// A darker floor under the blades so the patch reads from the camera.
+		Block(GrassFloor, R.Min.X, R.Min.Y, R.Width(), R.Height(), 0.f, 2.f);
 	}
+
+	Dress();
 
 	// --- colours (paper-and-ink palette)
 	using namespace GbGreybox;
 	Paint(Ground, Color::Grass, this);
-	Paint(Streets, Color::Stone, this);
-	Paint(Plaza, Color::StoneDark, this);
+	Paint(Yard, Color::Mortar * 0.85f, this);
+	Paint(FlagA, Color::StoneDark, this);
+	Paint(FlagB, Color::StoneDark * 0.9f, this);
+	Paint(StreetA, Color::Stone * 0.8f, this);
+	Paint(StreetB, Color::Stone * 0.72f, this);
 	Paint(Mosaic, Color::Gold, this);
-	Paint(GrassFloor, Color::TallGrass * 0.8f, this);
-	Paint(Walls, Color::Mortar, this);
-	Paint(Banners, Color::Crimson, this);
+	Paint(Rug, Color::Crimson, this);
 	Paint(Water, Color::Water, this);
-	Paint(Quay, Color::StoneDark, this);
-	Paint(Wood, Color::Wood, this);
-	Paint(Awnings, Color::Crimson, this);
-	Paint(Posts, Color::WoodDark, this);
-	Paint(Lights, Color::Lantern, this);
-	Paint(Plants, Color::Leaf, this);
-	Paint(Fountain, Color::Teal, this);
+	Paint(Quay, Color::StoneDark * 0.8f, this);
 	Paint(Board, Color::Paper, this);
-	Paint(Houses, Color::Paper, this);
-	Paint(Roofs, Color::Ink, this);
+	Paint(Blockers, Color::Paper, this);
+	Paint(GrassFloor, Color::TallGrass * 0.8f, this);
 	Paint(GrassBlades, Color::TallGrass, this);
-	Dress();
+	Blockers->SetVisibility(!bKitFound);
 }
 
-void AGbWardGreybox::Slot(FName Name, float Col, float Row, float W, float H, float Bottom, float Height, bool bSolid)
+// ================================================================ dressing helpers
+
+UInstancedStaticMeshComponent* AGbWardGreybox::Kit(const TCHAR* Mesh, bool bShadow)
 {
-	UInstancedStaticMeshComponent* Mesh = SlotMeshes.FindRef(Name);
-	if (!Mesh)
+	const FName Key(Mesh);
+	if (const TObjectPtr<UInstancedStaticMeshComponent>* Found = KitMeshes.Find(Key)) return Found->Get();
+
+	UInstancedStaticMeshComponent* Component = nullptr;
+	const FString Package = FString::Printf(TEXT("/Game/Grudgebound/Env/%s"), Mesh);
+	UStaticMesh* Asset = FPackageName::DoesPackageExist(Package)
+		? LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("%s.%s"), *Package, *FPaths::GetBaseFilename(Package))) : nullptr;
+	if (Asset)
 	{
-		Mesh = NewObject<UInstancedStaticMeshComponent>(this); Mesh->SetupAttachment(RootComponent);
-		UStaticMesh* Asset = nullptr;
-		if (const FSoftObjectPath* Path = MeshTable.Find(Name); Path && FPackageName::DoesPackageExist(Path->GetLongPackageName())) Asset = Cast<UStaticMesh>(Path->TryLoad());
-		if (Asset) Mesh->SetStaticMesh(Asset); else GbGreybox::SetupMesh(Mesh, GbGreybox::EShape::Cube);
-		Mesh->SetCollisionEnabled(bSolid ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-		Mesh->SetCollisionResponseToAllChannels(ECR_Block); Mesh->SetCanEverAffectNavigation(bSolid);
-		AddInstanceComponent(Mesh); Mesh->RegisterComponent(); Dressing.Add(Mesh); SlotMeshes.Add(Name, Mesh);
-		if (!Asset) GbGreybox::Paint(Mesh, Name == TEXT("plant") ? GbGreybox::Color::Leaf : GbGreybox::Color::Wood, this);
+		Component = NewObject<UInstancedStaticMeshComponent>(this);
+		Component->SetupAttachment(RootComponent);
+		Component->SetStaticMesh(Asset);
+		Component->SetMobility(EComponentMobility::Static);
+		// The kit meshes are picture only: Solid() decides where you can walk.
+		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Component->SetCanEverAffectNavigation(false);
+		Component->SetCastShadow(bShadow);
+		AddInstanceComponent(Component);
+		Component->RegisterComponent();
+		Dressing.Add(Component);
 	}
-	const FBox Box = Mesh->GetStaticMesh()->GetBoundingBox();
-	const FVector Size = Box.GetSize().ComponentMax(FVector(1));
-	const FVector Scale(H * Tile / Size.X, W * Tile / Size.Y, Height / Size.Z);
-	const FVector Centre = TileToLocal(Col + W / 2, Row + H / 2, Bottom + Height / 2);
-	Mesh->AddInstance(FTransform(FRotator::ZeroRotator, Centre - Box.GetCenter() * Scale, Scale));
+	KitMeshes.Add(Key, Component);
+	return Component;
+}
+
+void AGbWardGreybox::Put(const TCHAR* Mesh, float Col, float Row, float ZCm, float Yaw, float Scale, bool bShadow)
+{
+	if (!bKitFound) return;
+	if (UInstancedStaticMeshComponent* Component = Kit(Mesh, bShadow))
+	{
+		Component->AddInstance(FTransform(FRotator(0.f, Yaw, 0.f), TileToLocal(Col, Row, ZCm), FVector(Scale)));
+	}
+}
+
+void AGbWardGreybox::Edge(const TCHAR* Mesh, float Col, float Row, int32 Side, float Size, float ZCm)
+{
+	// A town-kit wall is a slab 40-50 cm along its own +X, with its outside face (shutters, door frame) towards -X.
+	// So the piece is turned to look outwards and stands 0.4 of its length outside the edge: the face ends flush on it.
+	const float Out = 0.4f * Size;
+	switch (Side)
+	{
+	case 0: Put(Mesh, Col, Row - Out, ZCm, 180.f, Size); break;
+	case 1: Put(Mesh, Col + Out, Row, ZCm, -90.f, Size); break;
+	case 2: Put(Mesh, Col, Row + Out, ZCm, 0.f, Size); break;
+	default: Put(Mesh, Col - Out, Row, ZCm, 90.f, Size); break;
+	}
+}
+
+void AGbWardGreybox::Solid(float Col, float Row, float W, float H, float HeightCm)
+{
+	Block(Blockers, Col, Row, W, H, 0.f, HeightCm);
+}
+
+void AGbWardGreybox::Lamp(float Col, float Row, float ZCm, const FLinearColor& Color, float Intensity, float Radius)
+{
+	UPointLightComponent* Light = NewObject<UPointLightComponent>(this);
+	Light->SetupAttachment(RootComponent);
+	Light->SetRelativeLocation(TileToLocal(Col, Row, ZCm));
+	Light->SetMobility(EComponentMobility::Movable);
+	Light->SetLightColor(Color);
+	Light->SetIntensity(Intensity);
+	Light->SetAttenuationRadius(Radius);
+	Light->SetCastShadows(false);
+	AddInstanceComponent(Light);
+	Light->RegisterComponent();
+	Dressing.Add(Light);
+}
+
+bool AGbWardGreybox::IsFree(float Col, float Row, float Margin) const
+{
+	for (const FBox2D& Box : Occupied)
+	{
+		if (Col > Box.Min.X - Margin && Col < Box.Max.X + Margin && Row > Box.Min.Y - Margin && Row < Box.Max.Y + Margin) return false;
+	}
+	return true;
+}
+
+void AGbWardGreybox::BuildHouse(const FHouse& H)
+{
+	const float Width = H.NX * H.S, Depth = 2 * H.S;
+	if (H.bSolid) Solid(H.Col, H.Row, Width, Depth, 300.f);
+	Occupied.Add(TileRect(H.Col - 0.4f, H.Row - 0.4f, Width + 0.8f, Depth + 0.8f));
+
+	const TCHAR* Stone[] = { TEXT("FantasyTown/wall_window_shutters"), TEXT("FantasyTown/wall"), TEXT("FantasyTown/wall_window_glass"), TEXT("FantasyTown/wall_detail_cross") };
+	const TCHAR* Wood[] = { TEXT("FantasyTown/wall_wood_window_shutters"), TEXT("FantasyTown/wall_wood_detail_cross"), TEXT("FantasyTown/wall_wood_window_glass"), TEXT("FantasyTown/wall_wood_detail_diagonal") };
+	const float Storey = H.S * 100.f;
+	for (int32 Floor = 0; Floor < H.Floors; ++Floor)
+	{
+		const bool bTimber = Floor > 0 || H.Floors == 1;
+		for (int32 Side = 0; Side < 4; ++Side)
+		{
+			const int32 Cells = Side % 2 == 0 ? H.NX : 2;
+			for (int32 Cell = 0; Cell < Cells; ++Cell)
+			{
+				const float Along = (Cell + 0.5f) * H.S;
+				const float Col = Side == 1 ? H.Col + Width : Side == 3 ? H.Col : H.Col + Along;
+				const float Row = Side == 0 ? H.Row : Side == 2 ? H.Row + Depth : H.Row + Along;
+				const TCHAR* Piece = (bTimber ? Wood : Stone)[(Cell + Side * 3 + Floor) % 4];
+				if (Floor == 0 && Side == H.DoorSide && Cell == H.DoorCell) Piece = bTimber ? TEXT("FantasyTown/wall_wood_door") : TEXT("FantasyTown/wall_door");
+				Edge(Piece, Col, Row, Side, H.S, Floor * Storey);
+			}
+		}
+	}
+	// Roof: two slopes meeting on an east-west ridge; the end pieces carry the barge boards.
+	const FString Base = H.bHighRoof ? TEXT("FantasyTown/roof_high") : TEXT("FantasyTown/roof");
+	for (int32 Cell = 0; Cell < H.NX; ++Cell)
+	{
+		for (int32 Half = 0; Half < 2; ++Half)
+		{
+			const bool bNorth = Half == 0;
+			const bool bFirst = Cell == 0, bLast = Cell == H.NX - 1;
+			const TCHAR* Suffix = (bNorth ? bLast : bFirst) ? TEXT("_left") : (bNorth ? bFirst : bLast) ? TEXT("_right") : Cell % 2 == 1 ? TEXT("_window") : TEXT("");
+			Put(*(Base + Suffix), H.Col + (Cell + 0.5f) * H.S, H.Row + (Half + 0.5f) * H.S, H.Floors * Storey, bNorth ? 180.f : 0.f, H.S);
+		}
+	}
+}
+
+void AGbWardGreybox::BuildWalls()
+{
+	// Harbour-kit rampart, 2 m a piece and 4.4 m tall, with its inner face on the old wall line.
+	const TCHAR* Wall = TEXT("Pirate/castle_wall");
+	for (float Col = 0.5f; Col < 19.f; Col += 2.f) Put(Wall, Col, -0.4f, 0.f, 90.f, 1.f);
+	for (float Col = 24.5f; Col < 44.f; Col += 2.f) Put(Wall, Col, -0.4f, 0.f, 90.f, 1.f);
+	for (float Row = 1.6f; Row < 24.f; Row += 2.f) Put(Wall, -0.4f, Row, 0.f, 0.f, 1.f);
+	for (float Row = 2.5f; Row < 11.f; Row += 2.f) Put(Wall, 44.4f, Row, 0.f, 0.f, 1.f);
+	for (float Row = 16.5f; Row < 24.f; Row += 2.f) Put(Wall, 44.4f, Row, 0.f, 0.f, 1.f);
+	Put(TEXT("Pirate/castle_gate"), 21.5f, -0.4f, 0.f, 90.f, 1.f); // Bone gate
+	Put(TEXT("Pirate/castle_gate"), 44.4f, 13.5f, 0.f, 0.f, 1.f); // Ash gate
+	Put(TEXT("Pirate/tower_complete_large"), -0.4f, -0.4f, 0.f, 0.f, 1.1f);
+	Put(TEXT("Pirate/tower_complete_large"), 44.4f, -0.4f, 0.f, 0.f, 1.1f);
+	Put(TEXT("Pirate/tower_complete_small"), -0.6f, 25.2f, -70.f, 90.f, 1.f);
+	Put(TEXT("Pirate/tower_complete_small"), 44.6f, 25.2f, -70.f, 90.f, 1.f);
+
+	// Both gates are shut: timber leaves fill the arches.
+	for (const float Col : { 20.5f, 22.5f })
+	{
+		Edge(TEXT("FantasyTown/wall_wood_detail_cross"), Col, 0.7f, 2, 2.f);
+		Edge(TEXT("FantasyTown/wall_wood"), Col, 0.7f, 2, 2.f, 200.f);
+	}
+	for (const float Row : { 12.5f, 14.5f })
+	{
+		Edge(TEXT("FantasyTown/wall_wood_detail_cross"), 43.3f, Row, 3, 2.f);
+		Edge(TEXT("FantasyTown/wall_wood"), 43.3f, Row, 3, 2.f, 200.f);
+	}
+	// Crimson banners along the inside of the north wall.
+	for (float Col = 3.5f; Col < 43.f; Col += 5.f)
+	{
+		if (Col > 18.f && Col < 25.f) continue;
+		Edge(TEXT("FantasyTown/banner_red"), Col, 1.02f, 2, 2.6f, 130.f);
+	}
+}
+
+void AGbWardGreybox::BuildHarbour(FRandomStream& Rand)
+{
+	// pier deck, rails and the Tide docks gate at its end
+	for (const float Row : { 24.75f, 26.25f, 27.75f, 28.3f })
+	{
+		for (const float Col : { 20.75f, 22.25f }) Put(TEXT("FantasyTown/planks"), Col, Row, 1.f, 0.f, 1.5f);
+	}
+	for (const float Row : { 25.6f, 26.85f, 28.1f })
+	{
+		Edge(TEXT("FantasyTown/fence"), 20.f, Row, 3, 1.25f);
+		Edge(TEXT("FantasyTown/fence"), 23.f, Row, 1, 1.25f);
+	}
+	for (const float Col : { 20.75f, 22.25f }) Edge(TEXT("FantasyTown/wall_wood_detail_cross"), Col, 28.95f, 2, 1.5f);
+	for (const float Col : { 19.85f, 23.15f })
+	{
+		Put(TEXT("FantasyTown/pillar_wood"), Col, 29.f, -80.f, 0.f, 2.6f);
+		Put(TEXT("FantasyTown/pillar_wood"), Col, 24.6f, -80.f, 0.f, 2.2f);
+	}
+	Put(TEXT("FantasyTown/lantern"), 19.4f, 23.5f, 0.f, 0.f, 1.9f);
+	Put(TEXT("FantasyTown/lantern"), 23.6f, 23.5f, 0.f, 0.f, 1.9f);
+	Lamp(19.4f, 23.5f, 270.f, GbGreybox::Color::Lantern, 2600.f, 520.f);
+	Lamp(23.6f, 23.5f, 270.f, GbGreybox::Color::Lantern, 2600.f, 520.f);
+
+	// boats at the pier, ships in the roads, a ghost of a ship further out
+	Put(TEXT("Pirate/boat_row_large"), 18.2f, 26.6f, -78.f, 8.f, 0.9f);
+	Put(TEXT("Pirate/boat_row_small"), 24.9f, 27.4f, -78.f, 172.f, 0.9f);
+	Put(TEXT("Pirate/boat_row_small"), 5.5f, 25.9f, -78.f, 80.f, 0.9f);
+	Put(TEXT("Pirate/ship_large"), 33.5f, 28.6f, -95.f, 0.f, 1.f);
+	Put(TEXT("Pirate/ship_small"), 8.5f, 30.5f, -95.f, 14.f, 1.f);
+	Put(TEXT("Pirate/ship_medium"), -14.f, 44.f, -95.f, 62.f, 1.f);
+	Put(TEXT("Pirate/ship_large"), 55.f, 47.f, -95.f, -28.f, 1.f);
+	Put(TEXT("Pirate/ship_ghost"), 22.f, 62.f, -95.f, 84.f, 1.1f);
+	Put(TEXT("Pirate/rocks_a"), -5.f, 27.5f, -130.f, 40.f, 1.2f);
+	Put(TEXT("Pirate/rocks_b"), 48.5f, 28.f, -150.f, 200.f, 1.2f);
+	Put(TEXT("Pirate/rocks_c"), 13.f, 34.f, -110.f, 120.f, 1.f);
+	Put(TEXT("Pirate/rocks_a"), 40.f, 38.f, -140.f, 300.f, 1.4f);
+
+	// cargo along the quay, and a net shed in the south-east corner
+	const FVector2D Stacks[] = { FVector2D(2.2f, 23.1f), FVector2D(11.f, 23.2f), FVector2D(32.f, 23.2f), FVector2D(37.5f, 23.1f), FVector2D(1.9f, 16.6f), FVector2D(42.f, 9.6f) };
+	for (const FVector2D& At : Stacks)
+	{
+		Solid(At.X - 0.6f, At.Y - 0.45f, 2.1f, 0.9f, 120.f);
+		Occupied.Add(TileRect(At.X - 0.8f, At.Y - 0.7f, 2.5f, 1.4f));
+		Put(TEXT("Pirate/crate"), At.X, At.Y, 0.f, Rand.FRandRange(-12.f, 12.f), 0.75f);
+		Put(TEXT("Pirate/crate_bottles"), At.X + 0.85f, At.Y + 0.05f, 0.f, 90.f + Rand.FRandRange(-10.f, 10.f), 0.62f);
+		Put(TEXT("Pirate/crate"), At.X + 0.1f, At.Y - 0.05f, 58.f, Rand.FRandRange(20.f, 50.f), 0.55f);
+		Put(TEXT("Pirate/barrel"), At.X - 0.5f, At.Y + 0.1f, 0.f, Rand.FRandRange(0.f, 360.f), 0.55f);
+		Put(TEXT("Pirate/barrel"), At.X + 1.3f, At.Y - 0.15f, 0.f, Rand.FRandRange(0.f, 360.f), 0.5f);
+	}
+	Put(TEXT("Pirate/structure_roof"), 41.5f, 21.8f, 0.f, 0.f, 0.85f);
+	Put(TEXT("Pirate/chest"), 41.5f, 21.6f, 0.f, 200.f, 0.55f);
+	Put(TEXT("Pirate/tool_paddle"), 40.6f, 20.9f, 0.f, 30.f, 0.8f);
+	Solid(40.5f, 20.8f, 2.f, 2.f, 220.f);
+	Occupied.Add(TileRect(40.2f, 20.4f, 2.7f, 2.8f));
+}
+
+void AGbWardGreybox::BuildPlazaAndStreets(FRandomStream& Rand)
+{
+	using namespace GbGreybox;
+	// --- market stalls with their goods; awnings face the street
+	int32 Index = 0;
+	for (const int32 X : StallCols)
+	{
+		for (const bool bNorth : { true, false })
+		{
+			const float Row = bNorth ? 11.f : 16.f;
+			Put(Index % 2 == 0 ? TEXT("FantasyTown/stall_red") : TEXT("FantasyTown/stall_green"), X + 1.f, Row, 0.f, bNorth ? 0.f : 180.f, 2.f);
+			const float Back = bNorth ? Row - 0.75f : Row + 0.75f;
+			Put(Index % 3 == 0 ? TEXT("Pirate/crate_bottles") : TEXT("Pirate/crate"), X + 2.35f, Back, 0.f, Rand.FRandRange(-20.f, 20.f), 0.55f);
+			if (Index % 2 == 1) Put(TEXT("Pirate/barrel"), X - 0.3f, Back, 0.f, 0.f, 0.5f);
+			Put(TEXT("FantasyTown/stall_stool"), X + 0.4f + Rand.FRandRange(0.f, 1.f), bNorth ? Row - 1.05f : Row + 1.05f, 0.f, 0.f, 1.7f);
+			++Index;
+		}
+	}
+	// --- street lanterns: every one stands there, about every other one is a real light (19 in the Ward, budget 24)
+	for (const int32 X : { 6, 10, 14, 30, 34, 38 })
+	{
+		const bool bLitNorth = X == 6 || X == 14 || X == 30 || X == 38;
+		Put(TEXT("FantasyTown/lantern"), X + 0.1f, 11.55f, 0.f, 0.f, 1.9f);
+		Put(TEXT("FantasyTown/lantern"), X + 0.1f, 15.45f, 0.f, 0.f, 1.9f);
+		if (bLitNorth) Lamp(X + 0.1f, 11.7f, 270.f, Color::Lantern, 2600.f, 520.f);
+		else Lamp(X + 0.1f, 15.3f, 270.f, Color::Lantern, 2600.f, 520.f);
+	}
+	const FVector2D CrossLamps[] = { FVector2D(19.55f, 4.f), FVector2D(23.45f, 7.f), FVector2D(19.55f, 20.5f), FVector2D(23.45f, 21.8f) };
+	for (const FVector2D& At : CrossLamps)
+	{
+		Put(TEXT("FantasyTown/lantern"), At.X, At.Y, 0.f, 0.f, 1.9f);
+		Lamp(At.X, At.Y, 270.f, Color::Lantern, 2600.f, 520.f);
+	}
+
+	// --- plaza: fountain with benches, the Rite board between its posts, banners, trees and planters in the corners
+	Put(TEXT("FantasyTown/fountain_round_detail"), 18.f, 16.f, 0.f, 0.f, 1.05f);
+	Put(TEXT("FantasyTown/stall_bench"), 16.6f, 16.f, 0.f, 0.f, 1.8f);
+	Put(TEXT("FantasyTown/stall_bench"), 18.f, 17.45f, 0.f, 90.f, 1.8f);
+	for (const float Col : { 20.5f, 22.5f }) Put(TEXT("FantasyTown/pillar_wood"), Col, 10.42f, 0.f, 0.f, 2.3f);
+	for (const float Col : { 18.2f, 24.8f })
+	{
+		Put(TEXT("FantasyTown/pillar_wood"), Col - 0.75f, 9.5f, 0.f, 0.f, 3.4f);
+		Put(TEXT("FantasyTown/pillar_wood"), Col + 0.75f, 9.5f, 0.f, 0.f, 3.4f);
+		Edge(TEXT("FantasyTown/banner_red"), Col, 9.5f, 2, 2.8f, 60.f);
+		Solid(Col - 0.9f, 9.4f, 1.8f, 0.2f, 300.f);
+	}
+	const FVector2D Corners[] = { FVector2D(16.5f, 9.5f), FVector2D(26.5f, 9.5f), FVector2D(16.5f, 17.5f), FVector2D(26.5f, 17.5f) };
+	for (int32 I = 0; I < 4; ++I)
+	{
+		const FVector2D& At = Corners[I];
+		Block(GrassFloor, At.X - 0.5f, At.Y - 0.5f, 1.f, 1.f, 0.f, 12.f);
+		Put(I % 2 == 0 ? TEXT("FantasyTown/tree") : TEXT("FantasyTown/tree_crooked"), At.X, At.Y, 8.f, Rand.FRandRange(0.f, 360.f), 1.7f);
+		Solid(At.X - 0.4f, At.Y - 0.4f, 0.8f, 0.8f, 200.f);
+		const float Inward = At.X < 21.f ? 1.f : -1.f;
+		Put(TEXT("FantasyTown/lantern"), At.X + Inward * 1.1f, At.Y, 0.f, 0.f, 1.9f);
+		Lamp(At.X + Inward * 1.1f, At.Y, 270.f, Color::Lantern, 2800.f, 560.f);
+	}
+	const FVector2D Pots[] = { FVector2D(19.3f, 9.6f), FVector2D(23.7f, 9.6f), FVector2D(16.5f, 11.4f), FVector2D(26.5f, 11.4f), FVector2D(16.5f, 15.2f),
+		FVector2D(26.5f, 15.6f), FVector2D(24.6f, 17.5f), FVector2D(19.4f, 17.6f), FVector2D(25.6f, 16.2f) };
+	for (const FVector2D& At : Pots)
+	{
+		Put(TEXT("Nature/pot_large"), At.X, At.Y, 14.f, Rand.FRandRange(0.f, 360.f), 20.f);
+		Put(Rand.FRand() < 0.5f ? TEXT("Nature/plant_flatTall") : TEXT("Nature/plant_bushDetailed"), At.X, At.Y, 40.f, Rand.FRandRange(0.f, 360.f), 24.f);
+		Solid(At.X - 0.35f, At.Y - 0.35f, 0.7f, 0.7f, 100.f);
+	}
+
+	// --- den row: red lanterns in front of the north-east hall (no new text)
+	for (const float Col : { 25.6f, 28.9f, 30.6f })
+	{
+		Put(TEXT("FantasyTown/lantern"), Col, 7.55f, 0.f, 0.f, 1.5f);
+		Lamp(Col, 7.6f, 215.f, Color::Crimson, 2200.f, 380.f);
+	}
+	// --- carts by the Ash gate and the south-west lot
+	Put(TEXT("FantasyTown/cart_high"), 41.3f, 16.9f, 0.f, 100.f, 1.5f); Solid(40.4f, 16.2f, 1.9f, 1.4f, 130.f);
+	Put(TEXT("FantasyTown/cart"), 14.9f, 17.f, 0.f, 20.f, 1.5f); Solid(14.1f, 16.2f, 1.5f, 1.8f, 100.f);
+}
+
+void AGbWardGreybox::BuildGreenery(FRandomStream& Rand)
+{
+	const TCHAR* Flowers[] = { TEXT("Nature/flower_redA"), TEXT("Nature/flower_redB"), TEXT("Nature/flower_yellowA"), TEXT("Nature/flower_yellowB"), TEXT("Nature/flower_purpleA"), TEXT("Nature/flower_purpleB") };
+	const TCHAR* Tufts[] = { TEXT("Nature/grass_large"), TEXT("Nature/grass_leafs"), TEXT("Nature/grass_leafsLarge") };
+	const TCHAR* Bushes[] = { TEXT("Nature/plant_bush"), TEXT("Nature/plant_bushLarge"), TEXT("Nature/plant_bushDetailed"), TEXT("Nature/plant_bushSmall") };
+	const TCHAR* Stones[] = { TEXT("Nature/rock_smallA"), TEXT("Nature/rock_smallD"), TEXT("Nature/rock_smallE"), TEXT("Nature/stone_smallB"), TEXT("Nature/rock_smallFlatA") };
+	const TCHAR* TownTrees[] = { TEXT("FantasyTown/tree"), TEXT("FantasyTown/tree_high"), TEXT("FantasyTown/tree_crooked"), TEXT("FantasyTown/tree_high_round"), TEXT("FantasyTown/tree_high_crooked") };
+	const TCHAR* LeafTrees[] = { TEXT("Nature/tree_default"), TEXT("Nature/tree_oak"), TEXT("Nature/tree_detailed"), TEXT("Nature/tree_fat"), TEXT("Nature/tree_default_fall"), TEXT("Nature/tree_oak_fall"), TEXT("Nature/tree_thin") };
+	const auto Any = [&Rand](const TCHAR* const* List, int32 Count) { return List[Rand.RandRange(0, Count - 1)]; };
+
+	// --- tall-grass lots: fenced on three sides and open towards the street, wild inside
+	for (const FIntRect& R : GrassPatches)
+	{
+		const bool bNorthLot = R.Min.Y < 12;
+		const int32 Across = FMath::RoundToInt(R.Width() / 2.f), Down = FMath::RoundToInt(R.Height() / 2.f);
+		const float SA = static_cast<float>(R.Width()) / Across, SD = static_cast<float>(R.Height()) / Down;
+		for (int32 K = 0; K < Across; ++K)
+		{
+			Edge(K % 4 == 2 ? TEXT("FantasyTown/fence_broken") : TEXT("FantasyTown/fence"), R.Min.X + (K + 0.5f) * SA, bNorthLot ? R.Min.Y : R.Max.Y, bNorthLot ? 0 : 2, SA);
+		}
+		for (int32 K = 0; K < Down; ++K)
+		{
+			Edge(TEXT("FantasyTown/fence"), R.Min.X, R.Min.Y + (K + 0.5f) * SD, 3, SD);
+			Edge(TEXT("FantasyTown/fence"), R.Max.X, R.Min.Y + (K + 0.5f) * SD, 1, SD);
+		}
+		const int32 Area = R.Width() * R.Height();
+		for (int32 I = 0; I < Area; ++I)
+		{
+			Put(Any(Tufts, 3), Rand.FRandRange(R.Min.X + 0.3f, R.Max.X - 0.3f), Rand.FRandRange(R.Min.Y + 0.3f, R.Max.Y - 0.3f), 12.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(20.f, 30.f), false);
+		}
+		for (int32 I = 0; I < Area / 4; ++I)
+		{
+			Put(Any(Flowers, 6), Rand.FRandRange(R.Min.X + 0.4f, R.Max.X - 0.4f), Rand.FRandRange(R.Min.Y + 0.4f, R.Max.Y - 0.4f), 12.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(20.f, 26.f), false);
+		}
+		const float BackRow = bNorthLot ? R.Min.Y + 0.7f : R.Max.Y - 0.7f;
+		Put(TEXT("Nature/rock_largeB"), R.Min.X + 1.2f, BackRow, 10.f, Rand.FRandRange(0.f, 360.f), 22.f);
+		Put(TEXT("Nature/stump_old"), R.Max.X - 2.4f, BackRow + (bNorthLot ? 0.9f : -0.9f), 10.f, Rand.FRandRange(0.f, 360.f), 26.f);
+		Put(TEXT("Nature/mushroom_redGroup"), R.Max.X - 2.9f, BackRow + (bNorthLot ? 1.4f : -1.4f), 10.f, 0.f, 24.f, false);
+		Put(Any(LeafTrees, 7), R.Max.X - 0.9f, BackRow, 12.f, Rand.FRandRange(0.f, 360.f), 30.f);
+		Solid(R.Max.X - 1.2f, BackRow - 0.3f, 0.6f, 0.6f, 200.f);
+	}
+
+	// --- yards inside the wall: trees in little planters, bushes against the houses, weeds between the flags
+	int32 Trees = 0;
+	for (int32 Try = 0; Try < 400 && Trees < 16; ++Try)
+	{
+		const float Col = Rand.FRandRange(1.9f, 42.1f), Row = Rand.FRandRange(1.9f, 22.6f);
+		if (!IsFree(Col, Row, 0.9f)) continue;
+		const bool bPine = Rand.FRand() < 0.45f;
+		Block(GrassFloor, Col - 0.75f, Row - 0.75f, 1.5f, 1.5f, 0.f, 10.f);
+		if (bPine) Put(Any(TownTrees, 5), Col, Row, 8.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(1.5f, 2.1f));
+		else Put(Any(LeafTrees, 7), Col, Row, 14.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(27.f, 36.f));
+		Solid(Col - 0.3f, Row - 0.3f, 0.6f, 0.6f, 200.f);
+		Occupied.Add(TileRect(Col - 1.6f, Row - 1.6f, 3.2f, 3.2f));
+		++Trees;
+	}
+	for (int32 I = 0; I < 260; ++I)
+	{
+		const float Col = Rand.FRandRange(1.3f, 42.7f), Row = Rand.FRandRange(1.3f, 23.6f);
+		if (!IsFree(Col, Row, 0.2f)) continue;
+		const float Roll = Rand.FRand();
+		if (Roll < 0.16f) Put(Any(Bushes, 4), Col, Row, 12.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(22.f, 34.f));
+		else if (Roll < 0.26f) Put(Any(Stones, 5), Col, Row, 10.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(16.f, 28.f));
+		else if (Roll < 0.48f) Put(Any(Flowers, 6), Col, Row, 12.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(18.f, 24.f), false);
+		else Put(Any(Tufts, 3), Col, Row, 12.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(14.f, 24.f), false);
+	}
+
+	// --- outside the wall: a few farmsteads, then woods and crags up to the fog
+	const FHouse Farms[] = {
+		{ 6.f, -13.f, 3, 2.5f, 2, 2, 1, true, false }, { 29.f, -11.f, 2, 2.5f, 1, 2, 0, false, false }, { 36.f, -18.f, 3, 2.5f, 2, 2, 1, true, false },
+		{ 52.f, 3.f, 2, 2.5f, 2, 2, 0, true, false }, { 50.f, 17.f, 3, 2.5f, 1, 2, 1, false, false }, { -13.f, 5.f, 2, 2.5f, 1, 2, 0, false, false }, { -11.f, 15.f, 3, 2.5f, 2, 2, 1, true, false },
+	};
+	for (const FHouse& Farm : Farms) BuildHouse(Farm);
+	Occupied.Add(TileRect(-4.f, -3.5f, 52.f, 29.f)); // the walled town itself
+	Occupied.Add(TileRect(19.f, -60.f, 5.f, 60.f)); // north road
+	Occupied.Add(TileRect(44.f, 11.f, 60.f, 5.f)); // east road
+	for (int32 I = 0; I < 520; ++I)
+	{
+		const float Col = Rand.FRandRange(-55.f, 99.f), Row = Rand.FRandRange(-55.f, 23.f);
+		if (!IsFree(Col, Row, 1.2f)) continue;
+		const float Roll = Rand.FRand();
+		if (Roll < 0.5f) Put(Any(TownTrees, 5), Col, Row, 0.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(2.2f, 3.4f));
+		else if (Roll < 0.8f) Put(Any(LeafTrees, 7), Col, Row, 14.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(38.f, 56.f));
+		else if (Roll < 0.9f) Put(Rand.FRand() < 0.5f ? TEXT("FantasyTown/rock_large") : TEXT("FantasyTown/rock_wide"), Col, Row, -10.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(1.6f, 3.6f));
+		else Put(Any(Bushes, 4), Col, Row, 12.f, Rand.FRandRange(0.f, 360.f), Rand.FRandRange(40.f, 70.f));
+	}
 }
 
 void AGbWardGreybox::Dress()
@@ -292,65 +645,30 @@ void AGbWardGreybox::Dress()
 		{ Dressing.Remove(C); C->DestroyComponent(); }
 	}
 	for (UActorComponent* C : Dressing) if (C) C->DestroyComponent();
-	Dressing.Reset(); SlotMeshes.Reset();
-	// Keep the original collision hulls: the decorative kit never changes a street's footprint.
-	for (int X = 3; X < Cols - 3; X += 4)
-	{
-		if (X >= 14 && X <= 27) continue;
-		for (int Y : {11, 15})
-		{
-			Slot(TEXT("stall"), X, Y, 2, 1, 0, 210);
-			Slot(TEXT("lantern"), X + 2.3f, Y + 0.3f, .4f, .4f, 230, 40);
-			UPointLightComponent* Light = NewObject<UPointLightComponent>(this); Light->SetupAttachment(RootComponent);
-			Light->SetRelativeLocation(TileToLocal(X + 2.5f, Y + .5f, 240));
-			Light->SetMobility(EComponentMobility::Movable); Light->SetLightColor(GbGreybox::Color::Lantern);
-			Light->SetIntensity(1800); Light->SetAttenuationRadius(260); Light->SetCastShadows(false);
-			AddInstanceComponent(Light); Light->RegisterComponent(); Dressing.Add(Light);
-		}
-	}
-	// Imported roofs and window facades, fitted to the existing four house footprints.
-	const FIntRect HousesAt[] = { FIntRect(13,2,18,7), FIntRect(25,2,30,7), FIntRect(15,19,19,23), FIntRect(24,19,29,23) };
-	for (const FIntRect& R : HousesAt)
-	{
-		Slot(TEXT("house"), R.Min.X, R.Max.Y - .15f, R.Width(), .15f, 0, 300);
-		Slot(TEXT("roof"), R.Min.X - .2f, R.Min.Y - .2f, R.Width() + .4f, R.Height() + .4f, 300, 120);
-	}
-	for (int X = 1; X < Cols - 1; X += 2) Slot(TEXT("wall"), X, .8f, 2, .2f, 0, 300);
-	Slot(TEXT("fountain"), 17,15,2,2,0,85);
-	for (const FIntPoint P : {FIntPoint(16,9),FIntPoint(26,9),FIntPoint(16,17),FIntPoint(26,17)}) Slot(TEXT("plant"),P.X,P.Y,1,1,0,100);
-	for (const FIntRect& R : GrassPatches)
-	{
-		// Low visual fences at the back; all existing grass entrances/triggers stay accessible.
-		for (int X = R.Min.X; X < R.Max.X; X += 2) Slot(TEXT("fence"), X,R.Min.Y,2,.12f,0,65);
-	}
-	for (int Y = 24; Y < 29; ++Y) Slot(TEXT("pier"),20,Y,3,1,0,8);
-	Slot(TEXT("fence"),20,28.65f,3,.2f,0,180);
-	for (int X : {4,10,29,36}) { Slot(TEXT("crate"),X,23, .7f,.7f,0,70); Slot(TEXT("barrel"),X+1,23,.6f,.6f,0,80); }
-	// North-east den row: red lanterns, no additional dialogue.
-	for (int X : {25,27,29})
-	{
-		Slot(TEXT("lantern"),X,7,.35f,.35f,220,45);
-		UPointLightComponent* Light = NewObject<UPointLightComponent>(this); Light->SetupAttachment(RootComponent);
-		Light->SetRelativeLocation(TileToLocal(X+.175f,7.175f,240)); Light->SetMobility(EComponentMobility::Movable);
-		Light->SetLightColor(GbGreybox::Color::Crimson); Light->SetIntensity(1200); Light->SetAttenuationRadius(220); Light->SetCastShadows(false);
-		AddInstanceComponent(Light); Light->RegisterComponent(); Dressing.Add(Light);
-	}
+	Dressing.Reset(); KitMeshes.Reset();
+	bKitFound = bUseKit && FPackageName::DoesPackageExist(TEXT("/Game/Grudgebound/Env/FantasyTown/roof_high_left"));
+
+	// The four houses with doors (make-lantern-ward.py puts a door actor in front of each).
+	const FHouse Houses[] = {
+		{ 13.5f, 2.5f, 2, 2.5f, 2, 2, 1, true, true },  // Mender's House
+		{ 23.5f, 2.f, 3, 2.5f, 2, 2, 1, true, true },   // Rite Hall
+		{ 15.f, 19.f, 2, 2.f, 1, 0, 1, false, true },   // your room
+		{ 24.f, 19.f, 3, 2.f, 1, 0, 1, false, true },   // Counting House
+	};
+	for (const FHouse& House : Houses) BuildHouse(House);
+	Edge(TEXT("FantasyTown/banner_red"), 24.75f, 7.f, 2, 2.5f, 260.f);
+	Edge(TEXT("FantasyTown/banner_red"), 29.75f, 7.f, 2, 2.5f, 260.f);
+	Edge(TEXT("FantasyTown/overhang"), 27.25f, 7.f, 2, 2.5f);
+	Edge(TEXT("FantasyTown/overhang"), 17.25f, 7.5f, 2, 2.5f);
+
+	FRandomStream Rand(4242);
+	BuildWalls();
+	BuildHarbour(Rand);
+	BuildPlazaAndStreets(Rand);
+	BuildGreenery(Rand);
+
 	const FVector GatePositions[] = { TileToLocal(21.5f,1.5f,100), TileToLocal(42.5f,13.5f,100), TileToLocal(21.5f,28.3f,100) };
 	for (int I = 0; I < Gates.Num(); ++I) { Gates[I]->SetRelativeLocation(GatePositions[I]); Gates[I]->SetBoxExtent(FVector(90,90,120)); }
-	const TCHAR* Labels[] = { TEXT("market street"), TEXT("gambling-den row"), TEXT("canal edge"), TEXT("tall-grass lots"), TEXT("Bone gate"), TEXT("Ash gate"), TEXT("Tide docks gate") };
-	const FVector LabelAt[] = {TileToLocal(7,13,170),TileToLocal(27,8,180),TileToLocal(10,23,150),TileToLocal(8,4,140),GatePositions[0],GatePositions[1],GatePositions[2]};
-	for (int I = 0; I < 7; ++I)
-	{
-		UTextRenderComponent* Label = NewObject<UTextRenderComponent>(this); Label->SetupAttachment(RootComponent);
-		Label->SetText(FText::FromString(Labels[I])); Label->SetWorldSize(32); Label->SetHorizontalAlignment(EHTA_Center);
-		Label->SetRelativeLocation(LabelAt[I] + FVector(0,0,150)); Label->SetRelativeRotation(FRotator(55,180,0));
-		Label->SetTextRenderColor(GbGreybox::Color::Paper.ToFColor(true)); Label->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		AddInstanceComponent(Label); Label->RegisterComponent(); Dressing.Add(Label);
-	}
-	const auto Imported = [this](FName Name) { const UInstancedStaticMeshComponent* M = SlotMeshes.FindRef(Name); return M && M->GetStaticMesh() && !M->GetStaticMesh()->GetPathName().StartsWith(TEXT("/Engine/BasicShapes/")); };
-	// Keep original collision, but let the CC0 slot provide the visible surface.
-	Wood->SetVisibility(!Imported(TEXT("stall"))); Awnings->SetVisibility(!Imported(TEXT("stall")));
-	Roofs->SetVisibility(!Imported(TEXT("roof"))); Fountain->SetVisibility(!Imported(TEXT("fountain"))); Plants->SetVisibility(!Imported(TEXT("plant")));
 }
 
 void AGbWardGreybox::GateOverlap(UPrimitiveComponent* Component, AActor* Other, UPrimitiveComponent*, int32, bool, const FHitResult&)
@@ -465,7 +783,7 @@ bool FGbWardLayoutTest::RunTest(const FString&)
 	TestEqual(TEXT("Four original trigger patches"), Grass.Num(), 4);
 	TArray<FVector> Centres; for (const UGbTallGrassComponent* G : Grass) Centres.Add(G->GetRelativeLocation());
 	if (Grass.Num() == 4) TestTrue(TEXT("North-west grass bounds preserved"), Grass[0]->GetUnscaledBoxExtent().Equals(FVector(300,450,100)));
-	Ward->MeshTable.Reset(); Ward->RebuildWard();
+	Ward->bUseKit=false; Ward->RebuildWard();
 	for (int I=0; I<Grass.Num(); ++I) TestEqual(TEXT("Fallback does not move encounter triggers"), Grass[I]->GetRelativeLocation(), Centres[I]);
 	TArray<UPointLightComponent*> Lamps; Ward->GetComponents(Lamps);
 	TestTrue(TEXT("Lanterns stay inside dynamic-light budget"), Lamps.Num() > 0 && Lamps.Num() <= 24);

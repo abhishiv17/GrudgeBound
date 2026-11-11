@@ -2,6 +2,7 @@
 #include "GbApiSubsystem.h"
 #include "GbUiDirector.h"
 #include "GbGreyboxMaterials.h"
+#include "GbUserSettings.h"
 #include "Camera/CameraTypes.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -14,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
+#include "Camera/PlayerCameraManager.h"
 
 FVector GbBuildings::Origin(EGbBuilding Kind) { return FVector(20000 + static_cast<int32>(Kind)*1600, 0, 0); }
 FVector GbBuildings::Spawn(EGbBuilding Kind) { return Origin(Kind) + FVector(-50,0,0); }
@@ -47,18 +49,29 @@ AGbBuildingDoor::AGbBuildingDoor()
 }
 void AGbBuildingDoor::OnConstruction(const FTransform& T)
 {
- Super::OnConstruction(T); Marker->ClearInstances(); Marker->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,30),FVector(.8f,.8f,.6f)));
+ Super::OnConstruction(T); Marker->ClearInstances(); Marker->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,4),FVector(1.1f,1.1f,.06f)));
  GbGreybox::Paint(Marker,GbGreybox::Color::Gold,this); Prompt->SetText(FText::FromString(Label));
  Prompt->SetTextRenderColor(GbGreybox::Color::Paper.ToFColor(true));
 }
-void AGbBuildingDoor::BeginPlay() { Super::BeginPlay(); }
+void AGbBuildingDoor::BeginPlay()
+{
+ Super::BeginPlay();
+ GetWorldTimerManager().SetTimer(FaceTimer,this,&AGbBuildingDoor::FaceCamera,.05f,true);
+}
+void AGbBuildingDoor::FaceCamera()
+{
+ // The camera turns now, so the sign turns with it.
+ const APlayerController* PC=GetWorld()->GetFirstPlayerController(); if (!PC || !PC->PlayerCameraManager) return;
+ const FRotator Camera=PC->PlayerCameraManager->GetCameraRotation();
+ Prompt->SetWorldRotation(FRotator(-Camera.Pitch,Camera.Yaw+180,0));
+}
 void AGbBuildingDoor::EnterRange(UPrimitiveComponent*,AActor* Other,UPrimitiveComponent*,int32,bool,const FHitResult&)
 {
  APawn* Pawn=Cast<APawn>(Other); if (!Pawn || !Pawn->IsLocallyControlled()) return;
  Nearby=Pawn; APlayerController* PC=Cast<APlayerController>(Pawn->GetController()); if (!PC) return;
  EnableInput(PC); PC->bEnableClickEvents=true;
- if (InputComponent) { InputComponent->ClearActionBindings(); InputComponent->KeyBindings.Reset(); InputComponent->BindKey(EKeys::E,IE_Pressed,this,&AGbBuildingDoor::Interact); }
- Prompt->SetText(FText::FromString(Label + TEXT("  [E]")));
+ if (InputComponent) { InputComponent->ClearActionBindings(); InputComponent->KeyBindings.Reset(); InputComponent->BindKey(UGbUserSettings::Get()->KeyFor(TEXT("Interact")),IE_Pressed,this,&AGbBuildingDoor::Interact); }
+ Prompt->SetText(FText::FromString(Label + TEXT("  [") + UGbUserSettings::Get()->KeyLabel(TEXT("Interact")) + TEXT("]")));
 }
 void AGbBuildingDoor::LeaveRange(UPrimitiveComponent*,AActor* Other,UPrimitiveComponent*,int32)
 {

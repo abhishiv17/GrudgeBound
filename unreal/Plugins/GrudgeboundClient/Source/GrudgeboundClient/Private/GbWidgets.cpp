@@ -7,6 +7,10 @@
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
 #include "GbSatchelWidget.h"
+#include "GbSettingsMenu.h"
+#include "GbUiStyle.h"
+#include "GbUserSettings.h"
+#include "Styling/CoreStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -30,43 +34,78 @@ namespace
 {
 	namespace C = GbGreybox::Color;
 
-	UTexture2D* PaperGrain()
+	// Kind 0: frame. 1: frame with crimson corner studs. 2: button. 16 x 16 art pixels, 3 texels each.
+	UTexture2D* PixelFrame(int32 Kind)
+	{
+		static UTexture2D* Made[3] = {};
+		if (Made[Kind]) return Made[Kind];
+		const int32 N = 16, Px = 3, Size = N * Px;
+		UTexture2D* Texture = UTexture2D::CreateTransient(Size, Size, PF_B8G8R8A8);
+		Texture->AddToRoot(); Texture->SRGB = true; Texture->Filter = TF_Nearest;
+		FColor* Pixels = static_cast<FColor*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+		const FColor Frame(26, 23, 38), Stud(176, 21, 58), Light(255, 255, 255);
+		for (int32 Y = 0; Y < Size; ++Y) for (int32 X = 0; X < Size; ++X)
+		{
+			const int32 AX = X / Px, AY = Y / Px;
+			const int32 FromX = FMath::Min(AX, N - 1 - AX), FromY = FMath::Min(AY, N - 1 - AY);
+			FColor Color = Kind == 2 ? FColor(232, 232, 232) : FColor(246, 246, 246);
+			if (FromX == 0 && FromY == 0) Color = FColor(0, 0, 0, 0);
+			else if (FromX == 0 || FromY == 0) Color = Frame;
+			else if (Kind == 2) { if (AY == 1) Color = Light; else if (AY >= N - 3) Color = FColor(176, 176, 176); }
+			else if (FromX == 1 || FromY == 1) Color = Light;
+			if (Kind == 1 && FMath::Abs(FromX - 3) + FMath::Abs(FromY - 3) <= 1) Color = Stud;
+			Pixels[Y * Size + X] = Color;
+		}
+		Texture->GetPlatformData()->Mips[0].BulkData.Unlock(); Texture->UpdateResource();
+		return Made[Kind] = Texture;
+	}
+	FSlateBrush FrameBrush(int32 Kind, const FLinearColor& Tint = FLinearColor::White)
+	{
+		FSlateBrush Brush; Brush.SetResourceObject(PixelFrame(Kind)); Brush.ImageSize = FVector2D(48, 48);
+		Brush.DrawAs = ESlateBrushDrawType::Box; Brush.Margin = FMargin((Kind == 1 ? 6.f : Kind == 2 ? 4.f : 3.f) / 16.f);
+		Brush.TintColor = FSlateColor(Tint); return Brush;
+	}
+	FSlateBrush PaperBrush() { return FrameBrush(0); }
+	/** The title screen's sky: a top-to-bottom wash, see-through so the Ward shows under it. */
+	FSlateBrush DuskBrush()
 	{
 		static UTexture2D* Texture = nullptr;
 		if (!Texture)
 		{
-			Texture = UTexture2D::CreateTransient(64,64,PF_B8G8R8A8);
-			Texture->AddToRoot(); Texture->SRGB=true; Texture->Filter=TF_Bilinear;
-			FColor* Pixels=static_cast<FColor*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
-			FRandomStream Grain(301);
-			for (int32 Y=0;Y<64;++Y) for (int32 X=0;X<64;++X)
+			Texture = UTexture2D::CreateTransient(1, 64, PF_B8G8R8A8);
+			Texture->AddToRoot(); Texture->SRGB = true; Texture->Filter = TF_Bilinear; Texture->AddressY = TA_Clamp;
+			FColor* Pixels = static_cast<FColor*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+			const FLinearColor Top(14.f, 11.f, 38.f, 240.f), Mid(44.f, 27.f, 69.f, 170.f), Low(60.f, 30.f, 60.f, 120.f);
+			for (int32 Y = 0; Y < 64; ++Y)
 			{
-				const int32 Edge=FMath::Min(FMath::Min(X,63-X),FMath::Min(Y,63-Y));
-				const uint8 V=Edge < 2+(X*17+Y*31)%3 ? Grain.RandRange(12,30) : Grain.RandRange(244,255);
-				Pixels[Y*64+X]=FColor(V,V,V,255);
+				const float T = Y / 63.f;
+				const FLinearColor V = T < 0.5f ? FMath::Lerp(Top, Mid, T * 2.f) : FMath::Lerp(Mid, Low, T * 2.f - 1.f);
+				Pixels[Y] = FColor(uint8(V.R), uint8(V.G), uint8(V.B), uint8(V.A));
 			}
 			Texture->GetPlatformData()->Mips[0].BulkData.Unlock(); Texture->UpdateResource();
 		}
-		return Texture;
+		FSlateBrush Brush; Brush.SetResourceObject(Texture); Brush.ImageSize = FVector2D(1, 64); Brush.DrawAs = ESlateBrushDrawType::Image; return Brush;
 	}
-	FSlateBrush PaperBrush()
+	/** bPixel: Pixelify Sans (Regular = semi-bold cut, Bold = bold cut). Otherwise Courier Prime. Before the new
+	    faces are imported (UI/import-fonts.py) the earlier Mincho faces are used. */
+	TSharedPtr<const FCompositeFont> UiFont(bool bPixel)
 	{
-		FSlateBrush Brush; Brush.SetResourceObject(PaperGrain()); Brush.ImageSize=FVector2D(64,64);
-		Brush.DrawAs=ESlateBrushDrawType::Box; Brush.Margin=FMargin(.125f); return Brush;
-	}
-	TSharedPtr<const FCompositeFont> UiFont(bool bTitle)
-	{
-		static TSharedPtr<FCompositeFont> Title,Body;
-		TSharedPtr<FCompositeFont>& Font=bTitle?Title:Body;
+		static TSharedPtr<FCompositeFont> Pixel, Body;
+		TSharedPtr<FCompositeFont>& Font = bPixel ? Pixel : Body;
 		if (!Font)
 		{
-			const TCHAR* Regular=bTitle?TEXT("/Game/Grudgebound/UI/Fonts/YujiSyukuRegular.YujiSyukuRegular"):TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoRegular.ShipporiMinchoRegular");
-			const TCHAR* Bold=bTitle?Regular:TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoBold.ShipporiMinchoBold");
-			UFontFace* R=LoadObject<UFontFace>(nullptr,Regular); UFontFace* B=LoadObject<UFontFace>(nullptr,Bold);
+			const auto Face = [](const TCHAR* Name) { return LoadObject<UFontFace>(nullptr, *FString::Printf(TEXT("/Game/Grudgebound/UI/Fonts/%s.%s"), Name, Name)); };
+			UFontFace* R = Face(bPixel ? TEXT("PixelifySansSemiBold") : TEXT("CourierPrimeRegular"));
+			UFontFace* B = bPixel ? Face(TEXT("PixelifySansBold")) : R;
+			if (!R || !B)
+			{
+				R = Face(bPixel ? TEXT("YujiSyukuRegular") : TEXT("ShipporiMinchoRegular"));
+				B = bPixel ? R : Face(TEXT("ShipporiMinchoBold"));
+			}
 			if (!R || !B) return nullptr;
-			R->AddToRoot(); B->AddToRoot(); Font=MakeShared<FCompositeFont>();
-			FTypefaceEntry RE(FName(TEXT("Regular"))); RE.Font=FFontData(R); Font->DefaultTypeface.Fonts.Add(RE);
-			FTypefaceEntry BE(FName(TEXT("Bold"))); BE.Font=FFontData(B); Font->DefaultTypeface.Fonts.Add(BE);
+			R->AddToRoot(); B->AddToRoot(); Font = MakeShared<FCompositeFont>();
+			FTypefaceEntry RE(FName(TEXT("Regular"))); RE.Font = FFontData(R); Font->DefaultTypeface.Fonts.Add(RE);
+			FTypefaceEntry BE(FName(TEXT("Bold"))); BE.Font = FFontData(B); Font->DefaultTypeface.Fonts.Add(BE);
 		}
 		return Font;
 	}
@@ -136,6 +175,17 @@ namespace
 		return S;
 	}
 }
+
+FSlateFontInfo GbUi::Font(int32 Size, bool bBold, bool bTitle)
+{
+	FSlateFontInfo Info = FCoreStyle::GetDefaultFontStyle(bBold || bTitle ? "Bold" : "Regular", Size);
+	if (const TSharedPtr<const FCompositeFont> Family = UiFont(bBold || bTitle)) Info = FSlateFontInfo(Family, Size);
+	Info.Size = Size;
+	Info.TypefaceFontName = bTitle ? FName(TEXT("Bold")) : FName(TEXT("Regular"));
+	return Info;
+}
+FSlateBrush GbUi::PanelBrush(const FLinearColor& Tint, bool bStuds) { return FrameBrush(bStuds ? 1 : 0, Tint); }
+FSlateBrush GbUi::ButtonBrush(const FLinearColor& Tint) { return FrameBrush(2, Tint); }
 
 // ================================================================ building panels
 void UGbMenderWidget::BuildTree()
@@ -298,9 +348,9 @@ UTextBlock* UGbWidgetBase::MakeText(const FString& Text, int32 Size, const FLine
 	FLinearColor Readable=Color; Readable.A=FMath::Max(Readable.A,.85f);
 	T->SetColorAndOpacity(FSlateColor(Readable));
 	FSlateFontInfo Font = T->GetFont();
-	if (const TSharedPtr<const FCompositeFont> Family=UiFont(Size>=22 && bBold)) Font=FSlateFontInfo(Family,FMath::Max(Size,14));
+	if (const TSharedPtr<const FCompositeFont> Family=UiFont(bBold)) Font=FSlateFontInfo(Family,FMath::Max(Size,14));
 	Font.Size = FMath::Max(Size,14);
-	Font.TypefaceFontName = bBold ? FName(TEXT("Bold")) : FName(TEXT("Regular"));
+	Font.TypefaceFontName = bBold && Size>=22 ? FName(TEXT("Bold")) : FName(TEXT("Regular"));
 	T->SetFont(Font);
 	T->SetAutoWrapText(true);
 	return T;
@@ -313,7 +363,8 @@ UBorder* UGbWidgetBase::MakePanel(const FLinearColor& Background, const FMargin&
 UBorder* UGbWidgetBase::MakeFrame(const FLinearColor& Background, const FMargin& Inner)
 {
 	UBorder* B = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-	B->SetBrush(PaperBrush());
+	// Big cards get the studded frame; chips and rows the plain one.
+	B->SetBrush(FrameBrush(Inner.Left>=20.f && Inner.Top>=14.f ? 1 : 0));
 	B->SetBrushColor(Background);
 	B->SetPadding(Inner);
 	return B;
@@ -322,12 +373,12 @@ UBorder* UGbWidgetBase::MakeFrame(const FLinearColor& Background, const FMargin&
 UButton* UGbWidgetBase::MakeButton(const FString& Label, UTextBlock*& OutLabel, const FLinearColor& Tint)
 {
 	UButton* B = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
-	FButtonStyle Style=B->GetStyle(); Style.Normal=PaperBrush(); Style.Hovered=Style.Normal; Style.Pressed=Style.Normal; Style.Disabled=Style.Normal;
+	FButtonStyle Style=B->GetStyle(); Style.Normal=FrameBrush(2); Style.Hovered=Style.Normal; Style.Pressed=Style.Normal; Style.Disabled=Style.Normal;
 	Style.Hovered.TintColor=FSlateColor(FLinearColor::White*1.08f); Style.Pressed.TintColor=FSlateColor(FLinearColor::White*.83f);
-	Style.Disabled.TintColor=FSlateColor(FLinearColor::White*.55f); Style.NormalPadding=FMargin(10,4); Style.PressedPadding=FMargin(11,5,9,3);
+	Style.Disabled.TintColor=FSlateColor(FLinearColor::White*.55f); Style.NormalPadding=FMargin(12,6,12,9); Style.PressedPadding=FMargin(12,8,12,7);
 	B->SetStyle(Style);
 	B->SetBackgroundColor(Tint);
-	OutLabel = MakeText(Label, 15, C::Ink, true);
+	OutLabel = MakeText(Label, 15, Tint == C::Crimson ? GbUi::PaperHi() : C::Ink, true);
 	OutLabel->SetJustification(ETextJustify::Center);
 	OutLabel->SetAutoWrapText(false);
 	B->AddChild(OutLabel);
@@ -358,28 +409,72 @@ UWidget* UGbWidgetBase::Sized(UWidget* Content, float Width, float Height)
 
 // ================================================================ HUD
 
+// The title screen: the one front door. Enter signs you in the first time (browser), then goes to the Ward.
 void UGbSignInWidget::BuildTree()
 {
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget = Root;
-	UBorder* Panel = MakePanel(PaperPanel(), FMargin(32.f));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(); Panel->SetContent(Sized(Col, 440.f, 0.f));
-	AddRow(Col, MakeText(TEXT("Enter Hollowmere"), 28, C::Ink, true));
-	StatusText = MakeText(TEXT("Sign in to enter Hollowmere."), 16, C::Ink); AddRow(Col, StatusText, 12.f, 16.f);
+	SetIsFocusable(true);
+
+	// Night over the live Ward: dark behind the logo, clearer toward the streets.
+	UBorder* Sky = WidgetTree->ConstructWidget<UBorder>(); Sky->SetBrush(DuskBrush());
+	UCanvasPanelSlot* SkySlot = Root->AddChildToCanvas(Sky); SkySlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f)); SkySlot->SetOffsets(FMargin(0.f));
+
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>();
+	const auto Middle = [Col](UWidget* W, float Top, float Bottom) { AddRow(Col, W, Top, Bottom)->SetHorizontalAlignment(HAlign_Center); };
+
+	UTextBlock* Logo = MakeText(TEXT("GRUDGEBOUND"), 96, GbUi::PaperHi(), true);
+	FSlateFontInfo LogoFont = Logo->GetFont(); LogoFont.OutlineSettings = FFontOutlineSettings(4, C::Ink); LogoFont.LetterSpacing = 40; Logo->SetFont(LogoFont);
+	Logo->SetShadowOffset(FVector2D(0.f, 8.f)); Logo->SetShadowColorAndOpacity(C::Crimson); Logo->SetAutoWrapText(false);
+	Middle(Logo, 0.f, 10.f);
+
+	UBorder* Ribbon = MakePanel(C::Crimson, FMargin(40.f, 7.f, 34.f, 8.f));
+	UTextBlock* Sub = MakeText(TEXT("THE RITE"), 20, GbUi::PaperHi(), true); Sub->SetAutoWrapText(false);
+	FSlateFontInfo SubFont = Sub->GetFont(); SubFont.LetterSpacing = 400; Sub->SetFont(SubFont);
+	Ribbon->SetContent(Sub); Middle(Ribbon, 0.f, 16.f);
+
+	UTextBlock* Tagline = MakeText(TEXT("Greed makes monsters. You rewrite the rules."), 20, GbUi::PaperHi(), true);
+	Tagline->SetShadowOffset(FVector2D(0.f, 2.f)); Tagline->SetShadowColorAndOpacity(C::Ink); Tagline->SetAutoWrapText(false);
+	Middle(Tagline, 0.f, 18.f);
+
+	UBorder* Panel = MakePanel(PaperPanel(), FMargin(28.f, 24.f, 28.f, 20.f));
+	UVerticalBox* Menu = WidgetTree->ConstructWidget<UVerticalBox>(); Panel->SetContent(Sized(Menu, 460.f, 0.f));
 	UTextBlock* Label = nullptr;
-	SignInButton = MakeButton(TEXT("Sign in with email"), Label, C::Gold);
-	SignInButton->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSignIn); AddRow(Col, SignInButton);
-	Centre(Root, Panel);
+	SignInButton = MakeButton(TEXT("Enter Lantern Ward"), Label, C::Crimson);
+	FSlateFontInfo Big = Label->GetFont(); Big.Size = 21; Label->SetFont(Big);
+	SignInButton->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSignIn); AddRow(Menu, Sized(SignInButton, 0.f, 60.f), 0.f, 8.f);
+	UHorizontalBox* Pair = WidgetTree->ConstructWidget<UHorizontalBox>();
+	UButton* Help = MakeButton(TEXT("How to play"), Label, GbUi::Paper2()); Help->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleHelp);
+	UButton* Settings = MakeButton(TEXT("Settings"), Label, GbUi::Paper2()); Settings->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSettings);
+	AddCol(Pair, Sized(Help, 0.f, 46.f), true); AddCol(Pair, Sized(Settings, 0.f, 46.f), true, 0.f);
+	AddRow(Menu, Pair, 0.f, 6.f);
+	HelpBox = WidgetTree->ConstructWidget<UVerticalBox>(); HelpBox->SetVisibility(ESlateVisibility::Collapsed); AddRow(Menu, HelpBox, 4.f, 4.f);
+	StatusText = MakeText(TEXT(""), 14, GbUi::InkSoft()); StatusText->SetJustification(ETextJustify::Center); AddRow(Menu, StatusText, 8.f, 0.f);
+	Middle(Panel, 0.f, 0.f);
+
+	UCanvasPanelSlot* ColSlot = Centre(Root, Col); ColSlot->SetPosition(FVector2D(0.f, -20.f));
+
+	const auto Foot = [this, Root](const TCHAR* Text, float Side)
+	{
+		UTextBlock* T = MakeText(Text, 14, C::Paper, true); T->SetAutoWrapText(false);
+		T->SetShadowOffset(FVector2D(0.f, 2.f)); T->SetShadowColorAndOpacity(C::Ink);
+		UCanvasPanelSlot* S = Root->AddChildToCanvas(T); S->SetAnchors(FAnchors(Side, 1.f)); S->SetAlignment(FVector2D(Side, 1.f));
+		S->SetPosition(FVector2D(Side > 0.f ? -22.f : 22.f, -14.f)); S->SetAutoSize(true);
+	};
+	Foot(TEXT("Hollowmere, a harbor town that ran on debt"), 0.f);
+	Foot(TEXT("NEAR HACKATHON 2026"), 1.f);
 }
 
 void UGbSignInWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.AddUniqueDynamic(this, &UGbSignInWidget::HandleChanged);
-	Refresh();
+	UGbUserSettings::Get()->OnChanged.AddUObject(this, &UGbSignInWidget::FillHelp);
+	FillHelp(); Refresh();
 }
 
 void UGbSignInWidget::NativeDestruct()
 {
+	UGbUserSettings::Get()->OnChanged.RemoveAll(this);
 	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.RemoveDynamic(this, &UGbSignInWidget::HandleChanged);
 	Super::NativeDestruct();
 }
@@ -390,8 +485,41 @@ void UGbSignInWidget::Refresh()
 	if (StatusText) StatusText->SetText(FText::FromString(Auth->GetMessage()));
 	if (SignInButton) SignInButton->SetIsEnabled(!Auth->IsBusy());
 }
-void UGbSignInWidget::HandleSignIn() { GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->BeginSignIn(); }
+
+/** The keys as they are bound right now, drawn as keycaps. */
+void UGbSignInWidget::FillHelp()
+{
+	if (!HelpBox) return;
+	HelpBox->ClearChildren();
+	const UGbUserSettings* S = UGbUserSettings::Get();
+	const auto Row = [this, S](std::initializer_list<const TCHAR*> Actions, FString Text)
+	{
+		UHorizontalBox* Line = WidgetTree->ConstructWidget<UHorizontalBox>();
+		for (const TCHAR* Action : Actions)
+		{
+			UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(); Cap->SetBrush(FrameBrush(2)); Cap->SetBrushColor(GbUi::PaperHi()); Cap->SetPadding(FMargin(9.f, 3.f, 9.f, 7.f));
+			UTextBlock* Key = MakeText(S->KeyLabel(Action), 14, C::Ink, true); Key->SetAutoWrapText(false); Cap->SetContent(Key);
+			AddCol(Line, Cap, false, 4.f);
+			if (Text.IsEmpty()) for (const FGbActionDef& Def : UGbUserSettings::Actions()) if (Def.Id == Action) Text = Def.Label;
+		}
+		UTextBlock* What = MakeText(Text, 15, C::Ink); What->SetAutoWrapText(false);
+		AddCol(Line, What, true, 0.f)->SetPadding(FMargin(8.f, 0.f, 0.f, 0.f));
+		AddRow(HelpBox, Line, 3.f, 3.f);
+	};
+	Row({ TEXT("MoveUp"), TEXT("MoveLeft"), TEXT("MoveDown"), TEXT("MoveRight") }, TEXT("Walk"));
+	for (const TCHAR* Action : { TEXT("Interact"), TEXT("Satchel"), TEXT("Case"), TEXT("Rite"), TEXT("Vows"), TEXT("Settings") }) Row({ Action }, FString());
+}
+
+void UGbSignInWidget::HandleSignIn() { OnEnter.Broadcast(); }
 void UGbSignInWidget::HandleChanged() { Refresh(); }
+void UGbSignInWidget::HandleHelp()
+{
+	if (HelpBox) HelpBox->SetVisibility(HelpBox->GetVisibility() == ESlateVisibility::Collapsed ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+}
+void UGbSignInWidget::HandleSettings()
+{
+	if (AGbSettingsHost* Menu = AGbSettingsHost::Find(GetWorld())) Menu->Open(1);
+}
 
 void UGbHudWidget::BuildTree()
 {
@@ -437,7 +565,8 @@ void UGbHudWidget::BuildTree()
 
 	// --- key hint, top right
 	UBorder* Hint = MakePanel(InkPanel(), FMargin(10.f, 6.f));
-	Hint->SetContent(MakeText(TEXT("B Satchel   T Case   R Rite   V Vows   O Observatory   I Story   L Proof   F10 Sign out"), 13, C::Paper, true));
+	KeyHint = MakeText(TEXT(""), 13, C::Paper, true); KeyHint->SetAutoWrapText(false);
+	Hint->SetContent(KeyHint); RefreshKeyHint();
 	UCanvasPanelSlot* HintSlot = Root->AddChildToCanvas(Hint);
 	HintSlot->SetAnchors(FAnchors(1.f, 0.f));
 	HintSlot->SetAlignment(FVector2D(1.f, 0.f));
@@ -465,9 +594,21 @@ void UGbHudWidget::BuildTree()
 	BannerSlot->SetAutoSize(true);
 }
 
+void UGbHudWidget::RefreshKeyHint()
+{
+	if (!KeyHint) return;
+	const UGbUserSettings* S = UGbUserSettings::Get();
+	const TPair<const TCHAR*, const TCHAR*> Keys[] = { { TEXT("Settings"), TEXT("Menu") }, { TEXT("Satchel"), TEXT("Satchel") }, { TEXT("Case"), TEXT("Case") },
+		{ TEXT("Rite"), TEXT("Rite") }, { TEXT("Vows"), TEXT("Vows") }, { TEXT("Observatory"), TEXT("Observatory") }, { TEXT("Proof"), TEXT("Proof") } };
+	FString Text;
+	for (const auto& K : Keys) Text += FString::Printf(TEXT("%s%s %s"), Text.IsEmpty() ? TEXT("") : TEXT("    "), *S->KeyLabel(K.Key), K.Value);
+	KeyHint->SetText(FText::FromString(Text));
+}
+
 void UGbHudWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	UGbUserSettings::Get()->OnChanged.AddUObject(this, &UGbHudWidget::RefreshKeyHint);
 	// The HUD never takes clicks: clicks go through to the world (click-to-walk).
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	if (UGbApiSubsystem* A = Api())
@@ -486,6 +627,7 @@ void UGbHudWidget::NativeConstruct()
 
 void UGbHudWidget::NativeDestruct()
 {
+	UGbUserSettings::Get()->OnChanged.RemoveAll(this);
 	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->OnStoryChanged.RemoveDynamic(this, &UGbHudWidget::HandleStoryChanged);
 	if (UGbApiSubsystem* A = Api())
 	{
@@ -1151,7 +1293,7 @@ void UGbShopWidget::HandleTradeReceipt(const FString& JobId, const FGbChainRecei
 	bBusy = false;
 	const FString Was = Status->GetText().ToString().Replace(TEXT(" Sealing it in the ledger..."), TEXT(""));
 	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
-		? FString::Printf(TEXT("%s Sealed in the Rite's ledger. (L opens the proof)"), *Was)
+		? FString::Printf(TEXT("%s Sealed in the Rite's ledger. (%s opens the proof)"), *Was, *UGbUserSettings::Get()->KeyLabel(TEXT("Proof")))
 		: FString::Printf(TEXT("The ledger refused the trade: %s"), *Receipt.Error)));
 	Open();
 }
@@ -1474,7 +1616,7 @@ void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainRecei
 	{
 		bPendingRepeal = false;
 		Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
-			? FString::Printf(TEXT("Rule %d was struck from the Rite's ledger. (L opens the proof)"), Receipt.RuleId)
+			? FString::Printf(TEXT("Rule %d was struck from the Rite's ledger. (%s opens the proof)"), Receipt.RuleId, *UGbUserSettings::Get()->KeyLabel(TEXT("Proof")))
 			: FString::Printf(TEXT("The ledger refused the repeal: %s"), *Receipt.Error)));
 		SetBusy(false);
 		Open();
@@ -1482,7 +1624,7 @@ void UGbRulesWidget::HandleRuleReceipt(const FString& JobId, const FGbChainRecei
 	}
 	const FString Was = Status->GetText().ToString().Replace(TEXT("Sealing it in the Rite's ledger..."), TEXT("")).Replace(TEXT("Sealing her verdict"), TEXT("Verdict"));
 	Status->SetText(FText::FromString(Receipt.Status == TEXT("done")
-		? FString::Printf(TEXT("%s  Sealed in the Rite's ledger as rule %d. (L opens the proof)"), *Was, Receipt.RuleId)
+		? FString::Printf(TEXT("%s  Sealed in the Rite's ledger as rule %d. (%s opens the proof)"), *Was, Receipt.RuleId, *UGbUserSettings::Get()->KeyLabel(TEXT("Proof")))
 		: FString::Printf(TEXT("The ledger refused it: %s"), *Receipt.Error)));
 	SetBusy(false);
 	Open();
@@ -1540,7 +1682,8 @@ bool FGbUiMotionTest::RunTest(const FString&)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbUiFontsTest,"Grudgebound.Ui.InlineFontsAndContrast",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FGbUiFontsTest::RunTest(const FString&)
 {
- for (const TCHAR* Path:{TEXT("/Game/Grudgebound/UI/Fonts/YujiSyukuRegular.YujiSyukuRegular"),TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoRegular.ShipporiMinchoRegular"),TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoBold.ShipporiMinchoBold")})
+ for (const TCHAR* Path:{TEXT("/Game/Grudgebound/UI/Fonts/YujiSyukuRegular.YujiSyukuRegular"),TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoRegular.ShipporiMinchoRegular"),TEXT("/Game/Grudgebound/UI/Fonts/ShipporiMinchoBold.ShipporiMinchoBold"),
+  TEXT("/Game/Grudgebound/UI/Fonts/PixelifySansSemiBold.PixelifySansSemiBold"),TEXT("/Game/Grudgebound/UI/Fonts/PixelifySansBold.PixelifySansBold"),TEXT("/Game/Grudgebound/UI/Fonts/CourierPrimeRegular.CourierPrimeRegular")})
  {
   const UFontFace* Face=LoadObject<UFontFace>(nullptr,Path);
   if (TestNotNull(TEXT("OFL font face imported"),Face)) TestEqual(TEXT("Font bytes are inline"),Face->GetLoadingPolicy(),EFontLoadingPolicy::Inline);

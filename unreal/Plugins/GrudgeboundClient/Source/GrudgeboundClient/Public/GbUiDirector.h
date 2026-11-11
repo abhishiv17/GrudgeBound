@@ -32,9 +32,16 @@ public:
 	AGbUiDirector();
 	void UseBuilding(AGbBuildingDoor* Door);
 	EGbBuilding GetCurrentBuilding() const { return CurrentBuilding; }
+	/** Puts mouse/keyboard focus back where the current screen wants it (after the settings menu closes). */
+	void RestoreInput();
+	/** Esc: closes the open panel, if there is one. */
+	bool CloseTopPanel();
 
 protected:
 	virtual void BeginPlay() override;
+	/** Walking keys and the camera, from the player's settings. Lives here, not in the pawn or controller, so it
+	    works with whatever pawn the level's game mode spawns (the template Blueprints have their own classes). */
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 private:
@@ -46,12 +53,26 @@ private:
 	bool bBuildingTransition = false;
 	FTimerHandle BuildingTimer;
 	void ShowEntry();
+	/** Title screen > Enter: sign in first if needed (browser), then the opening or the Ward. */
+	void EnterWard();
+	bool bEntered = false;
+	/** The title looks over the Ward from a fixed camera; entering glides down to the player. */
+	void UpdateTitleCamera(bool bTitle);
+	UPROPERTY() TObjectPtr<class ACameraActor> TitleCamera;
+	bool bTitleCamera = false;
+	float CameraYaw = 0.f;
+	float SmoothedYaw = 0.f;
+	float SmoothedPitch = 0.f;
+	bool bCameraDirty = false;
+	bool bKeyWalking = false;
 	void FinishIntro();
 	void ReplayIntro();
 	UFUNCTION() void HandleSessionChanged();
 	void SignOut();
 
 	void ShowScreen(EScreen Screen);
+	/** (Re)binds the panel keys from UGbUserSettings. */
+	void BindKeys();
 	void ToggleTalismanCase();
 	/** R: the Rite (rules panel). */
 	void ToggleRules();

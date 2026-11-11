@@ -22,8 +22,11 @@ for a in actors.get_all_level_actors():
     else:
         unreal.log("Grudgebound: keep %s (%s)" % (label, a.get_class().get_name()))
 
-ward = next((a for a in actors.get_all_level_actors() if isinstance(a, unreal.GbWardGreybox)), None)
-ward = ward or actors.spawn_actor_from_class(unreal.GbWardGreybox, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0))
+# A fresh Ward every time: its parts change between versions, and an old saved one would keep stale pieces.
+for a in actors.get_all_level_actors():
+    if isinstance(a, unreal.GbWardGreybox):
+        actors.destroy_actor(a)
+ward = actors.spawn_actor_from_class(unreal.GbWardGreybox, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0))
 ward.set_actor_label("LanternWard")
 ward.rebuild_ward()
 
@@ -31,7 +34,7 @@ ward.rebuild_ward()
 fog = next((a for a in actors.get_all_level_actors() if isinstance(a, unreal.ExponentialHeightFog)), None)
 fog = fog or actors.spawn_actor_from_class(unreal.ExponentialHeightFog, unreal.Vector(0, 0, -200))
 fog.set_actor_label("WardHarbourHaze")
-fog.component.set_editor_property("fog_density", 0.008)
+fog.component.set_editor_property("fog_density", 0.014)
 fog.component.set_editor_property("fog_height_falloff", 0.3)
 fog.component.set_editor_property("fog_inscattering_luminance", unreal.LinearColor(0.62, 0.52, 0.40, 1))
 
@@ -41,7 +44,13 @@ grade.set_actor_label("WardPaperGrade")
 grade.set_editor_property("unbound", True)
 settings = grade.get_editor_property("settings")
 settings.set_editor_property("override_color_saturation", True)
-settings.set_editor_property("color_saturation", unreal.Vector4(0.85, 0.85, 0.85, 1))
+settings.set_editor_property("color_saturation", unreal.Vector4(1.06, 1.06, 1.06, 1))
+settings.set_editor_property("override_color_contrast", True)
+settings.set_editor_property("color_contrast", unreal.Vector4(1.06, 1.06, 1.06, 1))
+settings.set_editor_property("override_vignette_intensity", True)
+settings.set_editor_property("vignette_intensity", 0.45)
+settings.set_editor_property("override_bloom_intensity", True)
+settings.set_editor_property("bloom_intensity", 0.9)
 grade.set_editor_property("settings", settings)
 
 # 44 x 30 tiles of 1 m around the origin: X +-15 m, Y +-22 m. The editor spawns volumes as a 2 m cube.
@@ -61,10 +70,11 @@ def named_actor(label, cls, location):
     return actor
 
 buildings = [
-    (unreal.GbBuilding.COUNTING_HOUSE, "Counting House", tile(8, 12.5), unreal.GbBuildingUse.BROKER, "Broker"),
-    (unreal.GbBuilding.MENDER, "Mender's House", tile(15.5, 7.8), unreal.GbBuildingUse.MENDER, "Mender"),
-    (unreal.GbBuilding.RITE_HALL, "Rite Hall", tile(27, 7.8), unreal.GbBuildingUse.RULES, "Kessa"),
-    (unreal.GbBuilding.ROOM, "Your room", tile(17, 18.2), unreal.GbBuildingUse.ROOM, "Bed"),
+    # Each door stands in front of the door piece of its house (GbWardGreybox.cpp, Dress: Houses).
+    (unreal.GbBuilding.COUNTING_HOUSE, "Counting House", tile(27, 18.3), unreal.GbBuildingUse.BROKER, "Broker"),
+    (unreal.GbBuilding.MENDER, "Mender's House", tile(17.25, 8.2), unreal.GbBuildingUse.MENDER, "Mender"),
+    (unreal.GbBuilding.RITE_HALL, "Rite Hall", tile(27.25, 7.7), unreal.GbBuildingUse.RULES, "Kessa"),
+    (unreal.GbBuilding.ROOM, "Your room", tile(18, 18.3), unreal.GbBuildingUse.ROOM, "Bed"),
 ]
 for index, (kind, name, outside, counter_use, counter_name) in enumerate(buildings, 1):
     origin = unreal.Vector(20000+index*1600, 0, 0)
@@ -74,6 +84,7 @@ for index, (kind, name, outside, counter_use, counter_name) in enumerate(buildin
     entrance.set_editor_property("building", kind)
     entrance.set_editor_property("use", unreal.GbBuildingUse.ENTER)
     entrance.set_editor_property("label", name)
+    entrance.set_actor_location(outside, False, False)
     entrance.set_editor_property("target_feet", origin + unreal.Vector(-50,0,0))
     exit_door = named_actor("Exit " + name, unreal.GbBuildingDoor, origin + unreal.Vector(-300,0,0))
     exit_door.set_editor_property("building", kind)

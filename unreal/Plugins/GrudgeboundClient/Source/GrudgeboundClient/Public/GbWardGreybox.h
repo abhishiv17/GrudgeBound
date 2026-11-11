@@ -1,12 +1,15 @@
-// Lantern Ward greybox (BUILD_PLAN P1-U2): the web client's map (client/game/tiles.ts, buildLanternWard)
-// rebuilt from blocks, 1 tile = 1 metre. Drop one into a level at the origin and press Play.
+// Lantern Ward: the web client's map (client/game/tiles.ts, buildLanternWard) as a walled harbour district,
+// 1 tile = 1 metre. Drop one into a level at the origin and press Play.
 //
-//   - town wall (north, west, east), harbour with a quay and a pier (south)
-//   - main street and cross street, plaza with the Rite board, fountain, plants, banner posts
-//   - market stalls with lanterns, four houses (greybox only), four tall-grass patches where curses lurk
+//   - town wall with towers (north, west, east), the Bone and Ash gates, harbour with a quay and a pier (south)
+//   - paved main street and cross street, plaza with the Rite board, fountain, banners and planters
+//   - market stalls, four houses you can enter (doors are placed by unreal/tools/make-lantern-ward.py),
+//     four fenced tall-grass lots where curses lurk, woods outside the wall and ships at anchor
 //
-// Screen "up" is +X (the Top Down template camera looks along +X), screen "right" is +Y.
-// Everything is instanced static meshes, so the nav mesh is built around it like any level geometry.
+// Screen "up" is +X at the default camera heading, screen "right" is +Y.
+// The layout logic (ground, blockers, triggers) is basic shapes; everything you see on top of it is the three
+// Kenney CC0 kits in /Game/Grudgebound/Env (docs/ASSETS.md), placed at one uniform scale per piece.
+// Without the kits the blockers are drawn instead, so the project still opens and plays.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -19,6 +22,7 @@ class ADirectionalLight;
 class ASkyLight;
 class APostProcessVolume;
 class UBoxComponent;
+struct FRandomStream;
 
 UCLASS(ClassGroup = (Grudgebound))
 class GRUDGEBOUNDCLIENT_API AGbWardGreybox : public AActor
@@ -48,9 +52,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grudgebound", meta = (ClampMin = "0", ClampMax = "12"))
 	int32 GrassBladesPerMetre = 4;
 
-	/** Optional CC0 slots; absent imports retain the procedural fallback. */
+	/** Dress the Ward with the CC0 kits. Off (or kits not imported): plain blocks only. */
 	UPROPERTY(EditAnywhere, Category = "Grudgebound|Environment")
-	TMap<FName, FSoftObjectPath> MeshTable;
+	bool bUseKit = true;
 
 	/** World position of the player start (feet). */
 	UFUNCTION(BlueprintPure, Category = "Grudgebound")
@@ -63,13 +67,37 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	struct FHouse;
+
+	/** Everything visible on top of the layout: kit pieces, lamps, scatter. */
 	void Dress();
-	void Slot(FName Name, float Col, float Row, float W, float H, float Bottom, float Height, bool bSolid = false);
+	void BuildHouse(const FHouse& House);
+	void BuildWalls();
+	void BuildHarbour(FRandomStream& Rand);
+	void BuildPlazaAndStreets(FRandomStream& Rand);
+	void BuildGreenery(FRandomStream& Rand);
+
+	/** The instanced component of one kit mesh ("FantasyTown/wall"); null when that asset is not imported. */
+	UInstancedStaticMeshComponent* Kit(const TCHAR* Mesh, bool bShadow);
+	/** Places a kit mesh at a tile-space point, turned Yaw degrees, at one uniform scale. */
+	void Put(const TCHAR* Mesh, float Col, float Row, float ZCm, float Yaw, float Scale, bool bShadow = true);
+	/** Places a wall-type piece (it sits on the +X edge of its own tile) on one side of a tile-space edge.
+	    Side: 0 north, 1 east, 2 south, 3 west; (Col, Row) is the middle of the edge; Size is the piece length in tiles. */
+	void Edge(const TCHAR* Mesh, float Col, float Row, int32 Side, float Size, float ZCm = 0.f);
+	/** Invisible wall: blocks walking and cuts the nav mesh. */
+	void Solid(float Col, float Row, float W, float H, float HeightCm = 200.f);
+	void Lamp(float Col, float Row, float ZCm, const FLinearColor& Color, float Intensity, float Radius);
+	/** True when nothing built so far covers this point (streets, plaza, houses, lots). */
+	bool IsFree(float Col, float Row, float Margin = 0.f) const;
+
 	UFUNCTION() void GateOverlap(UPrimitiveComponent* Component, AActor* Other, UPrimitiveComponent* OtherComponent, int32 BodyIndex, bool bFromSweep, const FHitResult& Sweep);
 	UPROPERTY() TArray<TObjectPtr<UActorComponent>> Dressing;
-	UPROPERTY(Transient) TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> SlotMeshes;
+	UPROPERTY(Transient) TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> KitMeshes;
 	UPROPERTY() TArray<TObjectPtr<UBoxComponent>> Gates;
 	UPROPERTY() TObjectPtr<UBoxComponent> DocksBarrier;
+	TArray<FBox2D> Occupied;
+	bool bKitFound = false;
+
 	/** Adds a block covering tiles [Col, Col+W) x [Row, Row+H), from BottomCm up HeightCm. */
 	void Block(UInstancedStaticMeshComponent* Mesh, float Col, float Row, float W, float H, float BottomCm, float HeightCm);
 	/** Local position of a tile-space point (column, row) at height Z. */
@@ -88,23 +116,22 @@ private:
 	float NightBlend = 0.f;
 	float SunPitch = -45.f;
 
+	/** The land: walkable, and what a click-to-walk lands on. */
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Ground;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Streets;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Plaza;
+	/** Mortar under the flagstones inside the wall. */
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Yard;
+	/** Flagstones in two tones each: the yards, and the lighter streets and plaza. */
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> FlagA;
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> FlagB;
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> StreetA;
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> StreetB;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Mosaic;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Walls;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Banners;
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Rug;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Water;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Quay;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Wood;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Awnings;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Posts;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Lights;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Plants;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Fountain;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Board;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Houses;
-	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Roofs;
+	/** Hidden when the kits are in: houses, walls, stalls, trunks. */
+	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Blockers;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> GrassBlades;
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> GrassFloor;
 

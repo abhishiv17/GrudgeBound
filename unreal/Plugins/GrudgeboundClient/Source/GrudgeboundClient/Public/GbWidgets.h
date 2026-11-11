@@ -112,6 +112,8 @@ class GRUDGEBOUNDCLIENT_API UGbSignInWidget : public UGbWidgetBase
 	GENERATED_BODY()
 public:
 	void Refresh();
+	/** "Enter Lantern Ward" was pressed. */
+	FSimpleMulticastDelegate OnEnter;
 protected:
 	virtual void BuildTree() override;
 	virtual void NativeConstruct() override;
@@ -119,6 +121,10 @@ protected:
 private:
 	UFUNCTION() void HandleSignIn();
 	UFUNCTION() void HandleChanged();
+	UFUNCTION() void HandleHelp();
+	UFUNCTION() void HandleSettings();
+	void FillHelp();
+	UPROPERTY() TObjectPtr<class UVerticalBox> HelpBox;
 	UPROPERTY() TObjectPtr<UTextBlock> StatusText;
 	UPROPERTY() TObjectPtr<UButton> SignInButton;
 };
@@ -158,6 +164,9 @@ private:
 	UPROPERTY() TObjectPtr<UTextBlock> KessaText;
 	UPROPERTY() TObjectPtr<UTextBlock> ChapterText;
 	UPROPERTY() TObjectPtr<UTextBlock> ObjectiveText;
+	UPROPERTY() TObjectPtr<UTextBlock> KeyHint;
+	/** Top-right key strip; follows the player's bindings. */
+	void RefreshKeyHint();
 };
 
 /** "A curse stirs": Fight / Slip away. */

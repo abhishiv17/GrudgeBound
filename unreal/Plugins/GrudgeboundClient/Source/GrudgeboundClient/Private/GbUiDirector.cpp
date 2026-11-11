@@ -4,7 +4,10 @@
 #include "GbAuthSubsystem.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
+#include "GbSettingsMenu.h"
+#include "GbUserSettings.h"
 #include "GbWidgets.h"
+#include "GbWardGreybox.h"
 #include "GbVowWidget.h"
 #include "GbIntroWidget.h"
 #include "GbSatchelWidget.h"
@@ -22,6 +25,13 @@
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+#include "UnrealClient.h"
+#include "UObject/UObjectIterator.h"
 
 namespace
 {
@@ -40,12 +50,88 @@ namespace
 
 AGbUiDirector::AGbUiDirector()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void AGbUiDirector::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn || !PC->IsLocalController()) return;
+	UGbUserSettings* Settings = UGbUserSettings::Get();
+
+	// No walking or camera keys while a panel, the menu or a door fade has the player (the same rule as clicks).
+	if (Current == EScreen::Ward && !bBuildingTransition && !PC->IsMoveInputIgnored())
+	{
+		const float Forward = (Settings->IsDown(PC, TEXT("MoveUp")) ? 1.f : 0.f) - (Settings->IsDown(PC, TEXT("MoveDown")) ? 1.f : 0.f);
+		const float Right = (Settings->IsDown(PC, TEXT("MoveRight")) ? 1.f : 0.f) - (Settings->IsDown(PC, TEXT("MoveLeft")) ? 1.f : 0.f);
+		if (Forward == 0.f && Right == 0.f) bKeyWalking = false;
+		else
+		{
+			// Keys take over from a click: drop the path so the character does not drift back to the old target.
+			if (!bKeyWalking) { PC->StopMovement(); bKeyWalking = true; }
+			// Up the screen, whatever the camera heading (indoors the room's own camera).
+			const float Yaw = PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraRotation().Yaw : SmoothedYaw;
+			Pawn->AddMovementInput(FRotator(0.f, Yaw, 0.f).RotateVector(FVector(Forward, Right, 0.f)).GetSafeNormal(), 1.f);
+		}
+
+		const float Turn = (Settings->IsDown(PC, TEXT("RotateRight")) ? 1.f : 0.f) - (Settings->IsDown(PC, TEXT("RotateLeft")) ? 1.f : 0.f);
+		CameraYaw += Turn * Settings->CameraRotateSpeed * DeltaSeconds;
+		if (Settings->IsDown(PC, TEXT("RotateHold")))
+		{
+			float MouseX = 0.f, MouseY = 0.f;
+			PC->GetInputMouseDelta(MouseX, MouseY);
+			CameraYaw += MouseX * 2.2f * Settings->MouseRotateSensitivity * (Settings->bInvertMouseRotate ? -1.f : 1.f);
+		}
+		const auto Zoom = [&](FName Action) -> float
+		{
+			const FKey Key = Settings->KeyFor(Action);
+			if (!Key.IsValid()) return 0.f;
+			if (PC->WasInputKeyJustPressed(Key)) return 140.f;
+			const bool bWheel = Key == EKeys::MouseScrollUp || Key == EKeys::MouseScrollDown;
+			return !bWheel && PC->IsInputKeyDown(Key) ? 900.f * DeltaSeconds : 0.f;
+		};
+		const float Step = Zoom(TEXT("ZoomOut")) - Zoom(TEXT("ZoomIn"));
+		if (Step != 0.f)
+		{
+			Settings->CameraDistance = FMath::Clamp(Settings->CameraDistance + Step, 700.f, UGbUserSettings::MaxDistance);
+			bCameraDirty = true;
+		}
+		if (Settings->WasPressed(PC, TEXT("ResetCamera")))
+		{
+			CameraYaw = UGbUserSettings::DefaultYaw + 360.f * FMath::RoundToFloat((CameraYaw - UGbUserSettings::DefaultYaw) / 360.f);
+			Settings->CameraDistance = UGbUserSettings::DefaultDistance;
+			Settings->CameraPitch = UGbUserSettings::DefaultPitch;
+			bCameraDirty = true;
+		}
+	}
+	else bKeyWalking = false;
+
+	// A long lens from further back at a quarter turn: the Ward reads as a small town, not a floor from above.
+	USpringArmComponent* Boom = Pawn->FindComponentByClass<USpringArmComponent>();
+	UCameraComponent* Camera = Pawn->FindComponentByClass<UCameraComponent>();
+	if (!Boom || !Camera) return;
+	const float Ease = Settings->bSmoothCamera ? 9.f : 0.f; // 0 = snap
+	SmoothedYaw = FMath::FInterpTo(SmoothedYaw, CameraYaw, DeltaSeconds, Ease);
+	SmoothedPitch = FMath::FInterpTo(SmoothedPitch, FMath::Clamp(Settings->CameraPitch, 28.f, 78.f), DeltaSeconds, Ease);
+	Boom->SetUsingAbsoluteRotation(true);
+	Boom->bUsePawnControlRotation = false;
+	Boom->bDoCollisionTest = false;
+	Boom->TargetArmLength = FMath::FInterpTo(Boom->TargetArmLength, Settings->CameraDistance, DeltaSeconds, Ease);
+	Boom->SetWorldRotation(FRotator(-SmoothedPitch, SmoothedYaw, 0.f));
+	Boom->bEnableCameraLag = Settings->bSmoothCamera;
+	Boom->CameraLagSpeed = 7.f;
+	Camera->bUsePawnControlRotation = false;
+	Camera->SetRelativeRotation(FRotator::ZeroRotator);
+	Camera->SetFieldOfView(50.f);
 }
 
 void AGbUiDirector::BeginPlay()
 {
 	Super::BeginPlay();
+	CameraYaw = SmoothedYaw = UGbUserSettings::DefaultYaw;
+	SmoothedPitch = UGbUserSettings::Get()->CameraPitch;
 
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	if (!PC) return;
@@ -85,6 +171,7 @@ void AGbUiDirector::BeginPlay()
 	Shop->OnClose.AddUObject(this, &AGbUiDirector::ToggleShop);
 	VowShrine->OnClose.AddUObject(this, &AGbUiDirector::ToggleVows);
 	Intro->OnFinished.AddUObject(this, &AGbUiDirector::FinishIntro);
+	SignIn->OnEnter.AddUObject(this, &AGbUiDirector::EnterWard);
 	Satchel->OnClose.AddUObject(this, &AGbUiDirector::ToggleSatchel);
 	Mender->OnClose.AddUObject(this, &AGbUiDirector::CloseBuildingPanel);
 	Room->OnClose.AddUObject(this, &AGbUiDirector::CloseBuildingPanel);
@@ -102,19 +189,10 @@ void AGbUiDirector::BeginPlay()
 		Api->OnVowReceipt.AddUniqueDynamic(this, &AGbUiDirector::HandleTradeReceipt);
 	}
 
-	// T opens the Talisman Case (works alongside the template's Enhanced Input mappings).
+	// Panel keys follow the player's bindings (settings menu > Controls) and re-bind whenever those change.
 	EnableInput(PC);
-	if (InputComponent)
-	{
-		InputComponent->BindKey(EKeys::T, IE_Pressed, this, &AGbUiDirector::ToggleTalismanCase);
-		InputComponent->BindKey(EKeys::L, IE_Pressed, this, &AGbUiDirector::OpenLastChainLink);
-		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AGbUiDirector::ToggleRules);
-		InputComponent->BindKey(EKeys::B, IE_Pressed, this, &AGbUiDirector::ToggleSatchel);
-		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGbUiDirector::SignOut);
-		InputComponent->BindKey(EKeys::V, IE_Pressed, this, &AGbUiDirector::ToggleVows);
-		InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AGbUiDirector::ReplayIntro);
-		InputComponent->BindKey(EKeys::O, IE_Pressed, this, &AGbUiDirector::ToggleObservatory);
-	}
+	BindKeys();
+	UGbUserSettings::Get()->OnChanged.AddUObject(this, &AGbUiDirector::BindKeys);
 
 	UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
 	Auth->OnSessionChanged.AddUniqueDynamic(this, &AGbUiDirector::HandleSessionChanged);
@@ -122,16 +200,85 @@ void AGbUiDirector::BeginPlay()
 	Auth->ResumeSession();
 }
 
+void AGbUiDirector::BindKeys()
+{
+	if (!InputComponent) return;
+	InputComponent->KeyBindings.Reset();
+	const UGbUserSettings* S = UGbUserSettings::Get();
+	const TPair<const TCHAR*, void (AGbUiDirector::*)()> Keys[] = {
+		{ TEXT("Case"), &AGbUiDirector::ToggleTalismanCase }, { TEXT("Proof"), &AGbUiDirector::OpenLastChainLink },
+		{ TEXT("Rite"), &AGbUiDirector::ToggleRules }, { TEXT("Satchel"), &AGbUiDirector::ToggleSatchel },
+		{ TEXT("SignOut"), &AGbUiDirector::SignOut }, { TEXT("Vows"), &AGbUiDirector::ToggleVows },
+		{ TEXT("Story"), &AGbUiDirector::ReplayIntro }, { TEXT("Observatory"), &AGbUiDirector::ToggleObservatory },
+	};
+	for (const auto& K : Keys)
+	{
+		const FKey Key = S->KeyFor(K.Key);
+		if (Key.IsValid()) InputComponent->BindKey(Key, IE_Pressed, this, K.Value);
+	}
+}
+
+void AGbUiDirector::RestoreInput()
+{
+	bInputTouched = true;
+	ShowScreen(Current);
+}
+
+bool AGbUiDirector::CloseTopPanel()
+{
+	switch (Current)
+	{
+	case EScreen::TalismanCase: case EScreen::Rules: case EScreen::Shop: case EScreen::Vows: case EScreen::Satchel:
+	case EScreen::Mender: case EScreen::Room: case EScreen::Observatory:
+		ShowScreen(EScreen::Ward);
+		return true;
+	default:
+		return false;
+	}
+}
+
 void AGbUiDirector::HandleSessionChanged()
 {
 	const UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
 	if (!Auth->IsSignedIn()) ShowScreen(EScreen::SignIn);
-	else if (Current == EScreen::SignIn) ShowEntry();
+	else if (Current == EScreen::SignIn && bEntered) ShowEntry();
+}
+
+void AGbUiDirector::UpdateTitleCamera(bool bTitle)
+{
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!PC || bTitle == bTitleCamera) return;
+	if (bTitle && !TitleCamera)
+	{
+		for (TActorIterator<AGbWardGreybox> It(GetWorld()); It; ++It)
+		{
+			// Over the roofs toward the harbour, from the south-west.
+			const FTransform Ward = It->GetActorTransform();
+			TitleCamera = GetWorld()->SpawnActor<ACameraActor>(Ward.TransformPosition(FVector(-2500.f, -2300.f, 2500.f)),
+				(Ward.GetRotation() * FRotator(-36.f, 42.f, 0.f).Quaternion()).Rotator());
+			TitleCamera->GetCameraComponent()->SetConstraintAspectRatio(false);
+			TitleCamera->GetCameraComponent()->SetFieldOfView(50.f);
+			break;
+		}
+	}
+	if (!TitleCamera) return;
+	bTitleCamera = bTitle;
+	if (bTitle) PC->SetViewTarget(TitleCamera);
+	else PC->SetViewTargetWithBlend(PC->GetPawn(), 1.4f, VTBlend_EaseInOut, 2.f);
+}
+
+void AGbUiDirector::EnterWard()
+{
+	bEntered = true;
+	UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
+	if (Auth->IsSignedIn()) ShowEntry();
+	else if (!Auth->IsBusy()) Auth->BeginSignIn();
 }
 
 void AGbUiDirector::ShowEntry()
 {
-	if (!GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) { ShowScreen(EScreen::SignIn); return; }
+	// Every launch starts on the title screen, signed in or not.
+	if (!bEntered || !GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) { ShowScreen(EScreen::SignIn); return; }
 	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->RefreshSession();
 	if (GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->ShouldShowIntro())
 	{
@@ -159,6 +306,8 @@ void AGbUiDirector::SignOut()
 void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 {
 	GetWorldTimerManager().ClearTimer(BuildingTimer);
+	if (bCameraDirty) UGbUserSettings::Get()->SaveConfig();
+	UGbUserSettings::Get()->OnChanged.RemoveAll(this);
 	GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->OnSessionChanged.RemoveDynamic(this, &AGbUiDirector::HandleSessionChanged);
 	if (UGbApiSubsystem* Api = ApiOf(GetWorld()))
 	{
@@ -178,8 +327,11 @@ void AGbUiDirector::EndPlay(const EEndPlayReason::Type Reason)
 void AGbUiDirector::ShowScreen(EScreen Screen)
 {
 	if (bBuildingTransition) return;
-	if (!GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) Screen = EScreen::SignIn;
+	if (!bEntered || !GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->IsSignedIn()) Screen = EScreen::SignIn;
 	Current = Screen;
+	UpdateTitleCamera(Screen == EScreen::SignIn);
+	// The opening uses Esc to skip; everywhere else Esc is the menu.
+	if (AGbSettingsHost* Menu = AGbSettingsHost::Find(GetWorld())) Menu->bKeyBusy = Screen == EScreen::Intro;
 	APlayerController* PC = GetWorld()->GetFirstPlayerController();
 	if (!PC || !Hud) return;
 
@@ -422,8 +574,8 @@ void AGbUiDirector::HandleChainReceipt(const FString& BattleId, const FGbChainRe
 	LastChainUrl = Receipt.ExplorerUrl;
 	UE_LOG(LogTemp, Log, TEXT("Grudgebound: battle %s on NEAR %s: %s"), *BattleId, *Receipt.Network, *Receipt.ExplorerUrl);
 	Api->SayAsKessa(Receipt.TokenId.IsEmpty()
-		? FString(TEXT("Kessa: Your points are sealed in the Rite's ledger. (L opens the proof)"))
-		: FString::Printf(TEXT("Kessa: %s is sealed in the Rite's ledger. (L opens the proof)"), *Curse));
+		? FString::Printf(TEXT("Kessa: Your points are sealed in the Rite's ledger. (%s opens the proof)"), *UGbUserSettings::Get()->KeyLabel(TEXT("Proof")))
+		: FString::Printf(TEXT("Kessa: %s is sealed in the Rite's ledger. (%s opens the proof)"), *Curse, *UGbUserSettings::Get()->KeyLabel(TEXT("Proof"))));
 }
 
 void AGbUiDirector::OpenLastChainLink()
@@ -470,6 +622,69 @@ bool UGbGameFlowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType
 void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	// The menu (Esc / F1) works in the Ward and in the co-op mission alike.
+	if (InWorld.GetNetMode() != NM_DedicatedServer)
+	{
+		FActorSpawnParameters MenuParams;
+		MenuParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		MenuParams.ObjectFlags |= RF_Transient;
+		InWorld.SpawnActor<AGbSettingsHost>(AGbSettingsHost::StaticClass(), FTransform::Identity, MenuParams);
+	}
+
+#if !UE_BUILD_SHIPPING
+	// Development aid: -GbShot=<folder> saves pictures and quits. -GbShotCams="x,y,z,pitch,yaw,fov;..." are fixed
+	// cameras (world cm), "p" is the player's own camera. -GbShotMenu=<tab> adds the HUD and one tab of the menu.
+	FString ShotFolder;
+	if (FParse::Value(FCommandLine::Get(), TEXT("GbShot="), ShotFolder))
+	{
+		// Steps, 1.5 s apart: title.png (with UI), then per camera "move" and "shoot" (shotN.png, no UI), then
+		// hud.png (title hidden, HUD shown) and menu.png, then quit. A shot is taken a step after its camera moved.
+		struct FShots { TArray<FString> Cams; int32 Step = 0; int32 MenuTab = -1; FTimerHandle Timer; };
+		TSharedRef<FShots> Shots = MakeShared<FShots>();
+		FString Cams;
+		if (FParse::Value(FCommandLine::Get(), TEXT("GbShotCams="), Cams, false)) Cams.ParseIntoArray(Shots->Cams, TEXT(";"));
+		if (Shots->Cams.Num() == 0) Shots->Cams.Add(FString());
+		FParse::Value(FCommandLine::Get(), TEXT("GbShotMenu="), Shots->MenuTab);
+		TWeakObjectPtr<UWorld> World = &InWorld;
+		InWorld.GetTimerManager().SetTimer(Shots->Timer, FTimerDelegate::CreateLambda([World, Shots, ShotFolder]()
+		{
+			UWorld* W = World.Get();
+			APlayerController* PC = W ? W->GetFirstPlayerController() : nullptr;
+			if (!PC) return;
+			const int32 Views = Shots->Cams.Num();
+			const int32 K = Shots->Step++;
+			if (K == 0) { FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("title.png"), true, false); return; }
+			const int32 V = (K - 1) / 2;
+			if (V < Views)
+			{
+				if ((K - 1) % 2 == 1) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/shot%d.png"), *ShotFolder, V), false, false); return; }
+				TArray<FString> P; Shots->Cams[V].ParseIntoArray(P, TEXT(","));
+				if (P.Num() >= 5)
+				{
+					ACameraActor* Camera = W->SpawnActor<ACameraActor>(FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2])), FRotator(FCString::Atof(*P[3]), FCString::Atof(*P[4]), 0.f));
+					Camera->GetCameraComponent()->SetConstraintAspectRatio(false);
+					if (P.Num() >= 6) Camera->GetCameraComponent()->SetFieldOfView(FCString::Atof(*P[5]));
+					PC->SetViewTarget(Camera);
+				}
+				else PC->SetViewTarget(PC->GetPawn());
+				return;
+			}
+			switch (Shots->MenuTab >= 0 ? K - 1 - Views * 2 : 4)
+			{
+			case 0:
+				PC->SetViewTarget(PC->GetPawn());
+				for (TObjectIterator<UGbSignInWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::Collapsed);
+				for (TObjectIterator<UGbHudWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::HitTestInvisible);
+				break;
+			case 1: FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("hud.png"), true, false); break;
+			case 2: if (AGbSettingsHost* Menu = AGbSettingsHost::Find(W)) Menu->Open(Shots->MenuTab); break;
+			case 3: FScreenshotRequest::RequestScreenshot(ShotFolder / TEXT("menu.png"), true, false); break;
+			default: FPlatformMisc::RequestExit(false);
+			}
+		}), 1.5f, true, 7.f);
+	}
+#endif
+
 	// The opt-in co-op mission owns its local UI and networking. No solo API battles or sign-in gate run there.
 	const auto ModeClass=InWorld.GetWorldSettings()->DefaultGameMode;
 	if (ModeClass && ModeClass->IsChildOf(AGbCoopMode::StaticClass())) return;
