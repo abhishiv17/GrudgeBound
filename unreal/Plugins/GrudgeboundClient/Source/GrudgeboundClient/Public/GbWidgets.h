@@ -14,6 +14,7 @@ class UBorder;
 class UButton;
 class UCanvasPanel;
 class UHorizontalBox;
+class UImage;
 class UProgressBar;
 class UScrollBox;
 class UTextBlock;
@@ -31,6 +32,8 @@ class GRUDGEBOUNDCLIENT_API UGbWidgetBase : public UUserWidget
 	GENERATED_BODY()
 public:
 	virtual void SetVisibility(ESlateVisibility InVisibility) override;
+	/** Builds the tree here too: rows made inside a panel have no player context, so NativeOnInitialized never runs for them. */
+	virtual bool Initialize() override;
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
@@ -48,13 +51,67 @@ protected:
 	/** Wraps a widget in a size box of the given size (0 = leave that axis free). */
 	UWidget* Sized(UWidget* Content, float Width, float Height);
 	UFUNCTION() UWidget* MakeChoice(FString Item);
+
+	// ---- The shared panel layout of every building and pocket panel ("panel shell" in GbWidgets.cpp).
+	/** Builds the root: the Ward shaded behind a crimson title ribbon (Icon: a picture from UI/Battle, may be empty)
+	    over a paper card Width wide. Returns the body column. The footer row takes right-aligned keycap buttons.
+	    ShellStatus is the card's ink note, shown only while it has text. */
+	UVerticalBox* MakeShell(const FString& Title, const FString& Icon, float Width, UTextBlock*& OutTitle, UTextBlock*& OutSubtitle, UHorizontalBox*& OutFooter);
+	/** A section heading followed by a thin rule. */
+	UWidget* MakeSection(const FString& Label);
+	/** A button with its key on a cream keycap (no keycap when Key is empty). */
+	UButton* MakeKeyButton(const FString& Label, const FString& Key, UTextBlock*& OutLabel, const FLinearColor& Tint);
+	/** A pixel-art picture centred in a Box x Box square at the largest whole-number scale that fits. */
+	UWidget* MakeArt(const FString& Name, float Box, UImage*& OutImage);
+	static void SetArt(UImage* Image, const FString& Name, float Box);
+	/** A small coloured tag; the text is ink, or cream on crimson and ink tags. */
+	UBorder* MakeChip(const FString& Text, const FLinearColor& Tint, UTextBlock*& OutText);
+	static void SetChip(UBorder* Chip, UTextBlock* Text, const FString& Label, const FLinearColor& Tint);
+	/** The label of a player-bound key ("Case", "Satchel", ...), for keycaps. */
+	static FString KeyName(const TCHAR* Action);
+	// The same, filling member pointers.
+	UVerticalBox* MakeShell(const FString& Title, const FString& Icon, float Width, UTextBlock*& OutTitle, TObjectPtr<UTextBlock>& OutSubtitle, UHorizontalBox*& OutFooter)
+	{ UTextBlock* Sub = nullptr; UVerticalBox* Body = MakeShell(Title, Icon, Width, OutTitle, Sub, OutFooter); OutSubtitle = Sub; return Body; }
+	UButton* MakeKeyButton(const FString& Label, const FString& Key, TObjectPtr<UTextBlock>& OutLabel, const FLinearColor& Tint)
+	{ UTextBlock* L = nullptr; UButton* B = MakeKeyButton(Label, Key, L, Tint); OutLabel = L; return B; }
+	UWidget* MakeArt(const FString& Name, float Box, TObjectPtr<UImage>& OutImage)
+	{ UImage* I = nullptr; UWidget* W = MakeArt(Name, Box, I); OutImage = I; return W; }
+	UBorder* MakeChip(const FString& Text, const FLinearColor& Tint, TObjectPtr<UTextBlock>& OutText)
+	{ UTextBlock* T = nullptr; UBorder* B = MakeChip(Text, Tint, T); OutText = T; return B; }
+	UPROPERTY() TObjectPtr<UTextBlock> ShellStatus;
+	UPROPERTY() TObjectPtr<UWidget> ShellNote;
 private:
 	friend class FGbUiMotionTest;
+	friend class FGbPanelPreviewTest;
 	friend class FGbUiRenderTest;
 	float VisibilityBlend = 1.f;
 	bool bFadingVisibility = false;
 	bool bHasOpened = false;
 	ESlateVisibility TargetVisibility = ESlateVisibility::Visible;
+};
+
+/** One talisman to pick from a list: its curse, a line about it, its ink and a tag. The whole row is the button. */
+UCLASS()
+class GRUDGEBOUNDCLIENT_API UGbPickRowWidget : public UGbWidgetBase
+{
+ GENERATED_BODY()
+public:
+ /** Ink < 0 hides the ink bar; an empty Chip hides the tag. */
+ void Setup(const FString& Art, const FString& Title, const FString& Line, float Ink, const FString& InkText, const FString& Chip, const FLinearColor& ChipTint, bool bSelected);
+ TFunction<void()> OnClick;
+protected:
+ virtual void BuildTree() override;
+private:
+ UFUNCTION() void HandleClick();
+ UPROPERTY() TObjectPtr<UButton> Button;
+ UPROPERTY() TObjectPtr<UImage> Art;
+ UPROPERTY() TObjectPtr<UTextBlock> Title;
+ UPROPERTY() TObjectPtr<UTextBlock> Line;
+ UPROPERTY() TObjectPtr<UWidget> InkRow;
+ UPROPERTY() TObjectPtr<UProgressBar> InkBar;
+ UPROPERTY() TObjectPtr<UTextBlock> InkText;
+ UPROPERTY() TObjectPtr<UBorder> Chip;
+ UPROPERTY() TObjectPtr<UTextBlock> ChipText;
 };
 
 UCLASS()
@@ -69,16 +126,31 @@ protected:
  virtual void NativeConstruct() override;
  virtual void NativeDestruct() override;
 private:
+ friend class FGbPanelPreviewTest;
+ /** Reads the pockets, prices and names from the subsystems, then redraws. */
  UFUNCTION() void Refresh();
- UFUNCTION() void Select(FString Option, ESelectInfo::Type Type);
+ /** Draws from Data, Names, Species, Price and bBusy only. */
+ void Redraw();
  UFUNCTION() void Restore();
  UFUNCTION() void Close();
  UFUNCTION() void Action(const FString& Message);
  UFUNCTION() void Error(const FString& What,int32 Code,const FString& Message);
- bool bUpdating=false;
  TArray<FString> Tokens;
- UPROPERTY() TObjectPtr<UComboBoxString> Selection;
+ FString Selected;
+ FGbSatchel Data;
+ TMap<FString,FString> Names;
+ TMap<FString,FString> Species;
+ int32 Price=-1;
+ bool bBusy=false;
+ UPROPERTY() TObjectPtr<UScrollBox> Rows;
  UPROPERTY() TObjectPtr<UTextBlock> Status;
+ UPROPERTY() TObjectPtr<UTextBlock> Subtitle;
+ UPROPERTY() TObjectPtr<UImage> PickedArt;
+ UPROPERTY() TObjectPtr<UTextBlock> PickedName;
+ UPROPERTY() TObjectPtr<UProgressBar> PickedBar;
+ UPROPERTY() TObjectPtr<UTextBlock> PickedInk;
+ UPROPERTY() TObjectPtr<UBorder> PriceChip;
+ UPROPERTY() TObjectPtr<UTextBlock> PriceText;
  UPROPERTY() TObjectPtr<UButton> RestoreButton;
  UPROPERTY() TObjectPtr<UTextBlock> RestoreLabel;
 };
@@ -102,6 +174,7 @@ private:
  UFUNCTION() void Close();
  UFUNCTION() void Action(const FString& Message);
  UFUNCTION() void Error(const FString& What,int32 Code,const FString& Message);
+ friend class FGbPanelPreviewTest;
  UPROPERTY() TObjectPtr<UTextBlock> Status;
  UPROPERTY() TObjectPtr<UButton> RestButton;
 };
@@ -322,7 +395,10 @@ protected:
 private:
 	UFUNCTION() void HandleMakePartner();
 
+	UPROPERTY() TObjectPtr<UImage> Art;
+	UPROPERTY() TObjectPtr<UImage> Emotion;
 	UPROPERTY() TObjectPtr<UTextBlock> Name;
+	UPROPERTY() TObjectPtr<UTextBlock> Tags;
 	UPROPERTY() TObjectPtr<UTextBlock> Details;
 	UPROPERTY() TObjectPtr<UButton> PartnerButton;
 	UPROPERTY() TObjectPtr<UTextBlock> PartnerLabel;
@@ -489,9 +565,19 @@ protected:
 	virtual void NativeDestruct() override;
 
 private:
+	friend class FGbPanelPreviewTest;
+	/** Draws the given talismans and record (Refresh passes the player's). */
+	void Show(const TArray<FGbTalisman>& Talismans, const TMap<FString, FGbCurseInfo>& Curses, const FString& PartnerId,
+		int32 Won, int32 Bound, int32 Fled, int32 Lost, int32 Points, int32 Ember, bool bOnChain);
 	UFUNCTION() void HandlePlayerChanged();
 	UFUNCTION() void HandleClose();
 
 	UPROPERTY() TObjectPtr<UTextBlock> Record;
+	UPROPERTY() TObjectPtr<UBorder> PointsChip;
+	UPROPERTY() TObjectPtr<UTextBlock> PointsText;
+	UPROPERTY() TObjectPtr<UBorder> EmberChip;
+	UPROPERTY() TObjectPtr<UTextBlock> EmberText;
+	UPROPERTY() TObjectPtr<UBorder> LedgerChip;
+	UPROPERTY() TObjectPtr<UTextBlock> LedgerText;
 	UPROPERTY() TObjectPtr<UScrollBox> List;
 };

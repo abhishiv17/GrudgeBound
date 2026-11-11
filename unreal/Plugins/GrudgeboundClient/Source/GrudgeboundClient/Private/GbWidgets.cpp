@@ -14,6 +14,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -21,6 +22,8 @@
 #include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
+#include "Components/Spacer.h"
 #include "Components/SizeBox.h"
 #include "Components/ScaleBox.h"
 #include "Components/TextBlock.h"
@@ -205,18 +208,32 @@ FSlateBrush GbUi::PanelBrush(const FLinearColor& Tint, bool bStuds) { return Fra
 FSlateBrush GbUi::ButtonBrush(const FLinearColor& Tint) { return FrameBrush(2, Tint); }
 
 // ================================================================ building panels
+
+// The Mender: pick a talisman on the left (its ink at a glance), see it and the price on the right, restore.
 void UGbMenderWidget::BuildTree()
 {
- UCanvasPanel* Root=WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget=Root;
- UBorder* Card=MakePanel(C::Paper,FMargin(24)); UVerticalBox* Col=WidgetTree->ConstructWidget<UVerticalBox>();
- Card->SetContent(Sized(Col,600,400)); Centre(Root,Card);
- AddRow(Col,MakeText(TEXT("Mender's House"),28,C::Ink,true));
- Selection=WidgetTree->ConstructWidget<UComboBoxString>(); AddRow(Col,Sized(Selection,0,38),12,12);
- Selection->OnSelectionChanged.AddDynamic(this,&UGbMenderWidget::Select);
- UTextBlock* Label=nullptr; RestoreButton=MakeButton(TEXT("Restore ink"),Label,C::Gold); RestoreLabel=Label;
- RestoreButton->OnClicked.AddDynamic(this,&UGbMenderWidget::Restore); AddRow(Col,Sized(RestoreButton,0,44));
- Status=MakeText(TEXT("Reading your pockets..."),16,C::Ink); Status->SetWrapTextAt(590); AddRow(Col,Sized(Status,0,140));
- UButton* Back=MakeButton(TEXT("Return"),Label,C::Paper); Back->OnClicked.AddDynamic(this,&UGbMenderWidget::Close); AddRow(Col,Sized(Back,0,40));
+ UTextBlock* TitleText=nullptr; UHorizontalBox* Footer=nullptr;
+ UVerticalBox* Body=MakeShell(TEXT("Mender's House"),TEXT("icon_salve"),1100.f,TitleText,Subtitle,Footer);
+ Status=ShellStatus; Status->SetText(FText::FromString(TEXT("Reading your pockets...")));
+ UHorizontalBox* Split=WidgetTree->ConstructWidget<UHorizontalBox>(); AddRow(Body,Split,0.f,0.f);
+ UVerticalBox* Left=WidgetTree->ConstructWidget<UVerticalBox>(); AddCol(Split,Left,true,24.f)->SetVerticalAlignment(VAlign_Top);
+ AddRow(Left,MakeSection(TEXT("Your talismans")),0.f,10.f);
+ Rows=WidgetTree->ConstructWidget<UScrollBox>(); AddRow(Left,Sized(Rows,0.f,440.f));
+ UBorder* Detail=MakePanel(GbUi::Paper2(),FMargin(20.f,18.f)); AddCol(Split,Sized(Detail,400.f,0.f),false,0.f)->SetVerticalAlignment(VAlign_Top);
+ UVerticalBox* D=WidgetTree->ConstructWidget<UVerticalBox>(); Detail->SetContent(D);
+ UBorder* Plate=MakePanel(GbUi::PaperHi(),FMargin(8.f)); Plate->SetContent(MakeArt(FString(),176.f,PickedArt));
+ AddRow(D,Plate,0.f,12.f)->SetHorizontalAlignment(HAlign_Center);
+ PickedName=MakeText(TEXT(""),28,C::Ink,true); PickedName->SetJustification(ETextJustify::Center); AddRow(D,PickedName,0.f,8.f);
+ PickedBar=MakeBar(C::Sorrow); AddRow(D,Sized(PickedBar,0.f,16.f),0.f,4.f);
+ PickedInk=MakeText(TEXT(""),16,C::Ink); PickedInk->SetJustification(ETextJustify::Center); AddRow(D,PickedInk,0.f,14.f);
+ UHorizontalBox* PriceRow=WidgetTree->ConstructWidget<UHorizontalBox>();
+ AddCol(PriceRow,MakeText(TEXT("Price"),18,C::Ink,true),true,8.f); PriceChip=MakeChip(TEXT(""),C::Gold,PriceText); AddCol(PriceRow,PriceChip,false,0.f);
+ AddRow(D,PriceRow,0.f,12.f);
+ RestoreButton=MakeKeyButton(TEXT("Restore ink"),FString(),RestoreLabel,C::Crimson);
+ RestoreButton->OnClicked.AddDynamic(this,&UGbMenderWidget::Restore); AddRow(D,Sized(RestoreButton,0.f,60.f));
+ UTextBlock* Label=nullptr; UButton* Back=MakeKeyButton(TEXT("Return"),KeyName(TEXT("Settings")),Label,GbUi::Paper2());
+ Back->OnClicked.AddDynamic(this,&UGbMenderWidget::Close); AddCol(Footer,Sized(Back,260.f,56.f),false,0.f);
+ Redraw();
 }
 void UGbMenderWidget::NativeConstruct()
 {
@@ -231,30 +248,52 @@ void UGbMenderWidget::NativeDestruct()
 void UGbMenderWidget::Open() { Status->SetText(FText::GetEmpty()); Refresh(); if (Player()) Player()->RefreshFromChain(); }
 void UGbMenderWidget::Refresh()
 {
- if (!Selection) return;
- const int32 Old=Selection->GetSelectedIndex(); const FString Selected=Tokens.IsValidIndex(Old)?Tokens[Old]:FString();
- bUpdating=true; Selection->ClearOptions(); Tokens.Reset();
- const FGbSatchel Data=Player()?Player()->GetSatchel():FGbSatchel();
+ Data=Player()?Player()->GetSatchel():FGbSatchel();
+ Names.Reset(); Species.Reset();
+ if (Player() && Api()) for (const FGbTalisman& T:Player()->GetTalismans())
+ {
+  const FString Id=UGbPlayerSubsystem::ServerTokenId(T); Names.Add(Id,Api()->GetCurse(T.SpeciesId).Name); Species.Add(Id,T.SpeciesId);
+ }
+ Price=Api()?UGbSatchelWidget::MenderPriceFrom(Api()->GetWorldState()):-1;
+ bBusy=!Api() || Api()->IsSatchelBusy();
+ Redraw();
+}
+void UGbMenderWidget::Redraw()
+{
+ if (!Rows) return;
  Tokens=Data.Carried; for (const FString& Id:Data.Case) Tokens.AddUnique(Id);
+ if (!Tokens.Contains(Selected))
+ {
+  // Start on the first talisman that needs the Mender.
+  Selected=Tokens.Num()?Tokens[0]:FString();
+  for (const FString& Id:Tokens) if (const FGbInk* I=Data.Ink.Find(Id)) if (I->Hp<I->MaxHp) { Selected=Id; break; }
+ }
+ const auto NameOf=[this](const FString& Id){ const FString* N=Names.Find(Id); return N && !N->IsEmpty()?*N:FString(TEXT("Sealed talisman")); };
+ const auto ArtOf=[this](const FString& Id){ const FString* S=Species.Find(Id); return S?CurseArt(*S):FString(); };
+ Rows->ClearChildren();
  for (const FString& Id:Tokens)
  {
-  FString Name=TEXT("Sealed talisman");
-  if (Player() && Api()) for (const FGbTalisman& T:Player()->GetTalismans()) if (UGbPlayerSubsystem::ServerTokenId(T)==Id) { Name=Api()->GetCurse(T.SpeciesId).Name; break; }
+  UGbPickRowWidget* Row=CreateWidget<UGbPickRowWidget>(this,UGbPickRowWidget::StaticClass()); if (!Row) continue;
   const FGbInk* Ink=Data.Ink.Find(Id);
-  Selection->AddOption(Ink?FString::Printf(TEXT("%s   %d / %d"),*Name,Ink->Hp,Ink->MaxHp):Name);
+  Row->Setup(ArtOf(Id),NameOf(Id),Data.Carried.Contains(Id)?TEXT("In your Satchel"):TEXT("In the Case"),
+   Ink && Ink->MaxHp>0?float(Ink->Hp)/Ink->MaxHp:-1.f,Ink?FString::Printf(TEXT("%d / %d"),Ink->Hp,Ink->MaxHp):FString(),
+   Ink && Ink->MaxHp>0 && Ink->Hp>=Ink->MaxHp?TEXT("Full"):TEXT(""),GbUi::Paper3(),Id==Selected);
+  const FString Pick=Id; Row->OnClick=[this,Pick](){ Selected=Pick; Redraw(); };
+  if (UScrollBoxSlot* RowSlot=Cast<UScrollBoxSlot>(Rows->AddChild(Row))) RowSlot->SetPadding(FMargin(0.f,0.f,8.f,8.f));
  }
- const int32 Index=Tokens.Contains(Selected)?Tokens.IndexOfByKey(Selected):0;
- Selection->SetSelectedIndex(Index); bUpdating=false;
- const FString Id=Tokens.IsValidIndex(Index)?Tokens[Index]:FString(); const FGbInk* Ink=Data.Ink.Find(Id);
- const int32 Price=Api()?UGbSatchelWidget::MenderPriceFrom(Api()->GetWorldState()):-1;
- RestoreLabel->SetText(FText::FromString(Price<0?FString(TEXT("Restore ink")):FString::Printf(TEXT("Restore ink (%d Ember)"),Price)));
- RestoreButton->SetIsEnabled(Data.bValid && Ink && Ink->Hp<Ink->MaxHp && Price>=0 && Data.Ember>=Price && Api() && !Api()->IsSatchelBusy());
+ if (!Tokens.Num()) Rows->AddChild(MakeText(TEXT("No talismans to show yet."),16,C::Ink));
+ const FGbInk* Ink=Data.Ink.Find(Selected); const bool bInk=Ink && Ink->MaxHp>0;
+ SetArt(PickedArt,Selected.IsEmpty()?FString():ArtOf(Selected),176.f);
+ PickedName->SetText(FText::FromString(Selected.IsEmpty()?FString():NameOf(Selected)));
+ PickedBar->SetPercent(bInk?float(Ink->Hp)/Ink->MaxHp:0.f); PickedBar->SetFillColorAndOpacity(bInk && Ink->Hp<=0?C::Crimson:C::Sorrow);
+ PickedInk->SetText(FText::FromString(bInk?FString::Printf(TEXT("Ink %d / %d"),Ink->Hp,Ink->MaxHp):FString(TEXT("Reading ink..."))));
+ SetChip(PriceChip,PriceText,Price<0?FString():FString::Printf(TEXT("%d Ember"),Price),C::Gold);
+ Subtitle->SetText(FText::FromString(Data.bValid && Data.Ember>=0?FString::Printf(TEXT("Your Ember: %d"),Data.Ember):FString()));
+ RestoreButton->SetIsEnabled(Data.bValid && bInk && Ink->Hp<Ink->MaxHp && Price>=0 && Data.Ember>=Price && !bBusy);
 }
-void UGbMenderWidget::Select(FString,ESelectInfo::Type) { if (!bUpdating) Refresh(); }
 void UGbMenderWidget::Restore()
 {
- const int32 Index=Selection->GetSelectedIndex();
- if (Api() && RestoreButton->GetIsEnabled() && Tokens.IsValidIndex(Index)) { RestoreButton->SetIsEnabled(false); Api()->RestoreInk(Tokens[Index]); }
+ if (Api() && RestoreButton->GetIsEnabled() && !Selected.IsEmpty()) { RestoreButton->SetIsEnabled(false); Api()->RestoreInk(Selected); }
 }
 void UGbMenderWidget::Close() { OnClose.Broadcast(); }
 void UGbMenderWidget::Action(const FString& Message) { if (IsVisible()) { Status->SetText(FText::FromString(Message)); Refresh(); } }
@@ -264,16 +303,24 @@ void UGbMenderWidget::Error(const FString& What,int32,const FString& Message)
  Status->SetText(FText::FromString(Message.Contains(TEXT("NEAR")) || Message.Contains(TEXT("chain"))?FString(TEXT("The town's ledger is unavailable. Refresh before trying again.")):Message)); Refresh();
 }
 
+// Your room: the debt notice pinned up as a slip of paper, then the two things to do here.
 void UGbRoomWidget::BuildTree()
 {
- UCanvasPanel* Root=WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget=Root;
- UBorder* Card=MakePanel(C::Paper,FMargin(24)); UVerticalBox* Col=WidgetTree->ConstructWidget<UVerticalBox>(); Card->SetContent(Sized(Col,600,420)); Centre(Root,Card);
- AddRow(Col,MakeText(TEXT("Your room"),28,C::Ink,true)); AddRow(Col,MakeText(TEXT("Debt notice"),20,C::Ink,true));
- AddRow(Col,MakeText(TEXT("You arrived with a debt notice folded inside your coat."),16,C::Ink));
- UTextBlock* Label=nullptr; RestButton=MakeButton(TEXT("Rest until morning (free)"),Label,C::Gold); RestButton->OnClicked.AddDynamic(this,&UGbRoomWidget::Rest); AddRow(Col,Sized(RestButton,0,44),15,8);
- UButton* Chest=MakeButton(TEXT("Talisman Case"),Label,C::Paper); Chest->OnClicked.AddDynamic(this,&UGbRoomWidget::Case); AddRow(Col,Sized(Chest,0,40));
- Status=MakeText(TEXT(""),16,C::Ink); Status->SetWrapTextAt(590); AddRow(Col,Sized(Status,0,110));
- UButton* Back=MakeButton(TEXT("Return"),Label,C::Paper); Back->OnClicked.AddDynamic(this,&UGbRoomWidget::Close); AddRow(Col,Sized(Back,0,40));
+ UTextBlock* TitleText=nullptr; UTextBlock* Sub=nullptr; UHorizontalBox* Footer=nullptr;
+ UVerticalBox* Body=MakeShell(TEXT("Your room"),TEXT("talisman"),900.f,TitleText,Sub,Footer);
+ Sub->SetVisibility(ESlateVisibility::Collapsed); Status=ShellStatus;
+ UBorder* Slip=MakePanel(GbUi::PaperHi(),FMargin(22.f,16.f)); UVerticalBox* SlipCol=WidgetTree->ConstructWidget<UVerticalBox>(); Slip->SetContent(SlipCol);
+ AddRow(SlipCol,MakeText(TEXT("Debt notice"),22,C::Ink,true),0.f,6.f);
+ AddRow(SlipCol,MakeText(TEXT("You arrived with a debt notice folded inside your coat."),18,C::Ink),0.f,0.f);
+ AddRow(Body,Slip,0.f,18.f);
+ UHorizontalBox* Choices=WidgetTree->ConstructWidget<UHorizontalBox>(); AddRow(Body,Choices,0.f,0.f);
+ UTextBlock* Label=nullptr;
+ RestButton=MakeKeyButton(TEXT("Rest until morning (free)"),FString(),Label,C::Crimson); RestButton->OnClicked.AddDynamic(this,&UGbRoomWidget::Rest);
+ AddCol(Choices,Sized(RestButton,0.f,64.f),true,16.f);
+ UButton* Chest=MakeKeyButton(TEXT("Talisman Case"),FString(),Label,C::Gold); Chest->OnClicked.AddDynamic(this,&UGbRoomWidget::Case);
+ AddCol(Choices,Sized(Chest,0.f,64.f),true,0.f);
+ UButton* Back=MakeKeyButton(TEXT("Return"),KeyName(TEXT("Settings")),Label,GbUi::Paper2()); Back->OnClicked.AddDynamic(this,&UGbRoomWidget::Close);
+ AddCol(Footer,Sized(Back,260.f,56.f),false,0.f);
 }
 void UGbRoomWidget::NativeConstruct()
 {
@@ -294,6 +341,13 @@ void UGbRoomWidget::Action(const FString& Message) { if (IsVisible()) { Status->
 void UGbRoomWidget::Error(const FString& What,int32,const FString& Message) { if (IsVisible() && What==TEXT("rest")) { Status->SetText(FText::FromString(Message)); RestButton->SetIsEnabled(Api() && !Api()->IsSatchelBusy()); } }
 
 // ================================================================ base
+
+bool UGbWidgetBase::Initialize()
+{
+	const bool bDone = Super::Initialize();
+	if (WidgetTree && !WidgetTree->RootWidget) BuildTree();
+	return bDone;
+}
 
 void UGbWidgetBase::NativeOnInitialized()
 {
@@ -338,6 +392,8 @@ void UGbWidgetBase::SetVisibility(ESlateVisibility InVisibility)
 void UGbWidgetBase::NativeTick(const FGeometry& Geometry,float DeltaTime)
 {
 	Super::NativeTick(Geometry,DeltaTime);
+	// The shell's ink note shows only while it says something (its space stays, so nothing jumps).
+	if (ShellNote && ShellStatus) ShellNote->SetVisibility(ShellStatus->GetText().IsEmpty() ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
 	if (!bFadingVisibility) return;
 	const bool bOpening=TargetVisibility!=ESlateVisibility::Collapsed && TargetVisibility!=ESlateVisibility::Hidden;
 	const float Target=bOpening?1.f:0.f;
@@ -428,6 +484,149 @@ UWidget* UGbWidgetBase::Sized(UWidget* Content, float Width, float Height)
 	Box->SetContent(Content);
 	return Box;
 }
+
+// ================================================================ panel shell
+
+UVerticalBox* UGbWidgetBase::MakeShell(const FString& TitleText, const FString& Icon, float Width, UTextBlock*& OutTitle, UTextBlock*& OutSubtitle, UHorizontalBox*& OutFooter)
+{
+	// The encounter poster's language for every panel: the Ward dimmed, a crimson ribbon naming the place, a paper
+	// card under it. Centred; the DPI curve scales the 1080p measurements to the window.
+	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
+	WidgetTree->RootWidget = Root;
+	UBorder* Shade = WidgetTree->ConstructWidget<UBorder>(); Shade->SetBrushColor(FLinearColor(C::Ink.R, C::Ink.G, C::Ink.B, 0.55f));
+	UCanvasPanelSlot* ShadeSlot = Root->AddChildToCanvas(Shade); ShadeSlot->SetAnchors(FAnchors(0, 0, 1, 1)); ShadeSlot->SetOffsets(FMargin(0));
+
+	UVerticalBox* Poster = WidgetTree->ConstructWidget<UVerticalBox>();
+	UBorder* Ribbon = MakePanel(C::Crimson, FMargin(28.f, 10.f));
+	UHorizontalBox* RibbonRow = WidgetTree->ConstructWidget<UHorizontalBox>(); Ribbon->SetContent(RibbonRow);
+	if (!Icon.IsEmpty()) { UImage* Ignored = nullptr; AddCol(RibbonRow, MakeArt(Icon, 40.f, Ignored), false, 14.f); }
+	OutTitle = MakeText(TitleText, 30, GbUi::PaperHi(), true); OutTitle->SetAutoWrapText(false);
+	AddCol(RibbonRow, OutTitle, false, 0.f);
+	AddRow(Poster, Ribbon, 0.f, 0.f)->SetHorizontalAlignment(HAlign_Center);
+
+	UBorder* Card = MakePanel(PaperPanel(), FMargin(28.f, 22.f));
+	AddRow(Poster, Sized(Card, Width, 0.f), -6.f, 0.f);
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(); Card->SetContent(Col);
+	OutSubtitle = MakeText(TEXT(""), 18, C::Ink); AddRow(Col, OutSubtitle, 6.f, 12.f);
+	UVerticalBox* Body = WidgetTree->ConstructWidget<UVerticalBox>(); AddRow(Col, Body, 0.f, 0.f);
+
+	// The ink note: replies from the server and the ledger. Hidden (not collapsed) while empty.
+	UBorder* Note = MakePanel(InkPanel(), FMargin(14.f, 8.f));
+	UHorizontalBox* NoteRow = WidgetTree->ConstructWidget<UHorizontalBox>(); Note->SetContent(NoteRow);
+	UImage* Seal = nullptr; AddCol(NoteRow, MakeArt(TEXT("wax_seal"), 26.f, Seal), false, 12.f);
+	ShellStatus = MakeText(TEXT(""), 17, GbUi::PaperHi()); AddCol(NoteRow, ShellStatus, true, 0.f);
+	ShellNote = Note;
+	AddRow(Col, Sized(Note, 0.f, 50.f), 14.f, 0.f);
+
+	OutFooter = WidgetTree->ConstructWidget<UHorizontalBox>();
+	AddCol(OutFooter, WidgetTree->ConstructWidget<USpacer>(), true, 0.f);
+	AddRow(Col, OutFooter, 14.f, 0.f);
+	Centre(Root, Poster);
+	return Body;
+}
+
+UWidget* UGbWidgetBase::MakeSection(const FString& Label)
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+	UTextBlock* Text = MakeText(Label, 18, C::Ink, true); Text->SetAutoWrapText(false);
+	AddCol(Row, Text, false, 12.f);
+	UBorder* Rule = WidgetTree->ConstructWidget<UBorder>(); Rule->SetBrushColor(FLinearColor(C::Ink.R, C::Ink.G, C::Ink.B, 0.35f));
+	AddCol(Row, Sized(Rule, 0.f, 3.f), true, 0.f);
+	return Row;
+}
+
+UButton* UGbWidgetBase::MakeKeyButton(const FString& Label, const FString& Key, UTextBlock*& OutLabel, const FLinearColor& Tint)
+{
+	UButton* B = MakeButton(Label, OutLabel, Tint);
+	OutLabel->SetFont(GbUi::Font(20, true));
+	if (Key.IsEmpty()) return B;
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(); B->SetContent(Row);
+	AddCol(Row, OutLabel, true, 12.f);
+	UBorder* Cap = MakePanel(GbUi::PaperHi(), FMargin(8.f, 2.f));
+	UTextBlock* KeyText = MakeText(Key, 16, C::Ink, true); KeyText->SetAutoWrapText(false); Cap->SetContent(KeyText);
+	AddCol(Row, Cap, false, 0.f);
+	return B;
+}
+
+UWidget* UGbWidgetBase::MakeArt(const FString& Name, float Box, UImage*& OutImage)
+{
+	OutImage = WidgetTree->ConstructWidget<UImage>();
+	SetArt(OutImage, Name, Box);
+	USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>(); Size->SetWidthOverride(Box); Size->SetHeightOverride(Box);
+	UScaleBox* Keep = WidgetTree->ConstructWidget<UScaleBox>(); Keep->SetStretch(EStretch::None); Keep->SetContent(OutImage);
+	Size->SetContent(Keep);
+	return Size;
+}
+
+void UGbWidgetBase::SetArt(UImage* Image, const FString& Name, float Box)
+{
+	if (!Image) return;
+	if (Name.IsEmpty()) { Image->SetVisibility(ESlateVisibility::Hidden); return; }
+	const FSlateBrush One = ArtBrush(Name, 1.f);
+	const float Scale = FMath::Max(1.f, FMath::FloorToFloat(Box / FMath::Max(1.f, FMath::Max(One.ImageSize.X, One.ImageSize.Y))));
+	Image->SetBrush(ArtBrush(Name, Scale));
+	Image->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+UBorder* UGbWidgetBase::MakeChip(const FString& Text, const FLinearColor& Tint, UTextBlock*& OutText)
+{
+	UBorder* Chip = MakePanel(Tint, FMargin(10.f, 4.f));
+	OutText = MakeText(Text, 16, C::Ink, true); OutText->SetAutoWrapText(false); Chip->SetContent(OutText);
+	SetChip(Chip, OutText, Text, Tint);
+	return Chip;
+}
+
+void UGbWidgetBase::SetChip(UBorder* Chip, UTextBlock* Text, const FString& Label, const FLinearColor& Tint)
+{
+	if (!Chip || !Text) return;
+	Chip->SetBrushColor(Tint);
+	// Cream on dark tags (crimson, ink), ink on light ones (gold, leaf, paper).
+	const float Luminance = 0.2126f * Tint.R + 0.7152f * Tint.G + 0.0722f * Tint.B;
+	Text->SetColorAndOpacity(FSlateColor(Luminance < 0.15f ? GbUi::PaperHi() : C::Ink));
+	Text->SetText(FText::FromString(Label));
+	Chip->SetVisibility(Label.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+}
+
+FString UGbWidgetBase::KeyName(const TCHAR* Action) { return UGbUserSettings::Get()->KeyLabel(FName(Action)); }
+
+// ---------------------------------------------------------------- a talisman to pick
+
+void UGbPickRowWidget::BuildTree()
+{
+	UTextBlock* Ignored = nullptr;
+	Button = MakeButton(TEXT(""), Ignored, GbUi::PaperHi());
+	WidgetTree->RootWidget = Button;
+	FButtonStyle Style = Button->GetStyle(); Style.NormalPadding = FMargin(10, 8, 14, 10); Style.PressedPadding = FMargin(10, 10, 14, 8); Button->SetStyle(Style);
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+	if (UButtonSlot* Content = Cast<UButtonSlot>(Button->SetContent(Row))) { Content->SetHorizontalAlignment(HAlign_Fill); Content->SetVerticalAlignment(VAlign_Fill); }
+	UBorder* Plate = MakePanel(GbUi::Paper2(), FMargin(4.f)); Plate->SetContent(MakeArt(FString(), 64.f, Art));
+	AddCol(Row, Plate, false, 14.f);
+	UVerticalBox* Text = WidgetTree->ConstructWidget<UVerticalBox>(); AddCol(Row, Text, true, 12.f);
+	Title = MakeText(TEXT(""), 20, C::Ink, true); Title->SetAutoWrapText(false); AddRow(Text, Title, 0.f, 0.f);
+	Line = MakeText(TEXT(""), 15, C::Ink); AddRow(Text, Line, 0.f, 4.f);
+	UHorizontalBox* Ink = WidgetTree->ConstructWidget<UHorizontalBox>();
+	InkBar = MakeBar(C::Sorrow); AddCol(Ink, Sized(InkBar, 0.f, 12.f), true, 10.f);
+	InkText = MakeText(TEXT(""), 15, C::Ink, true); InkText->SetAutoWrapText(false); AddCol(Ink, InkText, false, 0.f);
+	AddRow(Text, Ink, 0.f, 0.f); InkRow = Ink;
+	Chip = MakeChip(TEXT(""), C::Gold, ChipText); AddCol(Row, Chip, false, 0.f)->SetVerticalAlignment(VAlign_Top);
+	Button->OnClicked.AddDynamic(this, &UGbPickRowWidget::HandleClick);
+}
+
+void UGbPickRowWidget::Setup(const FString& InArt, const FString& InTitle, const FString& InLine, float Ink, const FString& InInkText, const FString& InChip, const FLinearColor& ChipTint, bool bSelected)
+{
+	if (!Button) return;
+	// The picked row turns gold, like the focused command in battle.
+	Button->SetBackgroundColor(bSelected ? C::Gold : GbUi::PaperHi());
+	SetArt(Art, InArt, 64.f);
+	Title->SetText(FText::FromString(InTitle));
+	Line->SetText(FText::FromString(InLine));
+	InkRow->SetVisibility(Ink < 0.f ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	InkBar->SetPercent(FMath::Clamp(Ink, 0.f, 1.f)); InkBar->SetFillColorAndOpacity(Ink <= 0.f ? C::Crimson : C::Sorrow);
+	InkText->SetText(FText::FromString(InInkText));
+	SetChip(Chip, ChipText, InChip, ChipTint);
+}
+
+void UGbPickRowWidget::HandleClick() { if (OnClick) OnClick(); }
 
 // ================================================================ HUD
 
@@ -1275,38 +1474,49 @@ void UGbBattleWidget::HandleBack() { OnBack.Broadcast(); }
 
 void UGbTalismanRowWidget::BuildTree()
 {
-	UBorder* Row = MakePanel(FLinearColor(C::Stone.R, C::Stone.G, C::Stone.B, 1.f), FMargin(10.f, 6.f));
+	UBorder* Row = MakePanel(GbUi::PaperHi(), FMargin(12.f, 10.f));
 	WidgetTree->RootWidget = Row;
 	UHorizontalBox* H = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
 	Row->SetContent(H);
+	UBorder* Plate = MakePanel(GbUi::Paper2(), FMargin(4.f)); Plate->SetContent(MakeArt(FString(), 72.f, Art));
+	AddCol(H, Plate, false, 16.f);
 
 	UVerticalBox* Text = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Name = MakeText(TEXT(""), 16, C::Ink, true);
-	AddRow(Text, Name, 0.f, 0.f);
-	Details = MakeText(TEXT(""), 12, C::Ink);
+	Name = MakeText(TEXT(""), 22, C::Ink, true); Name->SetAutoWrapText(false);
+	AddRow(Text, Name, 0.f, 2.f);
+	UHorizontalBox* TagRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+	AddCol(TagRow, MakeArt(FString(), 22.f, Emotion), false, 12.f);
+	Tags = MakeText(TEXT(""), 16, C::Ink, true); AddCol(TagRow, Tags, true, 0.f);
+	AddRow(Text, TagRow, 0.f, 2.f);
+	Details = MakeText(TEXT(""), 15, C::Ink);
 	AddRow(Text, Details, 0.f, 0.f);
-	AddCol(H, Text, true, 10.f);
+	AddCol(H, Text, true, 12.f);
 
 	UTextBlock* Label = nullptr;
-	PartnerButton = MakeButton(TEXT("Make partner"), Label, C::Gold);
+	PartnerButton = MakeKeyButton(TEXT("Make partner"), FString(), Label, C::Gold);
+	Label->SetFont(GbUi::Font(18, true));
 	PartnerLabel = Label;
 	PartnerButton->OnClicked.AddDynamic(this, &UGbTalismanRowWidget::HandleMakePartner);
-	AddCol(H, Sized(PartnerButton, 150.f, 36.f), false, 0.f);
+	AddCol(H, Sized(PartnerButton, 230.f, 52.f), false, 0.f);
 }
 
 void UGbTalismanRowWidget::Setup(const FGbTalisman& Talisman, const FGbCurseInfo& Curse, bool bIsPartner)
 {
 	if (!Name) return;
 	TalismanId = Talisman.Id;
-	Name->SetText(FText::FromString(Curse.Name));
-	Name->SetColorAndOpacity(FSlateColor(EmotionColor(Curse.Emotion)));
+	Name->SetText(FText::FromString(Curse.Name.IsEmpty() ? FString(TEXT("Sealed talisman")) : Curse.Name));
+	SetArt(Art, CurseArt(Talisman.SpeciesId), 72.f);
+	SetArt(Emotion, Curse.Emotion.IsEmpty() ? FString() : TEXT("emo_") + Curse.Emotion, 22.f);
+	Tags->SetText(FText::FromString(FString::Printf(TEXT("%s  -  %s"), *Capitalised(Curse.Emotion), *Capitalised(Talisman.Omen))));
 	const FString Origin = Talisman.Id == UGbPlayerSubsystem::StarterId ? FString(TEXT("Kessa's gift"))
 		: Talisman.BoundDay < 0 ? FString(TEXT("from the ledger")) : FString::Printf(TEXT("bound on day %d"), Talisman.BoundDay);
 	const FString Purse = Talisman.Purse > 0 ? FString::Printf(TEXT(", purse %d Ember"), Talisman.Purse) : FString();
 	const FString OnChain = Talisman.ChainTokenId.IsEmpty() ? FString() : FString::Printf(TEXT("  |  Ledger %s%s"), *Talisman.ChainTokenId, *Purse);
-	Details->SetText(FText::FromString(FString::Printf(TEXT("%s %s  |  %s  |  %d wins%s"),
-		*Capitalised(Curse.Emotion), *Capitalised(Talisman.Omen), *Origin, Talisman.Wins, *OnChain)));
+	Details->SetText(FText::FromString(FString::Printf(TEXT("%s  |  %d wins%s"), *Origin, Talisman.Wins, *OnChain)));
+	// The partner's row is gold-edged paper and its button says so instead of offering the swap.
+	if (UBorder* Row = Cast<UBorder>(WidgetTree->RootWidget)) Row->SetBrushColor(bIsPartner ? GbUi::Paper2() : GbUi::PaperHi());
 	PartnerLabel->SetText(FText::FromString(bIsPartner ? TEXT("Partner") : TEXT("Make partner")));
+	PartnerButton->SetBackgroundColor(bIsPartner ? C::Leaf : C::Gold);
 	PartnerButton->SetIsEnabled(!bIsPartner);
 }
 
@@ -1317,26 +1527,19 @@ void UGbTalismanRowWidget::HandleMakePartner()
 
 void UGbTalismanCaseWidget::BuildTree()
 {
-	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = Root;
-
-	UBorder* Card = MakePanel(PaperPanel(), FMargin(22.f, 16.f));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Card->SetContent(Sized(Col, 560.f, 0.f));
-
-	AddRow(Col, MakeText(TEXT("Talisman Case"), 22, C::Ink, true));
-	Record = MakeText(TEXT(""), 13, C::Ink);
-	AddRow(Col, Record, 2.f, 8.f);
-
+	UTextBlock* TitleText = nullptr; UHorizontalBox* Footer = nullptr;
+	UVerticalBox* Body = MakeShell(TEXT("Talisman Case"), TEXT("talisman_gilded"), 1120.f, TitleText, Record, Footer);
+	UHorizontalBox* Chips = WidgetTree->ConstructWidget<UHorizontalBox>();
+	PointsChip = MakeChip(TEXT(""), C::Gold, PointsText); AddCol(Chips, PointsChip, false, 10.f);
+	EmberChip = MakeChip(TEXT(""), C::Gold, EmberText); AddCol(Chips, EmberChip, false, 10.f);
+	LedgerChip = MakeChip(TEXT(""), C::Leaf, LedgerText); AddCol(Chips, LedgerChip, false, 0.f);
+	AddRow(Body, Chips, 0.f, 14.f);
 	List = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
-	AddRow(Col, Sized(List, 0.f, 360.f));
-
-	UTextBlock* Ignored = nullptr;
-	UButton* Close = MakeButton(TEXT("Close  (T)"), Ignored, C::Stone);
+	AddRow(Body, Sized(List, 0.f, 520.f));
+	UTextBlock* Label = nullptr;
+	UButton* Close = MakeKeyButton(TEXT("Close"), KeyName(TEXT("Case")), Label, GbUi::Paper2());
 	Close->OnClicked.AddDynamic(this, &UGbTalismanCaseWidget::HandleClose);
-	AddRow(Col, Sized(Close, 0.f, 40.f), 10.f);
-
-	Centre(Root, Card);
+	AddCol(Footer, Sized(Close, 240.f, 56.f), false, 0.f);
 }
 
 void UGbTalismanCaseWidget::NativeConstruct()
@@ -1363,24 +1566,32 @@ void UGbTalismanCaseWidget::Refresh()
 	const UGbPlayerSubsystem* P = Player();
 	const UGbApiSubsystem* A = Api();
 	if (!P || !A || !List) return;
-
 	int32 Won = 0, Bound = 0, Fled = 0, Lost = 0;
 	P->GetRecord(Won, Bound, Fled, Lost);
 	const TArray<FGbTalisman> Talismans = P->GetTalismans();
-	Record->SetText(FText::FromString(FString::Printf(
-		TEXT("%d talismans  |  bound %d, exorcised %d, fled %d, lost %d\n%d points, %d Ember%s"),
-		Talismans.Num(), Bound, Won, Fled, Lost, P->GetPoints(), P->GetEmber(),
-		P->IsOnChain() ? TEXT("  (Rite's ledger)") : TEXT("  (this PC only)"))));
+	TMap<FString, FGbCurseInfo> Curses;
+	for (const FGbTalisman& T : Talismans) Curses.Add(T.SpeciesId, A->GetCurse(T.SpeciesId));
+	Show(Talismans, Curses, P->GetPartner().Id, Won, Bound, Fled, Lost, P->GetPoints(), P->GetEmber(), P->IsOnChain());
+}
 
+void UGbTalismanCaseWidget::Show(const TArray<FGbTalisman>& Talismans, const TMap<FString, FGbCurseInfo>& Curses, const FString& PartnerId,
+	int32 Won, int32 Bound, int32 Fled, int32 Lost, int32 Points, int32 Ember, bool bOnChain)
+{
+	if (!List) return;
+	Record->SetText(FText::FromString(FString::Printf(TEXT("%d talismans  |  bound %d, exorcised %d, fled %d, lost %d"),
+		Talismans.Num(), Bound, Won, Fled, Lost)));
+	SetChip(PointsChip, PointsText, Points >= 0 ? FString::Printf(TEXT("%d points"), Points) : FString(), C::Gold);
+	SetChip(EmberChip, EmberText, Ember >= 0 ? FString::Printf(TEXT("%d Ember"), Ember) : FString(), C::Gold);
+	SetChip(LedgerChip, LedgerText, bOnChain ? TEXT("Rite's ledger") : TEXT("This PC only"), bOnChain ? C::Leaf : GbUi::Paper3());
 	List->ClearChildren();
-	const FString PartnerId = P->GetPartner().Id;
 	for (const FGbTalisman& T : Talismans)
 	{
 		UGbTalismanRowWidget* Row = CreateWidget<UGbTalismanRowWidget>(this, UGbTalismanRowWidget::StaticClass());
 		if (!Row) continue;
-		Row->Setup(T, A->GetCurse(T.SpeciesId), T.Id == PartnerId);
-		List->AddChild(Row);
+		Row->Setup(T, Curses.FindRef(T.SpeciesId), T.Id == PartnerId);
+		if (UScrollBoxSlot* RowSlot = Cast<UScrollBoxSlot>(List->AddChild(Row))) RowSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 10.f));
 	}
+	if (!Talismans.Num()) List->AddChild(MakeText(TEXT("No talismans to show yet."), 16, C::Ink));
 }
 
 void UGbTalismanCaseWidget::HandlePlayerChanged() { Refresh(); }
