@@ -204,6 +204,7 @@ FSlateFontInfo GbUi::Font(int32 Size, bool bBold, bool bTitle)
 	Info.TypefaceFontName = bTitle ? FName(TEXT("Bold")) : FName(TEXT("Regular"));
 	return Info;
 }
+FString GbUi::CurseArt(const FString& SpeciesId) { return TEXT("curse_") + SpeciesId.Replace(TEXT("-"), TEXT("_")); }
 FSlateBrush GbUi::PanelBrush(const FLinearColor& Tint, bool bStuds) { return FrameBrush(bStuds ? 1 : 0, Tint); }
 FSlateBrush GbUi::ButtonBrush(const FLinearColor& Tint) { return FrameBrush(2, Tint); }
 

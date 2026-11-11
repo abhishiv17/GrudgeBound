@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "GbWidgets.h"
-#include "Components/ComboBoxString.h"
 #include "GbSatchelWidget.generated.h"
 
 class UWidgetSwitcher;
@@ -24,17 +23,19 @@ private:
 	friend class FGbSatchelCarryTest;
 	friend class FGbSatchelSalveTest;
 	friend class FGbSatchelVisualTest;
+	friend class FGbPanelPreviewTest;
 	void PullPlayer();
 	static int32 MenderPriceFrom(const FGbWorldState& World);
 	void Redraw();
 	FString NameFor(const FString& TokenId) const;
+	FString ArtFor(const FString& TokenId) const;
 	const FGbTalisman* TalismanFor(const FString& TokenId) const;
 	void Submit(const FString& Message);
+	void ShowPocket(int32 Index);
 	UFUNCTION() void HandlePlayerChanged();
 	UFUNCTION() void HandleWorld(const FGbWorldState& World);
 	UFUNCTION() void HandleAction(const FString& Message);
 	UFUNCTION() void HandleError(const FString& What, int32 Code, const FString& Message);
-	UFUNCTION() void HandleSelection(FString Option, ESelectInfo::Type Selection);
 	UFUNCTION() void ShowTalismans();
 	UFUNCTION() void ShowSupplies();
 	UFUNCTION() void ShowKeepsakes();
@@ -51,23 +52,35 @@ private:
 	FString SelectedToken;
 	FString PartnerToken;
 	bool bBusy = false;
-	bool bUpdating = false;
 	int32 MenderPrice = -1;
 	UPROPERTY() TObjectPtr<UTextBlock> Summary;
 	UPROPERTY() TObjectPtr<UTextBlock> Status;
 	UPROPERTY() TObjectPtr<UWidgetSwitcher> Pockets;
 	UPROPERTY() TArray<TObjectPtr<UButton>> PocketTabs;
-	UPROPERTY() TObjectPtr<UComboBoxString> Selection;
+	UPROPERTY() TArray<TObjectPtr<UTextBlock>> PocketLabels;
+	UPROPERTY() TObjectPtr<UWidget> SummaryChips;
+	UPROPERTY() TObjectPtr<UBorder> CarriedChip;
+	UPROPERTY() TObjectPtr<UTextBlock> CarriedText;
+	UPROPERTY() TObjectPtr<UBorder> CaseChip;
+	UPROPERTY() TObjectPtr<UTextBlock> CaseText;
+	UPROPERTY() TObjectPtr<UBorder> PartnerChip;
+	UPROPERTY() TObjectPtr<UTextBlock> PartnerText;
 	UPROPERTY() TObjectPtr<UScrollBox> Rows;
+	UPROPERTY() TObjectPtr<UImage> PickedArt;
+	UPROPERTY() TObjectPtr<UTextBlock> PickedName;
+	UPROPERTY() TObjectPtr<UBorder> PlaceChip;
+	UPROPERTY() TObjectPtr<UTextBlock> PlaceText;
 	UPROPERTY() TObjectPtr<UProgressBar> InkBar;
 	UPROPERTY() TObjectPtr<UTextBlock> InkText;
-	UPROPERTY() TObjectPtr<UTextBlock> SelectedInfo;
 	UPROPERTY() TObjectPtr<UButton> CarryButton;
 	UPROPERTY() TObjectPtr<UTextBlock> CarryLabel;
 	UPROPERTY() TObjectPtr<UButton> PartnerButton;
 	UPROPERTY() TObjectPtr<UButton> SalveButton;
-	UPROPERTY() TObjectPtr<UTextBlock> SupplyText;
+	UPROPERTY() TObjectPtr<UTextBlock> BlankCount;
+	UPROPERTY() TObjectPtr<UTextBlock> GildedCount;
+	UPROPERTY() TObjectPtr<UTextBlock> SalveCount;
 	UPROPERTY() TObjectPtr<UTextBlock> SupplyTarget;
 	UPROPERTY() TObjectPtr<UScrollBox> Keepsakes;
-	UPROPERTY() TObjectPtr<UTextBlock> Ledger;
+	UPROPERTY() TObjectPtr<UTextBlock> EmberCount;
+	UPROPERTY() TObjectPtr<UTextBlock> PointsCount;
 };

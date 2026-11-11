@@ -1,69 +1,140 @@
 #include "GbSatchelWidget.h"
 #include "GbApiSubsystem.h"
 #include "GbGreyboxMaterials.h"
+#include "GbUiStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/ProgressBar.h"
-#include "Components/ScaleBox.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Components/WidgetSwitcher.h"
 
 namespace
 {
 	const FLinearColor& Paper=GbGreybox::Color::Paper; const FLinearColor& Ink=GbGreybox::Color::Ink;
 	const FLinearColor& Gold=GbGreybox::Color::Gold; const FLinearColor& Red=GbGreybox::Color::Crimson; const FLinearColor& Blue=GbGreybox::Color::Sorrow;
+	UVerticalBoxSlot* SatchelRow(UVerticalBox* Box, UWidget* W, float Top, float Bottom)
+	{
+		UVerticalBoxSlot* S = Box->AddChildToVerticalBox(W); S->SetPadding(FMargin(0.f, Top, 0.f, Bottom)); S->SetHorizontalAlignment(HAlign_Fill); return S;
+	}
+	UHorizontalBoxSlot* SatchelCol(UHorizontalBox* Box, UWidget* W, bool bFill, float Right)
+	{
+		UHorizontalBoxSlot* S = Box->AddChildToHorizontalBox(W); S->SetPadding(FMargin(0.f, 0.f, Right, 0.f)); S->SetVerticalAlignment(VAlign_Center);
+		if (bFill) S->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		return S;
+	}
 }
 
 void UGbSatchelWidget::BuildTree()
 {
-	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget = Root;
-	UScaleBox* Fit = WidgetTree->ConstructWidget<UScaleBox>(); Fit->SetStretch(EStretch::ScaleToFit);
-	UBorder* Card = MakePanel(Paper, FMargin(24));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(); Card->SetContent(Sized(Col, 760, 660)); Fit->AddChild(Card);
-	UCanvasPanelSlot* FitSlot = Root->AddChildToCanvas(Fit);
-	FitSlot->SetAnchors(FAnchors(.04f, .04f, .96f, .96f)); FitSlot->SetOffsets(FMargin(0));
-	Col->AddChildToVerticalBox(MakeText(TEXT("Your Satchel"), 28, Ink, true));
-	Col->AddChildToVerticalBox(MakeText(TEXT("Five talismans at hand. The rest wait in the Case."), 14, Ink));
-	UHorizontalBox* Tabs = WidgetTree->ConstructWidget<UHorizontalBox>(); Col->AddChildToVerticalBox(Sized(Tabs, 0, 40));
+	UTextBlock* TitleText = nullptr; UTextBlock* Sub = nullptr; UHorizontalBox* Footer = nullptr;
+	UVerticalBox* Body = MakeShell(TEXT("Your Satchel"), TEXT("talisman"), 1240.f, TitleText, Sub, Footer);
+	Sub->SetText(FText::FromString(TEXT("Five talismans at hand. The rest wait in the Case.")));
+	Status = ShellStatus;
+
+	// The four pockets as tabs, each with its picture; the open one is crimson.
+	UHorizontalBox* Tabs = WidgetTree->ConstructWidget<UHorizontalBox>();
+	PocketTabs.Reset(); PocketLabels.Reset();
+	const TCHAR* TabNames[] = { TEXT("Talismans"), TEXT("Supplies"), TEXT("Keepsakes"), TEXT("Ledger") };
+	const TCHAR* TabIcons[] = { TEXT("talisman"), TEXT("icon_salve"), TEXT("wax_seal"), TEXT("stamp_tool") };
+	for (int32 I = 0; I < 4; ++I)
+	{
+		UTextBlock* Label = nullptr; UButton* B = MakeButton(TabNames[I], Label, GbUi::Paper2());
+		Label->SetFont(GbUi::Font(20, true));
+		UHorizontalBox* Face = WidgetTree->ConstructWidget<UHorizontalBox>(); B->SetContent(Face);
+		UImage* Icon = nullptr; SatchelCol(Face, MakeArt(TabIcons[I], 32.f, Icon), false, 10.f);
+		SatchelCol(Face, Label, false, 0.f);
+		SatchelCol(Tabs, Sized(B, 0.f, 56.f), true, I < 3 ? 10.f : 0.f);
+		PocketTabs.Add(B); PocketLabels.Add(Label);
+	}
+	PocketTabs[0]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowTalismans);
+	PocketTabs[1]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowSupplies);
+	PocketTabs[2]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowKeepsakes);
+	PocketTabs[3]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowLedger);
+	SatchelRow(Body, Tabs, 0.f, 12.f);
+
+	// What is where, at a glance; a plain sentence instead while the Satchel cannot be read.
+	UHorizontalBox* Chips = WidgetTree->ConstructWidget<UHorizontalBox>();
+	CarriedChip = MakeChip(TEXT(""), Gold, CarriedText); SatchelCol(Chips, CarriedChip, false, 10.f);
+	CaseChip = MakeChip(TEXT(""), GbUi::Paper3(), CaseText); SatchelCol(Chips, CaseChip, false, 10.f);
+	PartnerChip = MakeChip(TEXT(""), Gold, PartnerText); SatchelCol(Chips, PartnerChip, false, 0.f);
+	SummaryChips = Chips; SatchelRow(Body, Chips, 0.f, 4.f);
+	Summary = MakeText(TEXT("Reading your pockets..."), 16, Ink, true); SatchelRow(Body, Summary, 0.f, 8.f);
+
+	Pockets = WidgetTree->ConstructWidget<UWidgetSwitcher>(); SatchelRow(Body, Sized(Pockets, 0.f, 470.f), 0.f, 0.f);
+
+	// Talismans: the list on the left, the picked one on the right with what can be done with it.
+	UHorizontalBox* Split = WidgetTree->ConstructWidget<UHorizontalBox>(); Pockets->AddChild(Split);
+	Rows = WidgetTree->ConstructWidget<UScrollBox>(); SatchelCol(Split, Sized(Rows, 0.f, 460.f), true, 24.f)->SetVerticalAlignment(VAlign_Top);
+	UBorder* Detail = MakePanel(GbUi::Paper2(), FMargin(20.f, 16.f)); SatchelCol(Split, Sized(Detail, 420.f, 0.f), false, 0.f)->SetVerticalAlignment(VAlign_Top);
+	UVerticalBox* D = WidgetTree->ConstructWidget<UVerticalBox>(); Detail->SetContent(D);
+	UBorder* Plate = MakePanel(GbUi::PaperHi(), FMargin(8.f)); Plate->SetContent(MakeArt(FString(), 144.f, PickedArt));
+	SatchelRow(D, Plate, 0.f, 10.f)->SetHorizontalAlignment(HAlign_Center);
+	PickedName = MakeText(TEXT("Choose a talisman."), 26, Ink, true); PickedName->SetJustification(ETextJustify::Center); SatchelRow(D, PickedName, 0.f, 6.f);
+	PlaceChip = MakeChip(TEXT(""), GbUi::Paper3(), PlaceText); SatchelRow(D, PlaceChip, 0.f, 10.f)->SetHorizontalAlignment(HAlign_Center);
+	InkBar = MakeBar(Blue); SatchelRow(D, Sized(InkBar, 0.f, 16.f), 0.f, 4.f);
+	InkText = MakeText(TEXT(""), 16, Ink); InkText->SetJustification(ETextJustify::Center); SatchelRow(D, InkText, 0.f, 12.f);
 	UTextBlock* Label = nullptr;
-	PocketTabs.Reset();
-	UButton* B = MakeButton(TEXT("Talismans"), Label, Gold); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowTalismans); Tabs->AddChildToHorizontalBox(Sized(B, 190, 36)); PocketTabs.Add(B);
-	B = MakeButton(TEXT("Supplies"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowSupplies); Tabs->AddChildToHorizontalBox(Sized(B, 190, 36)); PocketTabs.Add(B);
-	B = MakeButton(TEXT("Keepsakes"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowKeepsakes); Tabs->AddChildToHorizontalBox(Sized(B, 190, 36)); PocketTabs.Add(B);
-	B = MakeButton(TEXT("Ledger"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowLedger); Tabs->AddChildToHorizontalBox(Sized(B, 190, 36)); PocketTabs.Add(B);
-	Summary = MakeText(TEXT("Reading your pockets..."), 14, Ink, true); Col->AddChildToVerticalBox(Sized(Summary, 0, 28));
-	Pockets = WidgetTree->ConstructWidget<UWidgetSwitcher>(); Col->AddChildToVerticalBox(Sized(Pockets, 0, 350));
-	UVerticalBox* Tokens = WidgetTree->ConstructWidget<UVerticalBox>(); Pockets->AddChild(Tokens);
-	Selection = WidgetTree->ConstructWidget<UComboBoxString>(); Tokens->AddChildToVerticalBox(Sized(Selection, 0, 30));
-	Selection->OnSelectionChanged.AddDynamic(this, &UGbSatchelWidget::HandleSelection);
-	SelectedInfo = MakeText(TEXT("Choose a talisman."), 14, Ink); Tokens->AddChildToVerticalBox(Sized(SelectedInfo, 0, 26));
-	InkBar = MakeBar(Blue); Tokens->AddChildToVerticalBox(Sized(InkBar, 0, 10));
-	InkText = MakeText(TEXT(""), 14, Ink); Tokens->AddChildToVerticalBox(Sized(InkText, 0, 26));
-	UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>(); Tokens->AddChildToVerticalBox(Sized(Actions, 0, 38));
-	CarryButton = MakeButton(TEXT("Carry"), Label, Gold); CarryLabel = Label; CarryButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::CarrySelected); Actions->AddChildToHorizontalBox(Sized(CarryButton, 380, 34));
-	PartnerButton = MakeButton(TEXT("Choose as partner"), Label, Paper); PartnerButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::ChoosePartner); Actions->AddChildToHorizontalBox(Sized(PartnerButton, 380, 34));
-	Rows = WidgetTree->ConstructWidget<UScrollBox>(); Tokens->AddChildToVerticalBox(Sized(Rows, 0, 180));
+	CarryButton = MakeKeyButton(TEXT("Carry"), FString(), CarryLabel, Gold); CarryButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::CarrySelected);
+	SatchelRow(D, Sized(CarryButton, 0.f, 54.f), 0.f, 8.f);
+	PartnerButton = MakeKeyButton(TEXT("Choose as partner"), FString(), Label, Red); PartnerButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::ChoosePartner);
+	SatchelRow(D, Sized(PartnerButton, 0.f, 54.f), 0.f, 0.f);
+
+	// Supplies: three counters, what they are for, and the salve.
 	UVerticalBox* Supplies = WidgetTree->ConstructWidget<UVerticalBox>(); Pockets->AddChild(Supplies);
-	SupplyText = MakeText(TEXT(""), 22, Ink, true); Supplies->AddChildToVerticalBox(Sized(SupplyText, 0, 125));
-	UTextBlock* SupplyHelp = MakeText(TEXT("Each seal attempt uses one blank or gilded talisman. An Ink Salve restores part of a talisman's ink."), 15, Ink);
-	SupplyHelp->SetWrapTextAt(740); Supplies->AddChildToVerticalBox(Sized(SupplyHelp, 0, 60));
-	SupplyTarget = MakeText(TEXT("Choose a talisman in the Talismans pocket."), 16, Ink); Supplies->AddChildToVerticalBox(Sized(SupplyTarget, 0, 55));
-	SalveButton = MakeButton(TEXT("Use salve on selected talisman"), Label, Gold); SalveButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::UseSalve); Supplies->AddChildToVerticalBox(Sized(SalveButton, 0, 40));
+	UHorizontalBox* Counters = WidgetTree->ConstructWidget<UHorizontalBox>();
+	const TCHAR* SupplyNames[] = { TEXT("Blank talismans"), TEXT("Gilded talismans"), TEXT("Ink Salves") };
+	const TCHAR* SupplyIcons[] = { TEXT("talisman"), TEXT("talisman_gilded"), TEXT("icon_salve") };
+	TObjectPtr<UTextBlock>* Counts[] = { &BlankCount, &GildedCount, &SalveCount };
+	for (int32 I = 0; I < 3; ++I)
+	{
+		UBorder* Card = MakePanel(GbUi::Paper2(), FMargin(18.f, 14.f));
+		UHorizontalBox* In = WidgetTree->ConstructWidget<UHorizontalBox>(); Card->SetContent(In);
+		UImage* Icon = nullptr; SatchelCol(In, MakeArt(SupplyIcons[I], 96.f, Icon), false, 16.f);
+		UVerticalBox* Text = WidgetTree->ConstructWidget<UVerticalBox>(); SatchelCol(In, Text, true, 0.f);
+		*Counts[I] = MakeText(TEXT("-"), 48, Ink, true); SatchelRow(Text, *Counts[I], 0.f, 0.f);
+		SatchelRow(Text, MakeText(SupplyNames[I], 18, Ink, true), 0.f, 0.f);
+		SatchelCol(Counters, Card, true, I < 2 ? 14.f : 0.f);
+	}
+	SatchelRow(Supplies, Counters, 0.f, 16.f);
+	SatchelRow(Supplies, MakeText(TEXT("Each seal attempt uses one blank or gilded talisman. An Ink Salve restores part of a talisman's ink."), 17, Ink), 0.f, 16.f);
+	SupplyTarget = MakeText(TEXT("Choose a talisman in the Talismans pocket."), 18, Ink, true); SatchelRow(Supplies, SupplyTarget, 0.f, 10.f);
+	SalveButton = MakeKeyButton(TEXT("Use salve on selected talisman"), FString(), Label, Gold); SalveButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::UseSalve);
+	SatchelRow(Supplies, Sized(SalveButton, 520.f, 56.f), 0.f, 0.f)->SetHorizontalAlignment(HAlign_Left);
+
+	// Keepsakes: one slip each.
 	Keepsakes = WidgetTree->ConstructWidget<UScrollBox>(); Pockets->AddChild(Keepsakes);
+
+	// Ledger: the two balances large, then the debt notice.
 	UVerticalBox* LedgerPocket = WidgetTree->ConstructWidget<UVerticalBox>(); Pockets->AddChild(LedgerPocket);
-	Ledger = MakeText(TEXT(""), 22, Ink, true); LedgerPocket->AddChildToVerticalBox(Sized(Ledger, 0, 100));
-	LedgerPocket->AddChildToVerticalBox(MakeText(TEXT("Debt notice"), 19, Ink, true));
-	LedgerPocket->AddChildToVerticalBox(MakeText(TEXT("You arrived with a debt notice folded inside your coat."), 16, Ink));
-	Status = MakeText(TEXT(""), 14, Ink); Status->SetWrapTextAt(740); Col->AddChildToVerticalBox(Sized(Status, 0, 48));
-	UHorizontalBox* Footer = WidgetTree->ConstructWidget<UHorizontalBox>(); Col->AddChildToVerticalBox(Sized(Footer, 0, 40));
-	B = MakeButton(TEXT("Refresh"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Refresh); Footer->AddChildToHorizontalBox(Sized(B, 380, 38));
-	B = MakeButton(TEXT("Return (B)"), Label, Paper); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Close); Footer->AddChildToHorizontalBox(Sized(B, 380, 38));
+	UHorizontalBox* Balances = WidgetTree->ConstructWidget<UHorizontalBox>();
+	const TCHAR* BalanceNames[] = { TEXT("Ember"), TEXT("Points") };
+	TObjectPtr<UTextBlock>* BalanceCounts[] = { &EmberCount, &PointsCount };
+	for (int32 I = 0; I < 2; ++I)
+	{
+		UBorder* Card = MakePanel(GbUi::Paper2(), FMargin(22.f, 14.f));
+		UVerticalBox* In = WidgetTree->ConstructWidget<UVerticalBox>(); Card->SetContent(In);
+		SatchelRow(In, MakeText(BalanceNames[I], 18, Ink, true), 0.f, 0.f);
+		*BalanceCounts[I] = MakeText(TEXT("-"), 48, Ink, true); SatchelRow(In, *BalanceCounts[I], 0.f, 0.f);
+		SatchelCol(Balances, Card, true, I == 0 ? 14.f : 0.f);
+	}
+	SatchelRow(LedgerPocket, Balances, 0.f, 18.f);
+	UBorder* Slip = MakePanel(GbUi::PaperHi(), FMargin(22.f, 16.f)); UVerticalBox* SlipCol = WidgetTree->ConstructWidget<UVerticalBox>(); Slip->SetContent(SlipCol);
+	SatchelRow(SlipCol, MakeText(TEXT("Debt notice"), 22, Ink, true), 0.f, 6.f);
+	SatchelRow(SlipCol, MakeText(TEXT("You arrived with a debt notice folded inside your coat."), 18, Ink), 0.f, 0.f);
+	SatchelRow(LedgerPocket, Slip, 0.f, 0.f);
+
+	UButton* B = MakeKeyButton(TEXT("Refresh"), FString(), Label, GbUi::Paper2()); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Refresh);
+	SatchelCol(Footer, Sized(B, 220.f, 56.f), false, 12.f);
+	B = MakeKeyButton(TEXT("Return"), KeyName(TEXT("Satchel")), Label, GbUi::Paper2()); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Close);
+	SatchelCol(Footer, Sized(B, 240.f, 56.f), false, 0.f);
 	Redraw();
 }
 
@@ -136,44 +207,53 @@ FString UGbSatchelWidget::NameFor(const FString& Id) const
 	return Name ? *Name : Id == TEXT("starter") ? FString(TEXT("Cinder Grin")) : FString(TEXT("Sealed talisman"));
 }
 
+FString UGbSatchelWidget::ArtFor(const FString& Id) const
+{
+	const FGbTalisman* T = TalismanFor(Id);
+	return T ? GbUi::CurseArt(T->SpeciesId) : Id == TEXT("starter") ? GbUi::CurseArt(TEXT("cinder-grin")) : FString();
+}
+
 void UGbSatchelWidget::Redraw()
 {
-	if (!Selection || !Pockets) return;
-	for (int32 I = 0; I < PocketTabs.Num(); ++I) PocketTabs[I]->SetBackgroundColor(I == Pockets->GetActiveWidgetIndex() ? Gold : Paper);
-	bUpdating = true; Options = Data.Carried;
+	if (!Rows || !Pockets) return;
+	for (int32 I = 0; I < PocketTabs.Num(); ++I)
+	{
+		const bool bOpen = I == Pockets->GetActiveWidgetIndex();
+		PocketTabs[I]->SetBackgroundColor(bOpen ? Red : GbUi::Paper2());
+		PocketLabels[I]->SetColorAndOpacity(FSlateColor(bOpen ? GbUi::PaperHi() : Ink));
+	}
+	Options = Data.Carried;
 	for (const FString& Id : Data.Case) Options.AddUnique(Id);
 	if (!Options.Contains(SelectedToken)) SelectedToken = Options.Contains(PartnerToken) ? PartnerToken : Options.Num() ? Options[0] : FString();
-	Selection->ClearOptions();
-	for (int32 I = 0; I < Options.Num(); ++I)
-	{
-		const FString& Id = Options[I];
-		Selection->AddOption(FString::Printf(TEXT("%s %d  |  %s%s"), Data.Carried.Contains(Id) ? TEXT("Carried") : TEXT("Case"), I + 1,
-			*NameFor(Id), Id == PartnerToken ? TEXT("  (partner)") : TEXT("")));
-	}
-	if (Options.Contains(SelectedToken)) Selection->SetSelectedIndex(Options.IndexOfByKey(SelectedToken));
-	bUpdating = false;
-	Summary->SetText(FText::FromString(Data.bValid
-		? FString::Printf(TEXT("Carried %d / 5    |    Case %d    |    Partner: %s"), Data.Carried.Num(), Data.Case.Num(), PartnerToken.IsEmpty() ? TEXT("Choose one") : *NameFor(PartnerToken))
-		: FString(TEXT("Your Satchel is unavailable. Refresh before choosing a partner or using supplies."))));
+
+	SummaryChips->SetVisibility(Data.bValid ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	Summary->SetVisibility(Data.bValid ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	Summary->SetText(FText::FromString(TEXT("Your Satchel is unavailable. Refresh before choosing a partner or using supplies.")));
+	SetChip(CarriedChip, CarriedText, FString::Printf(TEXT("Carried %d / %d"), Data.Carried.Num(), FGbSatchel::CarryLimit), Gold);
+	SetChip(CaseChip, CaseText, FString::Printf(TEXT("Case %d"), Data.Case.Num()), GbUi::Paper3());
+	SetChip(PartnerChip, PartnerText, FString::Printf(TEXT("Partner: %s"), PartnerToken.IsEmpty() ? TEXT("Choose one") : *NameFor(PartnerToken)), Gold);
+
 	Rows->ClearChildren();
 	for (int32 I = 0; I < Options.Num(); ++I)
 	{
-		const FString& Id = Options[I]; const FGbInk* Value = Data.Ink.Find(Id);
-		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
-		Row->AddChildToHorizontalBox(Sized(MakeText(FString::Printf(TEXT("%s %d  |  %s%s"), Data.Carried.Contains(Id) ? TEXT("Carried") : TEXT("Case"), I + 1, *NameFor(Id), Id == PartnerToken ? TEXT("  (partner)") : TEXT("")), 13, Ink, Id == SelectedToken), 450, 26));
-		UProgressBar* Bar = MakeBar(Value && Value->Hp <= 0 ? Red : Blue);
-		Bar->SetPercent(Value && Value->MaxHp > 0 ? static_cast<float>(Value->Hp) / Value->MaxHp : 0.f);
-		Row->AddChildToHorizontalBox(Sized(Bar, 180, 14));
-		Row->AddChildToHorizontalBox(Sized(MakeText(Value ? FString::Printf(TEXT("  %d / %d ink"), Value->Hp, Value->MaxHp) : FString(TEXT("  Reading ink...")), 13, Ink), 130, 26));
-		Rows->AddChild(Row);
+		const FString Id = Options[I]; const FGbInk* Value = Data.Ink.Find(Id);
+		UGbPickRowWidget* Row = CreateWidget<UGbPickRowWidget>(this, UGbPickRowWidget::StaticClass()); if (!Row) continue;
+		Row->Setup(ArtFor(Id), NameFor(Id), FString::Printf(TEXT("%s %d"), Data.Carried.Contains(Id) ? TEXT("Carried") : TEXT("Case"), I + 1),
+			Value && Value->MaxHp > 0 ? static_cast<float>(Value->Hp) / Value->MaxHp : -1.f,
+			Value ? FString::Printf(TEXT("%d / %d ink"), Value->Hp, Value->MaxHp) : FString(),
+			Id == PartnerToken ? TEXT("Partner") : TEXT(""), Gold, Id == SelectedToken);
+		Row->OnClick = [this, Id]() { if (!bBusy) { SelectedToken = Id; Redraw(); } };
+		if (UScrollBoxSlot* RowSlot = Cast<UScrollBoxSlot>(Rows->AddChild(Row))) RowSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
 	}
-	if (!Options.Num()) Rows->AddChild(MakeText(TEXT("No talismans to show yet."), 14, Ink));
+	if (!Options.Num()) Rows->AddChild(MakeText(TEXT("No talismans to show yet."), 16, Ink));
+
 	const FGbInk* Value = Data.Ink.Find(SelectedToken);
 	const bool bHasInk = Value && Value->MaxHp > 0;
 	const bool bCarried = Data.Carried.Contains(SelectedToken);
 	const bool bReady = Data.bValid && !bBusy;
-	SelectedInfo->SetText(FText::FromString(SelectedToken.IsEmpty() ? FString(TEXT("Choose a talisman."))
-		: NameFor(SelectedToken) + (bCarried ? TEXT("  |  In your Satchel") : TEXT("  |  In the Case"))));
+	SetArt(PickedArt, SelectedToken.IsEmpty() ? FString() : ArtFor(SelectedToken), 144.f);
+	PickedName->SetText(FText::FromString(SelectedToken.IsEmpty() ? FString(TEXT("Choose a talisman.")) : NameFor(SelectedToken)));
+	SetChip(PlaceChip, PlaceText, SelectedToken.IsEmpty() ? FString() : bCarried ? FString(TEXT("In your Satchel")) : FString(TEXT("In the Case")), bCarried ? Gold : GbUi::Paper3());
 	InkBar->SetPercent(bHasInk ? static_cast<float>(Value->Hp) / Value->MaxHp : 0.f);
 	InkBar->SetFillColorAndOpacity(bHasInk && Value->Hp <= 0 ? Red : Blue);
 	InkText->SetText(FText::FromString(bHasInk
@@ -183,25 +263,31 @@ void UGbSatchelWidget::Redraw()
 	CarryButton->SetIsEnabled(bReady && (bCarried || Data.CanCarry(SelectedToken)));
 	PartnerButton->SetIsEnabled(bReady && bCarried && SelectedToken != PartnerToken && TalismanFor(SelectedToken));
 	SalveButton->SetIsEnabled(bReady && Data.CanUseSalve(SelectedToken));
-	Selection->SetIsEnabled(bReady);
-	SupplyText->SetText(FText::FromString(Data.bValid ? FString::Printf(TEXT("Blank talismans     %d\nGilded talismans    %d\nInk Salves               %d"), Data.Blank, Data.Gilded, Data.Salves) : FString(TEXT("Supplies unavailable"))));
+
+	const auto Count = [this](int32 N) { return FText::FromString(Data.bValid ? FString::FromInt(N) : FString(TEXT("-"))); };
+	BlankCount->SetText(Count(Data.Blank)); GildedCount->SetText(Count(Data.Gilded)); SalveCount->SetText(Count(Data.Salves));
 	SupplyTarget->SetText(FText::FromString(SelectedToken.IsEmpty() ? FString(TEXT("Choose a talisman in the Talismans pocket."))
 		: FString::Printf(TEXT("Selected: %s%s"), *NameFor(SelectedToken), bHasInk ? *FString::Printf(TEXT("  |  Ink %d / %d"), Value->Hp, Value->MaxHp) : TEXT(""))));
+
 	Keepsakes->ClearChildren();
 	if (Data.Keepsakes.IsEmpty()) Keepsakes->AddChild(MakeText(TEXT("Nothing yet."), 18, Ink));
-	else for (const FString& Item : Data.Keepsakes) Keepsakes->AddChild(MakeText(Item, 18, Ink));
-	Ledger->SetText(FText::FromString(FString::Printf(TEXT("Ember   %s\nPoints   %s"), Data.bValid && Data.Ember >= 0 ? *FString::FromInt(Data.Ember) : TEXT("Unavailable"), Data.bValid && Data.Points >= 0 ? *FString::FromInt(Data.Points) : TEXT("Unavailable"))));
+	else for (const FString& Item : Data.Keepsakes)
+	{
+		UBorder* Slip = MakePanel(GbUi::PaperHi(), FMargin(16.f, 10.f));
+		UHorizontalBox* In = WidgetTree->ConstructWidget<UHorizontalBox>(); Slip->SetContent(In);
+		UImage* Icon = nullptr; SatchelCol(In, MakeArt(TEXT("wax_seal"), 32.f, Icon), false, 14.f);
+		SatchelCol(In, MakeText(Item, 18, Ink), true, 0.f);
+		if (UScrollBoxSlot* SlipSlot = Cast<UScrollBoxSlot>(Keepsakes->AddChild(Slip))) SlipSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
+	}
+	EmberCount->SetText(FText::FromString(Data.bValid && Data.Ember >= 0 ? FString::FromInt(Data.Ember) : FString(TEXT("Unavailable"))));
+	PointsCount->SetText(FText::FromString(Data.bValid && Data.Points >= 0 ? FString::FromInt(Data.Points) : FString(TEXT("Unavailable"))));
 }
 
-void UGbSatchelWidget::HandleSelection(FString, ESelectInfo::Type)
-{
-	if (bUpdating) return;
-	const int32 Index = Selection->GetSelectedIndex(); SelectedToken = Options.IsValidIndex(Index) ? Options[Index] : FString(); Redraw();
-}
-void UGbSatchelWidget::ShowTalismans() { Pockets->SetActiveWidgetIndex(0); Redraw(); }
-void UGbSatchelWidget::ShowSupplies() { Pockets->SetActiveWidgetIndex(1); Redraw(); }
-void UGbSatchelWidget::ShowKeepsakes() { Pockets->SetActiveWidgetIndex(2); Redraw(); }
-void UGbSatchelWidget::ShowLedger() { Pockets->SetActiveWidgetIndex(3); Redraw(); }
+void UGbSatchelWidget::ShowPocket(int32 Index) { Pockets->SetActiveWidgetIndex(Index); Redraw(); }
+void UGbSatchelWidget::ShowTalismans() { ShowPocket(0); }
+void UGbSatchelWidget::ShowSupplies() { ShowPocket(1); }
+void UGbSatchelWidget::ShowKeepsakes() { ShowPocket(2); }
+void UGbSatchelWidget::ShowLedger() { ShowPocket(3); }
 void UGbSatchelWidget::HandlePlayerChanged() { PullPlayer(); }
 // The world polls every 2 s; only the Mender's price depends on it, so redraw (and rebuild the talisman list) only when it changes.
 void UGbSatchelWidget::HandleWorld(const FGbWorldState& World) { if (IsVisible() && MenderPriceFrom(World) != MenderPrice) PullPlayer(); }

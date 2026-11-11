@@ -3,6 +3,8 @@
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "Misc/AutomationTest.h"
 #include "GbWidgets.h"
+#include "GbSatchelWidget.h"
+#include "Components/WidgetSwitcher.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -109,6 +111,29 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 		Capture(W, TEXT("Mender"));
 		W->Selected = TEXT("starter"); W->Redraw();
 		TestFalse(TEXT("No restore for a full talisman"), W->RestoreButton->GetIsEnabled());
+		W->RemoveFromRoot();
+	}
+
+	// ---- Satchel: four carried, two in the Case, one drained; every pocket.
+	{
+		UGbSatchelWidget* W = Cast<UGbSatchelWidget>(Make(UGbSatchelWidget::StaticClass()));
+		FGbSatchel S; S.bValid = true; S.Carried = { TEXT("starter"), TEXT("tal-12"), TEXT("tal-15"), TEXT("tal-21") }; S.Case = { TEXT("tal-30"), TEXT("tal-31") };
+		S.Blank = 3; S.Gilded = 1; S.Salves = 2; S.Ember = 60; S.Points = 42; S.Keepsakes = { TEXT("Keepsake one"), TEXT("Keepsake two") };
+		const TCHAR* Ids[] = { TEXT("starter"), TEXT("tal-12"), TEXT("tal-15"), TEXT("tal-21"), TEXT("tal-30"), TEXT("tal-31") };
+		const TCHAR* Sp[] = { TEXT("cinder-grin"), TEXT("hushmoth"), TEXT("weepwick"), TEXT("tallow-widow"), TEXT("riot-bell"), TEXT("lantern-drowned") };
+		const TCHAR* Nm[] = { TEXT("Cinder Grin"), TEXT("Hushmoth"), TEXT("Weepwick"), TEXT("Tallow Widow"), TEXT("Riot Bell"), TEXT("Lantern Drowned") };
+		const int32 Hp[] = { 44, 30, 0, 44, 44, 18 };
+		for (int32 I = 0; I < 6; ++I)
+		{
+			FGbInk Ink; Ink.Hp = Hp[I]; Ink.MaxHp = 44; S.Ink.Add(Ids[I], Ink); W->Names.Add(Ids[I], Nm[I]);
+			FGbTalisman T = Talisman(I == 0 ? TEXT("tal-starter") : Ids[I], Sp[I], TEXT("whisper"), I, 0, I == 0 ? TEXT("") : Ids[I]);
+			W->Talismans.Add(T);
+		}
+		W->Data = S; W->PartnerToken = TEXT("starter"); W->SelectedToken = TEXT("tal-15"); W->bBusy = false;
+		const TCHAR* Names[] = { TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"), TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger") };
+		for (int32 I = 0; I < 4; ++I) { W->Pockets->SetActiveWidgetIndex(I); W->Redraw(); Capture(W, Names[I]); }
+		TestEqual(TEXT("Satchel lists carried and Case talismans"), W->Rows->GetChildrenCount(), 6);
+		TestTrue(TEXT("A drained carried talisman can take a salve"), W->SalveButton->GetIsEnabled());
 		W->RemoveFromRoot();
 	}
 

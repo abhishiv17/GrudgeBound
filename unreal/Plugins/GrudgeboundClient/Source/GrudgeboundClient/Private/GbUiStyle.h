@@ -17,6 +17,9 @@ namespace GbUi
 	/** Framed button face with a light top edge and a dark bottom edge. */
 	FSlateBrush ButtonBrush(const FLinearColor& Tint);
 
+	/** "riot-bell" -> "curse_riot_bell": the curse's picture in UI/Battle. */
+	FString CurseArt(const FString& SpeciesId);
+
 	inline FLinearColor Hex(const TCHAR* H) { return FLinearColor(FColor::FromHex(H)); }
 	inline FLinearColor PaperHi() { return Hex(TEXT("FBF5E6")); }
 	inline FLinearColor Paper2() { return Hex(TEXT("E9DBBB")); }
