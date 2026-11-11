@@ -4,6 +4,7 @@
 #include "Misc/AutomationTest.h"
 #include "GbWidgets.h"
 #include "GbSatchelWidget.h"
+#include "GbVowWidget.h"
 #include "Components/WidgetSwitcher.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
@@ -186,6 +187,43 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 		TestTrue(TEXT("Rite can propose with the ledger up"), W->ProposeButton->GetIsEnabled());
 		TestTrue(TEXT("Repeal row shown for ledger rules"), W->RepealRow->GetVisibility() != ESlateVisibility::Collapsed);
 		Capture(W, TEXT("Rite"));
+		W->RemoveFromRoot();
+	}
+
+	// ---- The Vow Shrine: the four MVP vows (shared/src/vows.ts), one holding, one kept, one released.
+	{
+		UGbVowWidget* W = Cast<UGbVowWidget>(Make(UGbVowWidget::StaticClass()));
+		FGbVowsOverview Vows; Vows.bChain = true; Vows.Points = 42; Vows.DaySeconds = 600.;
+		const auto Template = [&Vows](const TCHAR* Id, const TCHAR* Text, int32 Stake, int32 Min, int32 Max)
+		{
+			FGbVowTemplate T; T.Id = Id; T.Text = Text; T.Stake = Stake; T.MinDays = Min; T.MaxDays = Max; Vows.Templates.Add(T);
+		};
+		Template(TEXT("V1"), TEXT("I will not leave {ward}"), 20, 1, 3);
+		Template(TEXT("V2"), TEXT("I will not use healing items"), 15, 1, 2);
+		Template(TEXT("V3"), TEXT("I will not sell {talisman}"), 10, 3, 3);
+		Template(TEXT("V4"), TEXT("I will fight only {omen} curses"), 25, 1, 1);
+		for (const TCHAR* Species : { TEXT("weepwick"), TEXT("hushmoth") })
+		{
+			FGbRuleOption O; O.Value = FString::Printf(TEXT("%d"), Vows.Talismans.Num() + 12); O.Label = Species; Vows.Talismans.Add(O);
+		}
+		const auto Vow = [&Vows](int32 Id, const TCHAR* Text, const TCHAR* Status, int32 Stake, double EndsInSeconds)
+		{
+			FGbVow V; V.Id = Id; V.Text = Text; V.Status = Status; V.Stake = Stake; V.Payout = Stake + Stake / 5;
+			V.EndsAt = (FDateTime::UtcNow().ToUnixTimestamp() + EndsInSeconds) * 1000.; Vows.Vows.Add(V);
+		};
+		Vow(3, TEXT("I will not leave lantern"), TEXT("Active"), 20, 754.);
+		Vow(2, TEXT("I will fight only wail curses"), TEXT("Kept"), 25, -60.);
+		Vow(1, TEXT("I will not use healing items"), TEXT("Released"), 15, -600.);
+		W->HandleVows(Vows);
+		W->HandleNextTemplate(); W->HandleNextTemplate();
+		W->Status->SetText(FText::FromString(TEXT("Sealing your promise in the Rite's ledger...")));
+		TestEqual(TEXT("Shrine shows a slip per vow"), W->Slips.Num(), 3);
+		TestEqual(TEXT("Only the holding vow can be released"), W->ActiveIds.Num(), 1);
+		TestTrue(TEXT("V3 offers the player's talismans"), W->ParamValues.Num() == 2 && W->ParamRow->GetVisibility() != ESlateVisibility::Collapsed);
+		TestTrue(TEXT("Swear enabled with enough points"), W->Swear->GetIsEnabled());
+		Capture(W, TEXT("Vows"));
+		W->HandleNextTemplate();
+		TestTrue(TEXT("V4 stakes 25 of 42 points"), W->Swear->GetIsEnabled());
 		W->RemoveFromRoot();
 	}
 

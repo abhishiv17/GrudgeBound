@@ -1939,7 +1939,7 @@ void UGbRulesWidget::BuildTree()
 	AddCol(Footer, Sized(Close, 240.f, 56.f), false, 0.f);
 }
 
-UHorizontalBox* UGbRulesWidget::MakeStepper(UTextBlock* Key, UButton* Prev, UTextBlock* Value, UButton* Next, float KeyWidth)
+UHorizontalBox* UGbWidgetBase::MakeStepper(UTextBlock* Key, UButton* Prev, UTextBlock* Value, UButton* Next, float KeyWidth)
 {
 	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
 	AddCol(Row, Sized(Key, KeyWidth, 0.f), false, 8.f);

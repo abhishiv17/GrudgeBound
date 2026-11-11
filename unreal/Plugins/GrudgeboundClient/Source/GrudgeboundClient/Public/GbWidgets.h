@@ -69,6 +69,8 @@ protected:
 	static void SetChip(UBorder* Chip, UTextBlock* Text, const FString& Label, const FLinearColor& Tint);
 	/** The label of a player-bound key ("Case", "Satchel", ...), for keycaps. */
 	static FString KeyName(const TCHAR* Action);
+	/** A framed stepper row: key label, [<] value on cream [>]. */
+	UHorizontalBox* MakeStepper(UTextBlock* Key, UButton* Prev, UTextBlock* Value, UButton* Next, float KeyWidth = 140.f);
 	// The same, filling member pointers.
 	UVerticalBox* MakeShell(const FString& Title, const FString& Icon, float Width, UTextBlock*& OutTitle, TObjectPtr<UTextBlock>& OutSubtitle, UHorizontalBox*& OutFooter)
 	{ UTextBlock* Sub = nullptr; UVerticalBox* Body = MakeShell(Title, Icon, Width, OutTitle, Sub, OutFooter); OutSubtitle = Sub; return Body; }
@@ -529,8 +531,6 @@ private:
 	void Redraw();
 	void SetBusy(bool bNowBusy);
 	const FGbRuleTemplate* Current() const;
-	/** A framed stepper row: key label, [<] value [>]. */
-	UHorizontalBox* MakeStepper(UTextBlock* Key, UButton* Prev, UTextBlock* Value, UButton* Next, float KeyWidth = 140.f);
 
 	friend class FGbPanelPreviewTest;
 
