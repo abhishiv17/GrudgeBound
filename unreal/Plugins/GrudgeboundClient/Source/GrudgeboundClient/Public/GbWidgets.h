@@ -187,11 +187,24 @@ protected:
 private:
 	UFUNCTION() void HandleFight();
 	UFUNCTION() void HandleSlipAway();
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
+	friend class FGbEncounterPresentationTest;
 
 	UPROPERTY() TObjectPtr<UTextBlock> Title;
 	UPROPERTY() TObjectPtr<UTextBlock> Intro;
 	UPROPERTY() TObjectPtr<UTextBlock> Matchup;
 	UPROPERTY() TObjectPtr<UTextBlock> Lore;
+	// The wild curse's poster: big sprite, name, emotion/omen; your partner in the matchup row.
+	UPROPERTY() TObjectPtr<class UImage> WildImage;
+	UPROPERTY() TObjectPtr<class UImage> PartnerImage;
+	UPROPERTY() TObjectPtr<class UImage> EmotionImage;
+	UPROPERTY() TObjectPtr<UTextBlock> WildName;
+	UPROPERTY() TObjectPtr<UTextBlock> Tags;
+	UPROPERTY() TObjectPtr<UBorder> MatchChip;
+	UPROPERTY() TObjectPtr<UTextBlock> MatchChipText;
+	UPROPERTY() TObjectPtr<UButton> FightButton;
+	float Clock = 0.f;
 };
 
 /** Turn-based battle on the server's /battle/turn: attack, ward, seal, gilded seal, salve, flee. */
@@ -218,6 +231,15 @@ private:
 	void SetButtonsEnabled(bool bEnabled);
 	void Send(EGbAction Action);
 	void ShowEnd(EGbOutcome Outcome, int32 Points, const FString& Wild);
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
+
+	/** Something to play a moment from now: Type 0 lunge, 1 hit, 2 heal, 3 seal stamp, 4 shrink away, 5 fade away. */
+	struct FCue { float Delay = 0.f; int32 Type = 0; int32 Side = 0; int32 Amount = 0; };
+	void Cue(int32 Type, int32 Side, float Delay, int32 Amount = 0);
+	void Play(const FCue& C);
+	void ShowNumber(int32 Side, const FString& Text, const FLinearColor& Color);
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
+	friend class FGbBattlePresentationTest;
 
 	UFUNCTION() void HandleAttack();
 	UFUNCTION() void HandleWard();
@@ -251,6 +273,35 @@ private:
 	UPROPERTY() TObjectPtr<UTextBlock> FleeLabel;
 	UPROPERTY() TObjectPtr<UBorder> EndPanel;
 	UPROPERTY() TObjectPtr<UTextBlock> EndText;
+
+	// The stage: index 0 is the wild curse, 1 your partner.
+	UPROPERTY() TObjectPtr<class UImage> Sprites[2];
+	UPROPERTY() TObjectPtr<class UImage> EmotionIcons[2];
+	UPROPERTY() TObjectPtr<UTextBlock> Numbers[2];
+	UPROPERTY() TObjectPtr<class UImage> SealStamp;
+	UPROPERTY() TObjectPtr<class UImage> KessaImage;
+	UPROPERTY() TObjectPtr<class UImage> Portraits[2];
+	UPROPERTY() TObjectPtr<class UImage> WardImages[2];
+	UPROPERTY() TObjectPtr<UBorder> FocusFrames[6];
+	UPROPERTY() TObjectPtr<UButton> BackButton;
+	float WardTime[2] = { 0.f, 0.f };
+	float FeedbackRemaining = 0.f;
+	bool bBattleEnded = false;
+	bool bWaitingForReply = false;
+	int32 FocusedAction = 0;
+	TArray<FCue> Cues;
+	float Clock = 0.f;
+	float Lunge[2] = { 0.f, 0.f };
+	float Hit[2] = { 0.f, 0.f };
+	float Shrink[2] = { 0.f, 0.f };
+	float ShrinkTo[2] = { 0.f, 0.f };
+	float Fade[2] = { 0.f, 0.f };
+	float FadeTo[2] = { 0.f, 0.f };
+	float ShownHp[2] = { 1.f, 1.f };
+	float TargetHp[2] = { 1.f, 1.f };
+	float NumberTime[2] = { 0.f, 0.f };
+	float SealTime = 0.f;
+	bool bSealHolds = false;
 
 	FGbBattleView LastView;
 	TArray<FString> LogLines;

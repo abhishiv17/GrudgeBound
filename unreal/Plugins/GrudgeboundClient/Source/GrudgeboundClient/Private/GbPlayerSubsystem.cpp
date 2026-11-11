@@ -400,3 +400,6 @@ void UGbPlayerSubsystem::HandleChainReceipt(const FString& BattleId, const FGbCh
 		}
 	}
 }
+
+FString UGbPlayerSubsystem::GetWardId() const { return RuntimeWardId.IsEmpty() ? GetDefault<UGbSettings>()->WardId : RuntimeWardId; }
+void UGbPlayerSubsystem::SetWardId(const FString& Ward) { RuntimeWardId = Ward; OnPlayerChanged.Broadcast(); }

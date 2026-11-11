@@ -129,6 +129,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Player")
 	FGbPlayerChangedEvent OnPlayerChanged;
 
+	/** The Ward the player stands in: the configured one until a ferry carries them elsewhere. Not saved. */
+	FString GetWardId() const;
+	void SetWardId(const FString& Ward);
+	FString RuntimeWardId;
+
 	/** A curse was sealed into a new talisman. */
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Player")
 	FGbTalismanBoundEvent OnTalismanBound;

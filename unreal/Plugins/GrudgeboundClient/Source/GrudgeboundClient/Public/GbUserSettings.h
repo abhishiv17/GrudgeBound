@@ -71,4 +71,6 @@ public:
 	UPROPERTY(Config) float MasterVolume = 1.f;
 	UPROPERTY(Config) bool bMuteInBackground = true;
 	UPROPERTY(Config) bool bShowFps = false;
+	/** Stops battle bobbing, lunges, shakes and moving numbers; keeps static outcome feedback. */
+	UPROPERTY(Config) bool bReducedBattleMotion = false;
 };

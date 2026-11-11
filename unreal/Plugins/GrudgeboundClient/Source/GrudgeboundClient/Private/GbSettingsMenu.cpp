@@ -468,6 +468,7 @@ private:
 				G->SetFrameRateLimit(Limits[FMath::Clamp(I + Dir, 0, 6)]); Now();
 			})) ];
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Show frame rate"), Toggle([S]() { return S->bShowFps; }, [S](bool B) { S->bShowFps = B; S->Save(); })) ];
+		Rows->AddSlot().AutoHeight()[ Row(TEXT("Reduce battle motion"), Toggle([S]() { return S->bReducedBattleMotion; }, [S](bool B) { S->bReducedBattleMotion = B; S->Save(); })) ];
 
 		Rows->AddSlot().AutoHeight()[ Heading(TEXT("Quality")) ];
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Preset"), Stepper(

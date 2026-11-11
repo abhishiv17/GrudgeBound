@@ -23,6 +23,7 @@ public class GrudgeboundClient : ModuleRules
 			"Json",
 			"Slate",
 			"SlateCore",
+			"RenderCore", // FlushRenderingCommands in the battle presentation check
 		});
 	}
 }

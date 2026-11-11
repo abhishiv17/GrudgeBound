@@ -18,9 +18,11 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
+#include "Components/ScaleBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -66,6 +68,21 @@ namespace
 		Brush.TintColor = FSlateColor(Tint); return Brush;
 	}
 	FSlateBrush PaperBrush() { return FrameBrush(0); }
+	/** One of the pixel-art pictures in /Game/Grudgebound/UI/Battle (unreal/tools/export-battle-art.ts), drawn Scale
+	    times its size. Nothing is drawn when the picture is not imported. */
+	FSlateBrush ArtBrush(const FString& Name, float Scale)
+	{
+		FSlateBrush Brush;
+		if (UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/Grudgebound/UI/Battle/%s.%s"), *Name, *Name)))
+		{
+			Brush.SetResourceObject(Texture);
+			Brush.ImageSize = FVector2D(Texture->GetSizeX() * Scale, Texture->GetSizeY() * Scale);
+		}
+		else { Brush.DrawAs = ESlateBrushDrawType::NoDrawType; Brush.ImageSize = FVector2D(48.f * Scale, 48.f * Scale); }
+		return Brush;
+	}
+	/** "riot-bell" -> "curse_riot_bell". */
+	FString CurseArt(const FString& SpeciesId) { return TEXT("curse_") + SpeciesId.Replace(TEXT("-"), TEXT("_")); }
 	/** The title screen's sky: a top-to-bottom wash, see-through so the Ward shows under it. */
 	FSlateBrush DuskBrush()
 	{
@@ -145,7 +162,7 @@ namespace
 
 	FLinearColor HpColor(float Fraction)
 	{
-		return Fraction > 0.5f ? C::Leaf : Fraction > 0.2f ? C::Gold : C::Crimson;
+		return Fraction > 0.5f ? C::Leaf : Fraction > 0.2f ? C::Gold : C::Rage;
 	}
 
 	UVerticalBoxSlot* AddRow(UVerticalBox* Box, UWidget* W, float Top = 2.f, float Bottom = 2.f)
@@ -388,6 +405,11 @@ UButton* UGbWidgetBase::MakeButton(const FString& Label, UTextBlock*& OutLabel, 
 UProgressBar* UGbWidgetBase::MakeBar(const FLinearColor& Fill)
 {
 	UProgressBar* P = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass());
+	FProgressBarStyle Style = P->GetWidgetStyle();
+	Style.BackgroundImage = FrameBrush(0, GbUi::Paper3());
+	Style.FillImage = FSlateBrush(); Style.FillImage.DrawAs = ESlateBrushDrawType::Image; Style.FillImage.SetResourceObject(nullptr);
+	Style.FillImage.TintColor = FSlateColor(FLinearColor::White);
+	P->SetWidgetStyle(Style);
 	P->SetFillColorAndOpacity(Fill);
 	P->SetPercent(0.f);
 	return P;
@@ -649,11 +671,11 @@ void UGbHudWidget::Refresh()
 	if (!A || !WardTitle) return;
 
 	const FGbWorldState& S = A->GetWorldState();
-	const FString WardId = GetDefault<UGbSettings>()->WardId;
+	const FString WardId = P ? P->GetWardId() : GetDefault<UGbSettings>()->WardId;
 	FGbWardSummary Ward;
 	const bool bHaveWard = A->GetWard(WardId, Ward);
 
-	const FString Name = bHaveWard ? Ward.Name : TEXT("Lantern Ward");
+	const FString Name = bHaveWard ? Ward.Name : WardId == TEXT("tide") ? TEXT("Tide Ward") : TEXT("Lantern Ward");
 	const FString Time = S.bValid ? FString::Printf(TEXT("Day %d  %02d:00 %s"), S.Day, S.Hour, S.bNight ? TEXT("(night)") : TEXT("(day)")) : TEXT("Day -  --:--");
 	WardTitle->SetText(FText::FromString(FString::Printf(TEXT("%s   %s"), *Name, *Time)));
 
@@ -698,34 +720,96 @@ void UGbHudWidget::HandleStoryChanged() { Refresh(); }
 
 void UGbEncounterWidget::BuildTree()
 {
+	// The Ward stays visible but dimmed behind a "wanted poster" for the curse, in the battle screen's language:
+	// crimson ribbon, paper card, the curse's own pixel art on a cream plate, ink text, crimson primary button.
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
 	WidgetTree->RootWidget = Root;
+	SetIsFocusable(true);
+	UBorder* Shade = WidgetTree->ConstructWidget<UBorder>(); Shade->SetBrushColor(FLinearColor(C::Ink.R, C::Ink.G, C::Ink.B, 0.68f));
+	auto* ShadeSlot = Root->AddChildToCanvas(Shade); ShadeSlot->SetAnchors(FAnchors(0, 0, 1, 1)); ShadeSlot->SetOffsets(FMargin(0));
 
-	UBorder* Card = MakePanel(PaperPanel(), FMargin(24.f, 18.f));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Card->SetContent(Sized(Col, 460.f, 0.f));
+	UVerticalBox* Poster = WidgetTree->ConstructWidget<UVerticalBox>();
+	UBorder* Ribbon = MakePanel(C::Crimson, FMargin(28.f, 10.f));
+	Title = MakeText(TEXT("A curse stirs in the tall grass!"), 30, GbUi::PaperHi(), true);
+	Title->SetJustification(ETextJustify::Center); Ribbon->SetContent(Title);
+	AddRow(Poster, Ribbon, 0.f, 0.f)->SetHorizontalAlignment(HAlign_Center);
 
-	Title = MakeText(TEXT("A curse stirs in the tall grass!"), 22, C::Crimson, true);
-	AddRow(Col, Title);
-	Intro = MakeText(TEXT(""), 16, C::Ink);
-	Intro->SetAutoWrapText(true);
-	AddRow(Col, Intro, 6.f);
-	Matchup = MakeText(TEXT(""), 14, C::Ink, true);
-	AddRow(Col, Matchup, 6.f);
-	Lore = MakeText(TEXT(""), 13, C::Ink);
-	AddRow(Col, Lore, 2.f, 12.f);
+	UBorder* Card = MakePanel(PaperPanel(), FMargin(28.f, 24.f));
+	AddRow(Poster, Sized(Card, 1080.f, 0.f), -6.f, 0.f);
+	UHorizontalBox* Body = WidgetTree->ConstructWidget<UHorizontalBox>(); Card->SetContent(Body);
+
+	// Left: the curse, big, integer-scaled so its pixels stay square.
+	UBorder* Plate = MakePanel(GbUi::PaperHi(), FMargin(8.f));
+	WildImage = WidgetTree->ConstructWidget<UImage>(); WildImage->SetRenderTransformPivot(FVector2D(.5f, 1.f));
+	USizeBox* PlateBox = WidgetTree->ConstructWidget<USizeBox>(); PlateBox->SetWidthOverride(312.f); PlateBox->SetHeightOverride(312.f);
+	UScaleBox* Keep = WidgetTree->ConstructWidget<UScaleBox>(); Keep->SetStretch(EStretch::None); Keep->SetContent(WildImage);
+	PlateBox->SetContent(Keep); Plate->SetContent(PlateBox);
+	AddCol(Body, Plate, false, 28.f)->SetVerticalAlignment(VAlign_Top);
+
+	// Right: who it is, how your partner fares, what it does, and the two choices.
+	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>();
+	AddCol(Body, Col, true, 0.f)->SetVerticalAlignment(VAlign_Fill);
+	WildName = MakeText(TEXT(""), 44, C::Ink, true); WildName->SetAutoWrapText(false);
+	AddRow(Col, WildName, 0.f, 2.f);
+	UHorizontalBox* TagRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+	EmotionImage = WidgetTree->ConstructWidget<UImage>(); AddCol(TagRow, Sized(EmotionImage, 33.f, 33.f), false, 10.f);
+	Tags = MakeText(TEXT(""), 22, C::Ink, true); AddCol(TagRow, Tags, true, 0.f);
+	AddRow(Col, TagRow, 0.f, 10.f);
+	Intro = MakeText(TEXT(""), 20, C::Ink); Intro->SetAutoWrapText(true);
+	AddRow(Col, Intro, 0.f, 12.f);
+
+	// The matchup: your partner's face, the plain sentence, and a coloured verdict chip (gold good, crimson bad).
+	UBorder* MatchPanel = MakePanel(GbUi::Paper2(), FMargin(12.f, 8.f));
+	UHorizontalBox* MatchRow = WidgetTree->ConstructWidget<UHorizontalBox>(); MatchPanel->SetContent(MatchRow);
+	UBorder* Face = MakePanel(GbUi::PaperHi(), FMargin(4.f));
+	PartnerImage = WidgetTree->ConstructWidget<UImage>(); Face->SetContent(Sized(PartnerImage, 56.f, 56.f));
+	AddCol(MatchRow, Face, false, 14.f);
+	Matchup = MakeText(TEXT(""), 20, C::Ink, true); Matchup->SetAutoWrapText(true);
+	AddCol(MatchRow, Matchup, true, 12.f);
+	MatchChip = MakePanel(C::Gold, FMargin(12.f, 6.f));
+	MatchChipText = MakeText(TEXT(""), 20, C::Ink, true); MatchChip->SetContent(MatchChipText);
+	AddCol(MatchRow, MatchChip, false, 0.f);
+	AddRow(Col, MatchPanel, 0.f, 12.f);
+
+	// No signature move line: battles do not use signature moves yet (server/src/battles.ts only passes them on).
+	Lore = MakeText(TEXT(""), 18, C::Ink); Lore->SetAutoWrapText(true);
+	AddRow(Col, Lore, 0.f, 16.f);
 
 	UHorizontalBox* Buttons = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-	UTextBlock* Ignored = nullptr;
-	UButton* Fight = MakeButton(TEXT("Fight!"), Ignored, C::Gold);
-	Fight->OnClicked.AddDynamic(this, &UGbEncounterWidget::HandleFight);
-	AddCol(Buttons, Sized(Fight, 0.f, 44.f), true, 12.f);
-	UButton* Slip = MakeButton(TEXT("Slip away"), Ignored, C::Stone);
+	UTextBlock* FightLabel = nullptr;
+	FightButton = MakeButton(TEXT("Fight!"), FightLabel, C::Crimson);
+	FightLabel->SetFont(GbUi::Font(28, true));
+	UHorizontalBox* FightRow = WidgetTree->ConstructWidget<UHorizontalBox>(); FightButton->SetContent(FightRow);
+	AddCol(FightRow, FightLabel, true, 14.f);
+	UBorder* Cap = MakePanel(GbUi::PaperHi(), FMargin(6.f, 3.f)); Cap->SetContent(MakeText(TEXT("Enter"), 18, C::Ink, true));
+	AddCol(FightRow, Cap, false, 0.f);
+	FightButton->OnClicked.AddDynamic(this, &UGbEncounterWidget::HandleFight);
+	AddCol(Buttons, Sized(FightButton, 0.f, 72.f), true, 16.f);
+	UTextBlock* SlipLabel = nullptr;
+	UButton* Slip = MakeButton(TEXT("Slip away"), SlipLabel, GbUi::Paper2());
+	SlipLabel->SetFont(GbUi::Font(24, true));
 	Slip->OnClicked.AddDynamic(this, &UGbEncounterWidget::HandleSlipAway);
-	AddCol(Buttons, Sized(Slip, 0.f, 44.f), true, 0.f);
-	AddRow(Col, Buttons, 6.f);
+	AddCol(Buttons, Sized(Slip, 300.f, 72.f), false, 0.f);
+	UVerticalBoxSlot* ButtonSlot = AddRow(Col, Buttons, 0.f, 0.f);
+	ButtonSlot->SetVerticalAlignment(VAlign_Bottom); ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
-	Centre(Root, Card);
+	Centre(Root, Poster);
+}
+
+void UGbEncounterWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	if (!WildImage) return;
+	Clock += DeltaTime;
+	// The same slow idle bob as on the battle stage; none when the player asked for less motion.
+	const bool bStill = UGbUserSettings::Get()->bReducedBattleMotion;
+	WildImage->SetRenderTranslation(FVector2D(0.f, bStill ? 0.f : FMath::Sin(Clock * 3.5f) * 4.f));
+}
+
+FReply UGbEncounterWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
+{
+	if (Event.GetKey() == EKeys::Enter && !Event.IsRepeat()) { HandleFight(); return FReply::Handled(); }
+	return Super::NativeOnPreviewKeyDown(Geometry, Event);
 }
 
 void UGbEncounterWidget::Show(const FGbBattleStart& Battle)
@@ -739,12 +823,28 @@ void UGbEncounterWidget::Show(const FGbBattleStart& Battle)
 	FString MatchText = FString::Printf(TEXT("%s vs %s: even match."), *Partner, *Battle.Wild.Name);
 	if (M == TEXT("advantage")) MatchText = FString::Printf(TEXT("Your %s has the advantage."), *Partner);
 	else if (M == TEXT("disadvantage")) MatchText = FString::Printf(TEXT("Careful: %s resists your %s."), *Battle.Wild.Name, *Partner);
-	Matchup->SetText(FText::FromString(FString::Printf(TEXT("%s %s  |  %s"),
-		*Capitalised(Battle.Wild.Emotion), *Capitalised(Battle.Wild.Omen), *MatchText)));
-	Matchup->SetColorAndOpacity(FSlateColor(EmotionColor(Battle.Wild.Emotion)));
+	Matchup->SetText(FText::FromString(MatchText));
+
+	// Verdict chip: ink on gold (6.5:1), cream on crimson (7.3:1), ink on paper (11:1).
+	const bool bGood = M == TEXT("advantage"), bBad = M == TEXT("disadvantage");
+	MatchChip->SetBrush(GbUi::PanelBrush(bGood ? C::Gold : bBad ? C::Crimson : GbUi::Paper3(), false));
+	MatchChipText->SetText(FText::FromString(bGood ? TEXT("Advantage") : bBad ? TEXT("Resists") : TEXT("Even")));
+	MatchChipText->SetColorAndOpacity(FSlateColor(bBad ? GbUi::PaperHi() : C::Ink));
+
+	// The curse itself: as large as fits the 312 plate at a whole-number scale (48 px -> x6, 56 -> x5, 64 -> x4).
+	const FString Species = Battle.View.Wild.SpeciesId.IsEmpty() ? Battle.Wild.Id : Battle.View.Wild.SpeciesId;
+	FSlateBrush Art = ArtBrush(CurseArt(Species), 1.f);
+	const float Scale = FMath::Max(1.f, FMath::FloorToFloat(312.f / FMath::Max(Art.ImageSize.X, Art.ImageSize.Y)));
+	WildImage->SetBrush(ArtBrush(CurseArt(Species), Scale));
+	PartnerImage->SetBrush(ArtBrush(CurseArt(Battle.View.Player.SpeciesId), 1.f));
+	WildName->SetText(FText::FromString(Battle.Wild.Name));
+	EmotionImage->SetBrush(ArtBrush(TEXT("emo_") + (Battle.Wild.Emotion.IsEmpty() ? FString(TEXT("rage")) : Battle.Wild.Emotion), 3.f));
+	Tags->SetText(FText::FromString(FString::Printf(TEXT("%s  -  %s"), *Capitalised(Battle.Wild.Emotion), *Capitalised(Battle.Wild.Omen))));
 
 	Lore->SetText(FText::FromString(Battle.Wild.BornFrom.IsEmpty() ? FString()
 		: FString::Printf(TEXT("Born from %s."), *Battle.Wild.BornFrom)));
+	Lore->SetVisibility(Battle.Wild.BornFrom.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	if (FightButton) FightButton->SetKeyboardFocus();
 }
 
 void UGbEncounterWidget::HandleFight() { OnFight.Broadcast(); }
@@ -752,104 +852,122 @@ void UGbEncounterWidget::HandleSlipAway() { OnSlipAway.Broadcast(); }
 
 // ================================================================ battle
 
+// Fixed 1080p composition: market stage, symmetric portrait cards, six commands and a two-line log.
+// The outer ScaleBox fits the whole composition at 720p without changing information order.
 void UGbBattleWidget::BuildTree()
 {
-	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Root"));
-	WidgetTree->RootWidget = Root;
-
-	// Dim the Ward behind the battle and catch every click.
-	UBorder* Backdrop = MakePanel(Dim(), FMargin(0.f));
-	UCanvasPanelSlot* BackSlot = Root->AddChildToCanvas(Backdrop);
-	BackSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-	BackSlot->SetOffsets(FMargin(0.f));
-
-	UBorder* Card = MakePanel(PaperPanel(), FMargin(24.f, 18.f));
-	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	Card->SetContent(Sized(Col, 720.f, 0.f));
-
-	auto SideBlock = [this, Col](TObjectPtr<UTextBlock>& OutName, TObjectPtr<UTextBlock>& OutTags, TObjectPtr<UProgressBar>& OutBar, TObjectPtr<UTextBlock>& OutHp)
+	// One measured 1920x1080 composition, uniformly fitted inside the viewport's DPI scaler.
+	UCanvasPanel* Outer = WidgetTree->ConstructWidget<UCanvasPanel>(); WidgetTree->RootWidget = Outer;
+	UBorder* Ink = WidgetTree->ConstructWidget<UBorder>(); Ink->SetBrushColor(GbUi::Night());
+	auto* InkSlot = Outer->AddChildToCanvas(Ink); InkSlot->SetAnchors(FAnchors(0,0,1,1)); InkSlot->SetOffsets(FMargin(0));
+	UScaleBox* Fit = WidgetTree->ConstructWidget<UScaleBox>(); Fit->SetStretch(EStretch::ScaleToFit);
+	auto* FitSlot = Outer->AddChildToCanvas(Fit); FitSlot->SetAnchors(FAnchors(0,0,1,1)); FitSlot->SetOffsets(FMargin(0));
+	USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>(); Size->SetWidthOverride(1920); Size->SetHeightOverride(1080); Fit->SetContent(Size);
+	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(); Size->SetContent(Root);
+	Root->SetClipping(EWidgetClipping::ClipToBounds); SetIsFocusable(true);
+	const auto Place = [](UCanvasPanel* Canvas, UWidget* W, float X, float Y, float Width, float Height)
 	{
-		UHorizontalBox* Top = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-		OutName = MakeText(TEXT(""), 20, C::Ink, true);
-		OutName->SetAutoWrapText(false);
-		AddCol(Top, OutName, false, 12.f);
-		OutTags = MakeText(TEXT(""), 14, C::Ink, true);
-		OutTags->SetAutoWrapText(false);
-		AddCol(Top, OutTags, true, 0.f);
-		AddRow(Col, Top, 6.f, 0.f);
-
-		UHorizontalBox* Hp = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-		OutBar = MakeBar(C::Leaf);
-		AddCol(Hp, Sized(OutBar, 0.f, 16.f), true, 10.f);
-		OutHp = MakeText(TEXT(""), 14, C::Ink, true);
-		OutHp->SetAutoWrapText(false);
-		AddCol(Hp, Sized(OutHp, 80.f, 0.f), false, 0.f);
-		AddRow(Col, Hp, 2.f, 6.f);
+		auto* S = Canvas->AddChildToCanvas(W); S->SetPosition(FVector2D(X,Y)); S->SetSize(FVector2D(Width,Height)); return S;
 	};
-	SideBlock(WildName, WildTags, WildHp, WildHpText);
-	SideBlock(PlayerName, PlayerTags, PlayerHp, PlayerHpText);
-
-	UBorder* LogPanel = MakePanel(FLinearColor(C::Stone.R, C::Stone.G, C::Stone.B, 1.f), FMargin(12.f, 8.f));
-	Log = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	LogPanel->SetContent(Sized(Log, 0.f, 150.f));
-	AddRow(Col, LogPanel, 8.f, 8.f);
-
-	Problem = MakeText(TEXT(""), 13, C::Crimson, true);
-	Problem->SetVisibility(ESlateVisibility::Collapsed);
-	AddRow(Col, Problem);
-
-	UTextBlock* Ignored = nullptr;
-	auto Add = [this](UHorizontalBox* Row, UButton* B, bool bLast)
+	const auto Art = [this](const FString& Name)
 	{
-		AddCol(Row, Sized(B, 0.f, 44.f), true, bLast ? 0.f : 10.f);
+		auto* I = WidgetTree->ConstructWidget<UImage>(); I->SetBrush(ArtBrush(Name,1)); I->SetVisibility(ESlateVisibility::HitTestInvisible); return I;
 	};
-
-	Actions = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-	AttackButton = MakeButton(TEXT("Attack"), Ignored, C::Gold);
-	AttackButton->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleAttack);
-	Add(Actions, AttackButton, false);
-	WardButton = MakeButton(TEXT("Ward"), Ignored, C::Stone);
-	WardButton->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleWard);
-	Add(Actions, WardButton, false);
-	UTextBlock* SalveText = nullptr;
-	SalveButton = MakeButton(TEXT("Salve"), SalveText, C::Stone);
-	SalveLabel = SalveText;
-	SalveButton->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleSalve);
-	Add(Actions, SalveButton, true);
-	AddRow(Col, Actions, 4.f, 4.f);
-
-	Actions2 = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-	UTextBlock* SealText = nullptr;
-	SealButton = MakeButton(TEXT("Seal"), SealText, C::Crimson);
-	SealLabel = SealText;
-	SealLabel->SetColorAndOpacity(FSlateColor(C::Paper));
-	SealButton->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleSeal);
-	Add(Actions2, SealButton, false);
-	UTextBlock* GildedText = nullptr;
-	GildedButton = MakeButton(TEXT("Gilded Seal"), GildedText, C::Gold);
-	GildedLabel = GildedText;
-	GildedButton->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleGildedSeal);
-	Add(Actions2, GildedButton, false);
-	UTextBlock* FleeText = nullptr;
-	FleeButton = MakeButton(TEXT("Flee"), FleeText, C::Stone);
-	FleeLabel = FleeText;
-	FleeButton->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleFlee);
-	Add(Actions2, FleeButton, true);
-	AddRow(Col, Actions2, 4.f, 4.f);
-
-	EndPanel = MakePanel(InkPanel(), FMargin(14.f, 10.f));
-	UVerticalBox* EndCol = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-	EndText = MakeText(TEXT(""), 18, C::Paper, true);
-	AddRow(EndCol, EndText, 0.f, 8.f);
-	UButton* Back = MakeButton(TEXT("Back to the Ward"), Ignored, C::Gold);
-	Back->OnClicked.AddDynamic(this, &UGbBattleWidget::HandleBack);
-	AddRow(EndCol, Sized(Back, 0.f, 44.f));
-	EndPanel->SetContent(EndCol);
+	UCanvasPanel* Stage = WidgetTree->ConstructWidget<UCanvasPanel>(); Stage->SetClipping(EWidgetClipping::ClipToBounds);
+	Place(Root,Stage,0,0,1920,720);
+	Place(Stage,Art(TEXT("backdrop")),0,0,1920,1080);
+	KessaImage = Art(TEXT("kessa")); Place(Stage,KessaImage,884,42,112,128);
+	// Fixed bounds prevent species texture dimensions from changing the layout.
+	const FVector2D Feet[2] = { FVector2D(1416,510), FVector2D(468,690) };
+	const float Extent[2] = {448,288};
+	for(int32 Side=0;Side<2;++Side)
+	{
+		Sprites[Side]=Art(TEXT("curse_weepwick")); Sprites[Side]->SetRenderTransformPivot(FVector2D(.5,1));
+		Place(Stage,Sprites[Side],Feet[Side].X-Extent[Side]/2,Feet[Side].Y-Extent[Side],Extent[Side],Extent[Side]);
+		WardImages[Side]=Art(TEXT("icon_ward")); Place(Stage,WardImages[Side],Feet[Side].X+Extent[Side]/2-40,Feet[Side].Y-140,112,112);
+		WardImages[Side]->SetVisibility(ESlateVisibility::Collapsed);
+		// The number pops on the curse's body (ink outline keeps it readable on any sprite), not up in the lantern strings.
+		Numbers[Side]=MakeText(TEXT(""),48,GbUi::PaperHi(),true); Numbers[Side]->SetAutoWrapText(false); Numbers[Side]->SetJustification(ETextJustify::Center);
+		auto Font=Numbers[Side]->GetFont(); Font.OutlineSettings=FFontOutlineSettings(4,C::Ink); Numbers[Side]->SetFont(Font);
+		Place(Stage,Numbers[Side],Feet[Side].X-120,Feet[Side].Y-Extent[Side]*.62f-34,240,68);
+		Numbers[Side]->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	SealStamp=Art(TEXT("wax_seal")); Place(Stage,SealStamp,1336,260,160,176); SealStamp->SetVisibility(ESlateVisibility::Collapsed);
+	Place(Root,MakePanel(C::Paper,FMargin(24,20)),0,720,1920,360);
+	for(int32 Side=0;Side<2;++Side)
+	{
+		const float X=Side==1?24:1476;
+		Place(Root,MakePanel(GbUi::Paper2(),FMargin(12)),X,744,420,228);
+		UTextBlock* Name=MakeText(TEXT(""),28,C::Ink,true); Name->SetAutoWrapText(false); Name->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
+		Place(Root,Name,X+24,756,372,42);
+		Place(Root,MakePanel(GbUi::PaperHi(),FMargin(6)),X+24,804,96,96);
+		Portraits[Side]=Art(TEXT("curse_weepwick")); Place(Root,Portraits[Side],X+36,816,72,72);
+		EmotionIcons[Side]=Art(TEXT("emo_rage")); Place(Root,EmotionIcons[Side],X+138,810,32,32);
+		UTextBlock* Tags=MakeText(TEXT(""),22,C::Ink,true); Tags->SetAutoWrapText(false);
+		Place(Root,Tags,X+182,806,220,82);
+		UProgressBar* Bar=MakeBar(C::Leaf);
+		// Empty HP is ink, so green/gold/crimson all remain distinguishable from the track.
+		auto BarStyle=Bar->GetWidgetStyle(); BarStyle.BackgroundImage.TintColor=FSlateColor(C::Ink); Bar->SetWidgetStyle(BarStyle);
+		Place(Root,Bar,X+24,912,372,21);
+		UTextBlock* Hp=MakeText(TEXT(""),24,C::Ink); Hp->SetAutoWrapText(false); Place(Root,Hp,X+24,938,372,30);
+		if(Side==0){WildName=Name;WildTags=Tags;WildHp=Bar;WildHpText=Hp;}
+		else {PlayerName=Name;PlayerTags=Tags;PlayerHp=Bar;PlayerHpText=Hp;}
+	}
+	// Six commands in a stable 3x2 grid; the two-line log spans the entire strip.
+	const TCHAR* Icons[]={TEXT("icon_attack"),TEXT("icon_ward"),TEXT("icon_salve"),TEXT("icon_seal"),TEXT("icon_gilded"),TEXT("icon_flee")};
+	const TCHAR* Names[]={TEXT("Attack"),TEXT("Ward"),TEXT("Salve"),TEXT("Seal"),TEXT("Gilded Seal"),TEXT("Flee")};
+	UButton* Buttons[6];
+	for(int32 I=0;I<6;++I)
+	{
+		const float X=468+(I%3)*336,Y=744+(I/3)*120;
+		FocusFrames[I]=WidgetTree->ConstructWidget<UBorder>(); FocusFrames[I]->SetBrushColor(C::Gold);
+		Place(Root,FocusFrames[I],X-3,Y-3,318,114); FocusFrames[I]->SetVisibility(ESlateVisibility::Hidden);
+	}
+	Actions=WidgetTree->ConstructWidget<UHorizontalBox>(); Place(Root,Actions,468,744,984,108);
+	Actions2=WidgetTree->ConstructWidget<UHorizontalBox>(); Place(Root,Actions2,468,864,984,108);
+	for(int32 I=0;I<6;++I)
+	{
+		const bool Primary=I==0||I==3;
+		UTextBlock* Label=nullptr; Buttons[I]=MakeButton(Names[I],Label,Primary?C::Crimson:I==4?C::Gold:GbUi::Paper2());
+		UCanvasPanel* Face=WidgetTree->ConstructWidget<UCanvasPanel>(); Buttons[I]->SetContent(Face);
+		auto Style=Buttons[I]->GetStyle(); Style.NormalPadding=FMargin(0); Style.PressedPadding=FMargin(0,3,0,-3); Buttons[I]->SetStyle(Style);
+		Place(Face,MakePanel(GbUi::PaperHi(),FMargin(6)),12,18,72,72); Place(Face,Art(Icons[I]),16,22,64,64);
+		auto Font=Label->GetFont(); Font.Size=26; Label->SetFont(Font); Label->SetJustification(ETextJustify::Left);
+		Place(Face,Label,96,18,204,40);
+		if(I>=2)
+		{
+			UTextBlock* Note=MakeText(TEXT(""),22,Primary?GbUi::PaperHi():C::Ink,true); Note->SetAutoWrapText(false);
+			Place(Face,Note,96,62,162,32);
+			if(I==2)SalveLabel=Note;else if(I==3)SealLabel=Note;else if(I==4)GildedLabel=Note;else FleeLabel=Note;
+		}
+		UBorder* Cap=MakePanel(GbUi::PaperHi(),FMargin(3)); UTextBlock* Key=MakeText(FString::FromInt(I+1),22,C::Ink,true); Key->SetJustification(ETextJustify::Center); Cap->SetContent(Key);
+		Place(Face,Cap,264,58,36,42);
+		AddCol(I<3?Actions:Actions2,Sized(Buttons[I],312,108),false,I%3==2?0:24);
+	}
+	AttackButton=Buttons[0]; WardButton=Buttons[1]; SalveButton=Buttons[2]; SealButton=Buttons[3]; GildedButton=Buttons[4]; FleeButton=Buttons[5];
+	AttackButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleAttack); WardButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleWard);
+	SalveButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleSalve); SealButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleSeal);
+	GildedButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleGildedSeal); FleeButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleFlee);
+	UBorder* LogPanel=MakePanel(C::Ink,FMargin(18,4)); Place(Root,LogPanel,24,990,1872,72);
+	Log=WidgetTree->ConstructWidget<UVerticalBox>(); LogPanel->SetContent(Log);
+	Problem=MakeText(TEXT(""),24,GbUi::PaperHi(),true); UBorder* Error=MakePanel(C::Ink,FMargin(20,14)); Error->SetContent(Problem);
+	Place(Root,Error,384,620,1152,76); Error->SetVisibility(ESlateVisibility::SelfHitTestInvisible); Problem->SetVisibility(ESlateVisibility::Collapsed);
+	// Hide the entire error backing with the label (ShowProblem toggles its parent).
+	Error->SetVisibility(ESlateVisibility::Collapsed);
+	// The result covers the (now locked) command grid, so the stage keeps the seal, the fade or the fallen partner in view.
+	EndPanel=MakePanel(C::Ink,FMargin(30,20)); Place(Root,EndPanel,468,744,984,228);
+	UVerticalBox* EndCol=WidgetTree->ConstructWidget<UVerticalBox>(); EndPanel->SetContent(EndCol);
+	EndText=MakeText(TEXT(""),28,GbUi::PaperHi(),true); EndText->SetJustification(ETextJustify::Center); AddRow(EndCol,EndText,0,14);
+	UTextBlock* BackLabel=nullptr; BackButton=MakeButton(TEXT("Back to the Ward"),BackLabel,C::Gold);
+	BackLabel->SetFont(GbUi::Font(26,true)); BackButton->OnClicked.AddDynamic(this,&UGbBattleWidget::HandleBack);
+	UHorizontalBox* ReturnRow=WidgetTree->ConstructWidget<UHorizontalBox>(); BackButton->SetContent(ReturnRow);
+	AddCol(ReturnRow,BackLabel,true,18);
+	UBorder* ReturnCap=MakePanel(GbUi::PaperHi(),FMargin(6,3));
+	ReturnCap->SetContent(MakeText(TEXT("Enter"),22,C::Ink,true)); AddCol(ReturnRow,ReturnCap,false,0);
+	AddRow(EndCol,Sized(BackButton,600,64),0,0)->SetHorizontalAlignment(HAlign_Center);
 	EndPanel->SetVisibility(ESlateVisibility::Collapsed);
-	AddRow(Col, EndPanel, 8.f);
-
-	Centre(Root, Card);
 }
+
 
 void UGbBattleWidget::ShowStart(const FGbBattleStart& Battle)
 {
@@ -860,6 +978,29 @@ void UGbBattleWidget::ShowStart(const FGbBattleStart& Battle)
 	Problem->SetVisibility(ESlateVisibility::Collapsed);
 	Actions->SetVisibility(ESlateVisibility::Visible);
 	Actions2->SetVisibility(ESlateVisibility::Visible);
+
+	// A fresh stage: both curses step in, nothing left over from the last fight.
+	Cues.Reset(); SealTime = 0.f; bSealHolds = false;
+	FeedbackRemaining=0; bBattleEnded=false; bWaitingForReply=false; Clock=0;
+	Problem->GetParent()->SetVisibility(ESlateVisibility::Collapsed);
+	SealStamp->SetVisibility(ESlateVisibility::Collapsed);
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		Lunge[Side] = Hit[Side] = NumberTime[Side] = 0.f;
+		Shrink[Side] = ShrinkTo[Side] = FadeTo[Side] = Fade[Side] = WardTime[Side] = 0.f;
+		WardImages[Side]->SetVisibility(ESlateVisibility::Collapsed);
+		Sprites[Side]->SetRenderScale(FVector2D(1)); Sprites[Side]->SetRenderTranslation(FVector2D::ZeroVector);
+		Sprites[Side]->SetColorAndOpacity(FLinearColor::White);
+		Sprites[Side]->SetRenderOpacity(1.f);
+		Numbers[Side]->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	const FGbSide* Sides[2] = { &Battle.View.Wild, &Battle.View.Player };
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		Sprites[Side]->SetBrush(ArtBrush(CurseArt(Sides[Side]->SpeciesId),1));
+		Portraits[Side]->SetBrush(ArtBrush(CurseArt(Sides[Side]->SpeciesId),1));
+		ShownHp[Side] = HpFraction(*Sides[Side]);
+	}
 	ShowView(Battle.View);
 	AddLines(Battle.Lines);
 	SetButtonsEnabled(true);
@@ -868,17 +1009,141 @@ void UGbBattleWidget::ShowStart(const FGbBattleStart& Battle)
 void UGbBattleWidget::ApplyTurn(const FGbBattleTurn& Turn)
 {
 	if (!Log) return;
+	bWaitingForReply=false;
 	Problem->SetVisibility(ESlateVisibility::Collapsed);
+	Problem->GetParent()->SetVisibility(ESlateVisibility::Collapsed);
+
+	// The server sends what the screen should show, not a script; the stage plays what the numbers imply.
+	const int32 WildLost = LastView.Wild.Hp - Turn.View.Wild.Hp;
+	const int32 PartnerLost = LastView.Player.Hp - Turn.View.Player.Hp;
+	float Reply = 0.15f; // when the wild curse answers
+	if (Turn.Action.Contains(TEXT("seal"), ESearchCase::IgnoreCase))
+	{
+		bSealHolds = Turn.Outcome == EGbOutcome::Bound;
+		Cue(3, 0, 0.f); Reply = 0.9f;
+	}
+	else if (Turn.Action.Contains(TEXT("ward"), ESearchCase::IgnoreCase)) { Cue(6,1,0); Reply=.55f; }
+	else if (Turn.Action.Contains(TEXT("salve"), ESearchCase::IgnoreCase)) Reply = 0.5f;
+	else if (WildLost > 0) { Cue(0, 1, 0.f); Reply = 0.6f; }
+	if (WildLost > 0) Cue(1, 0, 0.16f, WildLost);
+	if (PartnerLost < 0) Cue(2, 1, 0.1f, -PartnerLost);
+	if (PartnerLost > 0) { Cue(0, 0, Reply); Cue(1, 1, Reply + 0.16f, PartnerLost); }
+	if (Turn.bEnded)
+	{
+		if (Turn.Outcome == EGbOutcome::Bound) Cue(4, 0, 0.45f);
+		else if (Turn.Outcome == EGbOutcome::Won) Cue(5, 0, 0.5f);
+		else if (Turn.Outcome == EGbOutcome::Lost) Cue(5, 1, Reply + 0.5f);
+	}
+
 	ShowView(Turn.View);
+	// The authoritative HP target changes when its hit/heal lands, not before the lunge.
+	TargetHp[0]=ShownHp[0]; TargetHp[1]=ShownHp[1];
+	if(WildLost!=0) Cue(7,0,.16f); else TargetHp[0]=HpFraction(Turn.View.Wild);
+	if(PartnerLost!=0) Cue(7,1,PartnerLost>0?Reply+.16f:.1f); else TargetHp[1]=HpFraction(Turn.View.Player);
 	AddLines(Turn.Lines);
+	FeedbackRemaining=Turn.Action.Contains(TEXT("seal"),ESearchCase::IgnoreCase)?1.45f:Reply+.72f;
+	SetButtonsEnabled(false);
 	if (Turn.bEnded)
 	{
 		ShowEnd(Turn.Outcome, Turn.Points, Turn.View.Wild.Name);
 	}
-	else
+}
+
+void UGbBattleWidget::Cue(int32 Type, int32 Side, float Delay, int32 Amount)
+{
+	FCue C; C.Type = Type; C.Side = Side; C.Delay = Delay; C.Amount = Amount;
+	if (Delay <= 0.f) Play(C); else Cues.Add(C);
+}
+
+void UGbBattleWidget::Play(const FCue& C)
+{
+	switch (C.Type)
 	{
-		SetButtonsEnabled(true);
+	case 0: Lunge[C.Side] = 1.f; break;
+	case 1: Hit[C.Side] = 1.f; ShowNumber(C.Side, FString::Printf(TEXT("-%d"), C.Amount), GbUi::PaperHi()); break;
+	case 2: ShowNumber(C.Side, FString::Printf(TEXT("+%d"), C.Amount), FLinearColor(0.55f, 0.95f, 0.45f)); break;
+	case 3: SealTime = 1.4f; SealStamp->SetVisibility(ESlateVisibility::HitTestInvisible); break;
+	case 4: ShrinkTo[C.Side] = 1.f; break;
+	case 5: FadeTo[C.Side] = 1.f; break;
+	case 6: WardTime[C.Side]=1.1f; WardImages[C.Side]->SetVisibility(ESlateVisibility::HitTestInvisible); break;
+	case 7: TargetHp[C.Side]=HpFraction(C.Side==0?LastView.Wild:LastView.Player); break;
+	default: break;
 	}
+}
+
+void UGbBattleWidget::ShowNumber(int32 Side, const FString& Text, const FLinearColor& Color)
+{
+	Numbers[Side]->SetText(FText::FromString(Text));
+	Numbers[Side]->SetColorAndOpacity(FSlateColor(Color));
+	Numbers[Side]->SetVisibility(ESlateVisibility::HitTestInvisible);
+	NumberTime[Side] = 1.f;
+}
+
+void UGbBattleWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	if (!Sprites[0] || !IsVisible()) return;
+	const bool Reduced=UGbUserSettings::Get()->bReducedBattleMotion;
+	Clock += DeltaTime;
+	for (int32 I = Cues.Num() - 1; I >= 0; --I)
+	{
+		if ((Cues[I].Delay -= DeltaTime) > 0.f) continue;
+		const FCue C = Cues[I]; Cues.RemoveAt(I); Play(C);
+	}
+
+	UProgressBar* Bars[2] = { WildHp, PlayerHp };
+	if(FeedbackRemaining>0)
+	{
+		FeedbackRemaining=FMath::Max(0.f,FeedbackRemaining-DeltaTime);
+		if(FeedbackRemaining==0 && !bBattleEnded && !bWaitingForReply) SetButtonsEnabled(true);
+		if(FeedbackRemaining==0 && bBattleEnded) { EndPanel->SetVisibility(ESlateVisibility::Visible); BackButton->SetKeyboardFocus(); }
+	}
+	UButton* Buttons[]={AttackButton,WardButton,SalveButton,SealButton,GildedButton,FleeButton};
+	for(int32 I=0;I<6;++I) FocusFrames[I]->SetVisibility(Buttons[I]->GetIsEnabled() && (Buttons[I]->IsHovered() || Buttons[I]->HasKeyboardFocus())?ESlateVisibility::HitTestInvisible:ESlateVisibility::Hidden);
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		Lunge[Side] = FMath::Max(0.f, Lunge[Side] - DeltaTime / 0.32f);
+		Hit[Side] = FMath::Max(0.f, Hit[Side] - DeltaTime / 0.5f);
+		Shrink[Side] = FMath::FInterpConstantTo(Shrink[Side], ShrinkTo[Side], DeltaTime, 2.2f);
+		Fade[Side] = FMath::FInterpConstantTo(Fade[Side], FadeTo[Side], DeltaTime, 2.2f);
+
+		// Idle bob; a lunge goes toward the other circle and back; a hit shakes and blinks red.
+		const float Toward = Side == 1 ? 1.f : -1.f;
+		const float Reach = FMath::Sin(Lunge[Side] * PI);
+		const float Shake = Hit[Side] > 0.f ? FMath::Sin(Clock * 45.f) * 6.f * Hit[Side] : 0.f;
+		const float Bob = FMath::Sin(Clock * (Side == 1 ? 2.9f : 3.5f) + Side) * 4.f;
+		Sprites[Side]->SetRenderTranslation(Reduced?FVector2D::ZeroVector:FVector2D(Toward * 72.f * Reach + Shake, Bob));
+		Sprites[Side]->SetRenderScale(FVector2D(Reduced?1.f:1.f-Shrink[Side]));
+		// One sustained tint, never a repeated red/white flash.
+		const bool bRed = Hit[Side] > .55f;
+		Sprites[Side]->SetColorAndOpacity(FLinearColor(1.f, bRed ? 0.3f : 1.f, bRed ? 0.3f : 1.f, 1.f - Fade[Side]));
+		if(Reduced && Shrink[Side]>=.99f) Sprites[Side]->SetRenderOpacity(0);
+		WardTime[Side]=FMath::Max(0.f,WardTime[Side]-DeltaTime);
+		if(WardTime[Side]==0) WardImages[Side]->SetVisibility(ESlateVisibility::Collapsed);
+
+		ShownHp[Side] = FMath::FInterpTo(ShownHp[Side], TargetHp[Side], DeltaTime, 7.f);
+		Bars[Side]->SetPercent(ShownHp[Side]);
+		Bars[Side]->SetFillColorAndOpacity(HpColor(ShownHp[Side]));
+
+		if (NumberTime[Side] > 0.f)
+		{
+			NumberTime[Side] -= DeltaTime / 0.95f;
+			Numbers[Side]->SetRenderTranslation(FVector2D(0.f, Reduced?0.f:-24.f * (1.f - NumberTime[Side])));
+			Numbers[Side]->SetRenderOpacity(FMath::Clamp(NumberTime[Side] * 3.f, 0.f, 1.f));
+			if (NumberTime[Side] <= 0.f) Numbers[Side]->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	// The wax seal comes down on the wild curse: it stays when the binding held, and lifts when it broke.
+	if (SealTime > 0.f)
+	{
+		SealTime = FMath::Max(bSealHolds ? 0.6f : 0.f, SealTime - DeltaTime);
+		const float In = FMath::Clamp((1.4f - SealTime) / 0.22f, 0.f, 1.f);
+		SealStamp->SetRenderScale(FVector2D(Reduced?1.f:FMath::Lerp(1.5f, 1.f, In)));
+		SealStamp->SetRenderOpacity(In * FMath::Clamp(SealTime / 0.3f, 0.f, 1.f));
+		if (SealTime <= 0.f) SealStamp->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	KessaImage->SetRenderTranslation(FVector2D(0.f, Reduced?0.f:FMath::Sin(Clock * 1.7f) * 4.f));
 }
 
 void UGbBattleWidget::ShowProblem(const FString& Message, bool bBattleOver)
@@ -886,12 +1151,14 @@ void UGbBattleWidget::ShowProblem(const FString& Message, bool bBattleOver)
 	if (!Problem) return;
 	Problem->SetText(FText::FromString(Message));
 	Problem->SetVisibility(ESlateVisibility::Visible);
+	Problem->GetParent()->SetVisibility(ESlateVisibility::Visible);
+	bWaitingForReply=false; FeedbackRemaining=0; Cues.Reset();
 	if (bBattleOver)
 	{
-		Actions->SetVisibility(ESlateVisibility::Collapsed);
-		Actions2->SetVisibility(ESlateVisibility::Collapsed);
+		bBattleEnded=true; SetButtonsEnabled(false);
 		EndText->SetText(FText::FromString(TEXT("The curse slipped back into the grass.")));
 		EndPanel->SetVisibility(ESlateVisibility::Visible);
+		BackButton->SetKeyboardFocus();
 	}
 	else
 	{
@@ -903,37 +1170,40 @@ void UGbBattleWidget::ShowView(const FGbBattleView& View)
 {
 	LastView = View;
 
-	auto Fill = [](const FGbSide& S, UTextBlock* Name, UTextBlock* Tags, UProgressBar* Bar, UTextBlock* Hp, const TCHAR* Prefix)
+	const FGbSide* Sides[2] = { &View.Wild, &View.Player };
+	UTextBlock* Names[2] = { WildName, PlayerName };
+	UTextBlock* Tags[2] = { WildTags, PlayerTags };
+	UTextBlock* Hps[2] = { WildHpText, PlayerHpText };
+	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		Name->SetText(FText::FromString(FString::Printf(TEXT("%s%s"), Prefix, *S.Name)));
-		Tags->SetText(FText::FromString(FString::Printf(TEXT("%s  %s"), *Capitalised(S.Emotion), *Capitalised(S.Omen))));
-		Tags->SetColorAndOpacity(FSlateColor(EmotionColor(S.Emotion)));
-		const float F = HpFraction(S);
-		Bar->SetPercent(F);
-		Bar->SetFillColorAndOpacity(HpColor(F));
-		Hp->SetText(FText::FromString(HpText(S)));
-	};
-	Fill(View.Wild, WildName, WildTags, WildHp, WildHpText, TEXT("Wild "));
-	Fill(View.Player, PlayerName, PlayerTags, PlayerHp, PlayerHpText, TEXT("Your "));
+		const FGbSide& S = *Sides[Side];
+		Names[Side]->SetText(FText::FromString(S.Name));
+		Tags[Side]->SetText(FText::FromString(FString::Printf(TEXT("%s\n%s"), *Capitalised(S.Emotion), *Capitalised(S.Omen))));
+		Tags[Side]->SetColorAndOpacity(FSlateColor(C::Ink));
+		EmotionIcons[Side]->SetBrush(ArtBrush(TEXT("emo_") + (S.Emotion.IsEmpty() ? FString(TEXT("rage")) : S.Emotion), 3.f));
+		// The bar itself eases to this in NativeTick.
+		TargetHp[Side] = HpFraction(S);
+		Hps[Side]->SetText(FText::FromString(HpText(S)));
+	}
 
-	SalveLabel->SetText(FText::FromString(FString::Printf(TEXT("Salve (%d)"), View.Salves)));
-	SealLabel->SetText(FText::FromString(FString::Printf(TEXT("Seal %s"), *Percent(View.SealChance))));
-	GildedLabel->SetText(FText::FromString(FString::Printf(TEXT("Gilded Seal %s (%d)"), *Percent(View.GildedSealChance), View.GildedSeals)));
-	FleeLabel->SetText(FText::FromString(FString::Printf(TEXT("Flee %s"), *Percent(View.FleeChance))));
+	SalveLabel->SetText(FText::FromString(FString::Printf(TEXT("x%d"), View.Salves)));
+	SealLabel->SetText(FText::FromString(Percent(View.SealChance)));
+	GildedLabel->SetText(FText::FromString(FString::Printf(TEXT("%s  x%d"), *Percent(View.GildedSealChance), View.GildedSeals)));
+	FleeLabel->SetText(FText::FromString(Percent(View.FleeChance)));
 }
 
 void UGbBattleWidget::AddLines(const TArray<FString>& Lines)
 {
-	constexpr int32 MaxLines = 6;
+	constexpr int32 MaxLines = 2;
 	for (const FString& L : Lines) LogLines.Add(L);
 	if (LogLines.Num() > MaxLines) LogLines.RemoveAt(0, LogLines.Num() - MaxLines);
 	Log->ClearChildren();
 	for (int32 i = 0; i < LogLines.Num(); ++i)
 	{
-		// Newest line in full ink, older ones faded.
-		const float Alpha = i == LogLines.Num() - 1 ? 1.f : 0.65f;
-		UTextBlock* T = MakeText(LogLines[i], 14, FLinearColor(C::Ink.R, C::Ink.G, C::Ink.B, Alpha), i == LogLines.Num() - 1);
-		AddRow(Log, T, 1.f, 1.f);
+		// Opaque cream on ink: both lines carry readable turn information.
+		UTextBlock* T = MakeText(LogLines[i], 22, GbUi::PaperHi());
+		T->SetAutoWrapText(false); T->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis); T->SetToolTipText(FText::FromString(LogLines[i]));
+		AddRow(Log, T, 0.f, 0.f);
 	}
 }
 
@@ -949,27 +1219,48 @@ void UGbBattleWidget::SetButtonsEnabled(bool bEnabled)
 
 void UGbBattleWidget::Send(EGbAction Action)
 {
+	if(bBattleEnded || bWaitingForReply || FeedbackRemaining>0) return;
+	const bool Allowed = Action==EGbAction::Attack?LastView.bCanAttack:Action==EGbAction::Ward?LastView.bCanWard:Action==EGbAction::Salve?LastView.bCanSalve:Action==EGbAction::Seal?LastView.bCanSeal:Action==EGbAction::GildedSeal?LastView.bCanGildedSeal:LastView.bCanFlee;
+	if(!Allowed) return;
 	UGbApiSubsystem* A = Api();
 	if (!A || !A->IsBattleOpen() || A->IsBattleBusy()) return;
 	SetButtonsEnabled(false);
+	bWaitingForReply=true;
 	A->SendAction(Action);
 }
 
 void UGbBattleWidget::ShowEnd(EGbOutcome Outcome, int32 Points, const FString& Wild)
 {
-	Actions->SetVisibility(ESlateVisibility::Collapsed);
-	Actions2->SetVisibility(ESlateVisibility::Collapsed);
+	bBattleEnded=true; SetButtonsEnabled(false);
 	FString Text;
 	switch (Outcome)
 	{
-	case EGbOutcome::Bound: Text = FString::Printf(TEXT("Bound! %s is sealed into a talisman.  +%d points"), *Wild, Points); break;
-	case EGbOutcome::Won: Text = FString::Printf(TEXT("Exorcised! %s fades into ash.  +%d points"), *Wild, Points); break;
+	case EGbOutcome::Bound: Text = FString::Printf(TEXT("Bound! %s is sealed into a talisman.\n+%d points"), *Wild, Points); break;
+	case EGbOutcome::Won: Text = FString::Printf(TEXT("Exorcised! %s fades into ash.\n+%d points"), *Wild, Points); break;
 	case EGbOutcome::Fled: Text = TEXT("You got away. The curse still haunts the tall grass."); break;
 	case EGbOutcome::Lost: Text = TEXT("Your partner is spent. You stagger back to the Ward."); break;
 	default: Text = TEXT("The battle is over."); break;
 	}
 	EndText->SetText(FText::FromString(Text));
-	EndPanel->SetVisibility(ESlateVisibility::Visible);
+	if(FeedbackRemaining<=0) EndPanel->SetVisibility(ESlateVisibility::Visible);
+}
+
+FReply UGbBattleWidget::NativeOnPreviewKeyDown(const FGeometry& Geometry,const FKeyEvent& Event)
+{
+	const FKey Key=Event.GetKey();
+	if(bBattleEnded && EndPanel->GetVisibility()==ESlateVisibility::Visible && Key==EKeys::Enter) { HandleBack(); return FReply::Handled(); }
+	const FKey Keys[]={EKeys::One,EKeys::Two,EKeys::Three,EKeys::Four,EKeys::Five,EKeys::Six};
+	const EGbAction Moves[]={EGbAction::Attack,EGbAction::Ward,EGbAction::Salve,EGbAction::Seal,EGbAction::GildedSeal,EGbAction::Flee};
+	UButton* Buttons[]={AttackButton,WardButton,SalveButton,SealButton,GildedButton,FleeButton};
+	for(int32 I=0;I<6;++I) if(Key==Keys[I]) { if(!Event.IsRepeat() && Buttons[I]->GetIsEnabled()) Send(Moves[I]); return FReply::Handled(); }
+	if(Key==EKeys::Left||Key==EKeys::Right||Key==EKeys::Up||Key==EKeys::Down)
+	{
+		for(int32 I=0;I<6;++I)if(Buttons[I]->HasKeyboardFocus())FocusedAction=I;
+		const int32 Step=Key==EKeys::Left?-1:Key==EKeys::Right?1:3;
+		for(int32 I=0;I<6;++I){FocusedAction=(FocusedAction+Step+6)%6;if(Buttons[FocusedAction]->GetIsEnabled()){Buttons[FocusedAction]->SetKeyboardFocus();break;}}
+		return FReply::Handled();
+	}
+	return Super::NativeOnPreviewKeyDown(Geometry,Event);
 }
 
 void UGbBattleWidget::HandleAttack() { Send(EGbAction::Attack); }
