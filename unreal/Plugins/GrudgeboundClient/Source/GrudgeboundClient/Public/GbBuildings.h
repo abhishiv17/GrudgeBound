@@ -74,7 +74,7 @@ private:
  void Prop(FName Mesh, const FVector& At, float Yaw, float Fit, bool bHeight=false);
  /** A painted box, Size in cm, Centre in room space. */
  void Slab(const FVector& Centre, const FVector& Size, const FLinearColor& Color);
- void Keeper(const FVector& At, const FLinearColor& Top, const FLinearColor& Hair, const FLinearColor& Scarf, bool bHat);
+ void Keeper(const FVector& At, const FLinearColor& Top, const FLinearColor& Hair, const FLinearColor& Scarf, bool bHat, bool bRobe=false, bool bApron=false);
  UPROPERTY() TMap<FName, TObjectPtr<UStaticMesh>> PropMeshes;
  UPROPERTY(Transient) TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> PropParts;
  UPROPERTY(Transient) TMap<FColor, TObjectPtr<UInstancedStaticMeshComponent>> SlabParts;

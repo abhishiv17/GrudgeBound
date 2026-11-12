@@ -27,7 +27,8 @@ namespace
 }
 
 UGbExorcistLook::FOutfit::FOutfit()
-	: Hair(DollHex(HairHex)), HairHi(DollHex(HairHiHex)), Top(DollHex(TopHex)), TopSh(DollHex(TopShHex)), Pants(DollHex(PantsHex)), Boot(DollHex(BootHex)), Scarf(DollHex(ScarfHex)), Hat(DollHex(TEXT("D9B36A")))
+	: Hair(DollHex(HairHex)), HairHi(DollHex(HairHiHex)), Top(DollHex(TopHex)), TopSh(DollHex(TopShHex)), Pants(DollHex(PantsHex)), Boot(DollHex(BootHex)), Scarf(DollHex(ScarfHex)), Hat(DollHex(TEXT("D9B36A"))),
+	  Belt(DollHex(BeltHex)), Trim(DollHex(BeltHex)), Skin(DollHex(SkinHex)), Apron(DollHex(TopHex)), Skirt(DollHex(PantsHex))
 {
 }
 
@@ -113,6 +114,7 @@ void UGbExorcistLook::BeginPlay()
 		Legs[Side] = Pivot(Doll, FVector(0, Y, HipZ));
 		Box(Legs[Side], FVector(0, 0, -17), FVector(14, 13, 36), Outfit.Pants);
 		Box(Legs[Side], FVector(2.5f, 0, -40), FVector(20, 14, 12), Outfit.Boot);
+		Box(Legs[Side], FVector(0.5f, 0, -32.5f), FVector(15.5f, 14.5f, 3), Outfit.Trim); // boot top
 	}
 
 	// Hips, belt, jacket, scarf, head and arms lean together.
@@ -122,12 +124,38 @@ void UGbExorcistLook::BeginPlay()
 		return Box(Upper, Centre - FVector(0, 0, HipZ), Size, Color, Shape);
 	};
 	const FLinearColor Pants = Outfit.Pants, Top = Outfit.Top, TopSh = Outfit.TopSh, Hair = Outfit.Hair, HairHi = Outfit.HairHi;
-	const FLinearColor Belt = DollHex(BeltHex), Skin = DollHex(SkinHex), Eye = DollHex(EyeHex), Blush = DollHex(BlushHex);
+	const FLinearColor Belt = Outfit.Belt, Skin = Outfit.Skin, Eye = DollHex(EyeHex), Blush = DollHex(BlushHex);
 	Up(FVector(0, 0, 49), FVector(17, 30, 10), Pants);
 	Up(FVector(0, 0, 55.5f), FVector(19, 32, 4), Belt);
 	Up(FVector(0, 0, 72), FVector(18, 31, 30), Top);
 	Up(FVector(-0.5f, 0, 60.5f), FVector(20, 33, 7), TopSh);          // jacket hem flares over the belt
 	Up(FVector(9.2f, 0, 74), FVector(1, 3, 24), TopSh);               // front seam
+	if (Outfit.bCoatTails)
+	{
+		// The coat splits into two tails over the hips.
+		Up(FVector(-9.5f, -8.5f, 51), FVector(3, 13, 16), Top);
+		Up(FVector(-9.5f, 8.5f, 51), FVector(3, 13, 16), TopSh);
+	}
+	if (Outfit.bSkirt)
+	{
+		// A long skirt or robe: the legs walk inside it, only the boots show.
+		Up(FVector(0, 0, 36), FVector(23, 34, 34), Outfit.Skirt);
+		Up(FVector(0, 0, 20.5f), FVector(25, 36, 3), Outfit.Skirt * 0.82f);
+	}
+	if (Outfit.bApron)
+	{
+		Up(FVector(Outfit.bSkirt ? 12.2f : 9.8f, 0, 58), FVector(1.4f, 22, 40), Outfit.Apron);
+		Up(FVector(9.8f, 0, 80), FVector(1.4f, 14, 8), Outfit.Apron);   // bib
+	}
+	if (Outfit.bSatchel)
+	{
+		// The Satchel: a strap from the right shoulder to a leather bag on the left hip, behind the arm.
+		const FLinearColor Leather = DollHex(TEXT("8A5A34")), LeatherDark = DollHex(TEXT("5E3A20"));
+		for (const float X : { 9.8f, -9.8f }) Up(FVector(X, 0, 72), FVector(1.2f, 4, 42), LeatherDark)->SetRelativeRotation(FRotator(0, 0, X > 0 ? 38.f : -38.f));
+		Up(FVector(-13, -11, 55), FVector(9, 17, 14), Leather);
+		Up(FVector(-13.4f, -11, 60), FVector(10, 18, 5), LeatherDark);   // flap
+		Up(FVector(-18.2f, -11, 56), FVector(1, 3, 3), Outfit.Trim);     // clasp
+	}
 
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
@@ -135,6 +163,7 @@ void UGbExorcistLook::BeginPlay()
 		Arms[Side] = Pivot(Upper, FVector(0, Y, ShoulderZ - HipZ));
 		Box(Arms[Side], FVector(0, 0, -13), FVector(10, 9, 28), Side == 0 ? Top : TopSh);
 		Box(Arms[Side], FVector(0, 0, -30), FVector(9, 8, 7), Skin);
+		Box(Arms[Side], FVector(0, 0, -25.5f), FVector(10.8f, 9.8f, 3), Outfit.Trim); // cuff
 		if (Side == 1 && Outfit.bTalisman)
 		{
 			// The paper talisman, held up in the right hand, crimson mark on both faces.
@@ -175,6 +204,16 @@ void UGbExorcistLook::BeginPlay()
 	Up(FVector(16.2f, 7, 110), FVector(1, 5, 7), Eye);
 	Up(FVector(16.2f, -12.5f, 104), FVector(1, 5, 3), Blush);
 	Up(FVector(16.2f, 12.5f, 104), FVector(1, 5, 3), Blush);
+	Up(FVector(16.6f, -8.3f, 112), FVector(0.6f, 1.8f, 2.2f), FLinearColor::White); // a glint in each eye
+	Up(FVector(16.6f, 5.7f, 112), FVector(0.6f, 1.8f, 2.2f), FLinearColor::White);
+	Up(FVector(16.2f, 0, 101.5f), FVector(1, 4, 1.2f), Blush * 0.7f);              // mouth
+	if (Outfit.bBeard)
+	{
+		Up(FVector(14.5f, 0, 99.5f), FVector(5, 24, 8), Hair);
+		Up(FVector(14.5f, -14.5f, 105), FVector(5, 5, 8), Hair);
+		Up(FVector(14.5f, 14.5f, 105), FVector(5, 5, 8), Hair);
+	}
+	if (Outfit.bBun) Up(FVector(-19, 0, 119), FVector(11, 13, 12), Hair);
 	if (Outfit.bTopKnot && !Outfit.bHat)
 	{
 		UStaticMeshComponent* Tie = Up(FVector(-4, 0, 132.5f), FVector(10, 10, 3), Outfit.Scarf, Cylinder);

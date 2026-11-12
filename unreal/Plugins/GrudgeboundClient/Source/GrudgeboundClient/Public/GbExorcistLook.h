@@ -27,7 +27,13 @@ public:
 	struct FOutfit
 	{
 		FLinearColor Hair, HairHi, Top, TopSh, Pants, Boot, Scarf, Hat;
+		/** Belt, cuffs and boot tops (gold on the player), skin, and the apron and skirt cloth. */
+		FLinearColor Belt, Trim, Skin, Apron, Skirt;
 		bool bScarfTail = true, bTalisman = true, bTopKnot = true, bPonytail = true, bHat = false;
+		/** Only the player: split coat tails and the satchel on its strap. */
+		bool bCoatTails = true, bSatchel = true;
+		/** Townsfolk variety: an apron, a long skirt or robe, a beard, a bun at the nape. */
+		bool bApron = false, bSkirt = false, bBeard = false, bBun = false;
 		/** Only the big parts cast shadows (a street of walkers stays cheap). */
 		bool bLightShadows = false;
 		float Height = 1.f;

@@ -13,6 +13,8 @@ namespace
 	const TCHAR* Bottoms[] = { TEXT("3E3A4A"), TEXT("5A4632"), TEXT("3F5560"), TEXT("4A3B52") };
 	const TCHAR* Hairs[] = { TEXT("2A2238"), TEXT("5A3A26"), TEXT("8A8590"), TEXT("3B2A22"), TEXT("B58A4A") };
 	const TCHAR* Kerchiefs[] = { TEXT("D9A532"), TEXT("3A7CA5"), TEXT("4F8A3C"), TEXT("E6D6B2"), TEXT("6B46C1") };
+	const TCHAR* Skins[] = { TEXT("F2C9A0"), TEXT("E3B28A"), TEXT("C8956C"), TEXT("9A6B4A"), TEXT("F6D8BC") };
+	const TCHAR* Aprons[] = { TEXT("E6D6B2"), TEXT("C9BFA8"), TEXT("8FA98A") };
 }
 
 AGbTownsfolk::AGbTownsfolk()
@@ -35,12 +37,21 @@ void AGbTownsfolk::Setup(const TArray<FVector>& WorldPath, int32 Seed)
 	Outfit.Pants = Pick(Bottoms, UE_ARRAY_COUNT(Bottoms));
 	Outfit.Hair = Pick(Hairs, UE_ARRAY_COUNT(Hairs)); Outfit.HairHi = Outfit.Hair * 1.4f;
 	Outfit.Scarf = Pick(Kerchiefs, UE_ARRAY_COUNT(Kerchiefs));
-	Outfit.bScarfTail = false; Outfit.bTalisman = false;
+	Outfit.bScarfTail = false; Outfit.bTalisman = false; Outfit.bCoatTails = false; Outfit.bSatchel = false;
+	Outfit.Skin = Pick(Skins, UE_ARRAY_COUNT(Skins));
+	Outfit.Belt = FolkHex(TEXT("5A4632")); Outfit.Trim = Outfit.TopSh;
 	Outfit.bHat = Rand.FRand() < 0.4f;
 	Outfit.bTopKnot = !Outfit.bHat && Rand.FRand() < 0.35f;
 	Outfit.bPonytail = Rand.FRand() < 0.4f;
+	// Who they are at a glance: skirts and aprons, beards, buns, and a few children.
+	Outfit.bSkirt = Rand.FRand() < 0.35f; Outfit.Skirt = Outfit.Pants;
+	Outfit.bApron = Rand.FRand() < 0.3f; Outfit.Apron = Pick(Aprons, UE_ARRAY_COUNT(Aprons));
+	Outfit.bBeard = !Outfit.bSkirt && Rand.FRand() < 0.25f;
+	Outfit.bBun = !Outfit.bPonytail && !Outfit.bHat && !Outfit.bBeard && Rand.FRand() < 0.5f;
 	Outfit.bLightShadows = true;
-	Outfit.Height = Rand.FRandRange(0.9f, 1.04f);
+	const bool bChild = Rand.FRand() < 0.15f;
+	if (bChild) { Outfit.bBeard = false; Outfit.bApron = false; }
+	Outfit.Height = bChild ? Rand.FRandRange(0.66f, 0.74f) : Rand.FRandRange(0.9f, 1.04f);
 	Look->SetOutfit(Outfit);
 
 	Speed = Rand.FRandRange(95.f, 150.f);

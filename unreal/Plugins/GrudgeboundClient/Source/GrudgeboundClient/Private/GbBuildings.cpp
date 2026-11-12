@@ -207,11 +207,12 @@ void AGbBuildingRoom::Slab(const FVector& Centre,const FVector& Size,const FLine
  Part->AddInstance(FTransform(FRotator::ZeroRotator,Centre,Size/100.f));
 }
 
-void AGbBuildingRoom::Keeper(const FVector& At,const FLinearColor& Top,const FLinearColor& Hair,const FLinearColor& Scarf,bool bHat)
+void AGbBuildingRoom::Keeper(const FVector& At,const FLinearColor& Top,const FLinearColor& Hair,const FLinearColor& Scarf,bool bHat,bool bRobe,bool bApron)
 {
  UGbExorcistLook* Doll=NewObject<UGbExorcistLook>(this);
  UGbExorcistLook::FOutfit Outfit; Outfit.Top=Top; Outfit.TopSh=Top*.82f; Outfit.Hair=Hair; Outfit.HairHi=Hair*1.3f; Outfit.Scarf=Scarf;
- Outfit.Pants=GbGreybox::Color::Hex(TEXT("3E3A4A")); Outfit.bTalisman=false; Outfit.bScarfTail=false; Outfit.bHat=bHat; Outfit.bTopKnot=!bHat; Outfit.bPonytail=false;
+ Outfit.Pants=GbGreybox::Color::Hex(TEXT("3E3A4A")); Outfit.bTalisman=false; Outfit.bScarfTail=false; Outfit.bCoatTails=false; Outfit.bSatchel=false; Outfit.Trim=Scarf;
+ Outfit.bSkirt=bRobe; Outfit.Skirt=Top*.9f; Outfit.bApron=bApron; Outfit.Apron=Scarf; Outfit.bHat=bHat; Outfit.bTopKnot=!bHat; Outfit.bPonytail=false;
  Doll->SetOutfit(Outfit); Doll->SetWalkSpeed(0.f);
  Doll->SetupAttachment(Structure); Doll->SetRelativeLocation(At); Doll->SetRelativeRotation(FRotator(0,180,0)); // facing the door
  AddInstanceComponent(Doll); Doll->RegisterComponent();
@@ -262,7 +263,7 @@ void AGbBuildingRoom::Dress()
   Slab(FVector(127,0,62),FVector(3,130,52),Crimson); Slab(FVector(126,0,62),FVector(3,130,4),Gold);
   Slab(FVector(185,40,94),FVector(42,54,6),Paper);
   Candle(FVector(180,-120,92)); Candle(FVector(180,-100,92)); Candle(FVector(180,120,92)); Candle(FVector(180,100,92));
-  Keeper(FVector(285,0,0),Hex(TEXT("5A2E4F")),Hex(TEXT("C9C3D6")),Gold,false);
+  Keeper(FVector(285,0,0),Hex(TEXT("5A2E4F")),Hex(TEXT("C9C3D6")),Gold,false,true);
   Slab(FVector(200,-262,45),FVector(56,56,90),Stone); Slab(FVector(200,-262,92),FVector(64,64,4),StoneDark); Slab(FVector(200,-262,95),FVector(50,50,2),Crimson);
   Candle(FVector(188,-274,96)); Candle(FVector(212,-250,96));
   Prop(TEXT("stall_bench"),FVector(-120,-200,0),90,150); Prop(TEXT("stall_bench"),FVector(-120,200,0),90,150);
@@ -281,7 +282,7 @@ void AGbBuildingRoom::Dress()
   Slab(FVector(180,0,44),FVector(100,300,88),Wood); Slab(FVector(180,0,90),FVector(106,306,4),WoodDark); Slab(FVector(180,0,92.5f),FVector(60,290,1),Linen);
   Prop(TEXT("bottle"),FVector(175,-110,92),0,24,true); Prop(TEXT("bottle_large"),FVector(185,-70,92),0,30,true); Prop(TEXT("bottle"),FVector(170,90,92),0,22,true);
   Slab(FVector(185,10,96),FVector(30,60,8),Leaf);
-  Keeper(FVector(285,0,0),Linen,Hex(TEXT("8A8590")),Leaf,false);
+  Keeper(FVector(285,0,0),Linen,Hex(TEXT("8A8590")),Leaf,false,true,true);
   Slab(FVector(40,265,22),FVector(190,84,44),Wood); Slab(FVector(40,265,50),FVector(182,76,12),Linen); Slab(FVector(15,265,58),FVector(120,80,5),Leaf);
   Prop(TEXT("crate_bottles"),FVector(345,-250,0),0,60); Prop(TEXT("barrel"),FVector(345,250,0),0,62);
   break;
