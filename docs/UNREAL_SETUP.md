@@ -1,5 +1,21 @@
 # Unreal client: setup and first steps
 
+## Sound, battle staging and street talk (12 Nov)
+
+Every sound is synthesised by `unreal/tools/make-audio.py` (Python 3 + numpy; sine waves and filtered noise, no
+samples, so no third-party licence) and imported by `unreal/tools/import-audio.py` to `/Game/Grudgebound/Audio`.
+Footsteps follow the ground (stone outdoors, boards indoors, a rustle in tall grass); doors, panels, buttons and
+every battle move have an effect; a night-market loop plays in the Wards, quieter indoors, behind panels and in
+battle. Menu > Sound has Master, Market and music, and Effects sliders.
+
+Battles: the two curses step in from their sides as the camera settles; a blow knocks its target back with one
+ring and a short camera punch; the seal falls tilted, lands with a gold ring and the camera closes on the curse,
+then holds (bound) or is thrown off (broken). Game > Reduce battle motion turns all of it off.
+
+Checks: `Grudgebound.Audio.Sounds`, `Grudgebound.Ward.Talk` and `Grudgebound.Ui.BattlePresentation`. Review
+pictures: `Saved/BattleReview/<height>/` and `Saved/PanelPreview/<height>/talk.png`. The sounds themselves and the
+townsfolk lines have not been judged by ear or reviewed by the lead yet.
+
 ## Exploration camera and townsfolk (12 Nov polish)
 
 Hold **Middle Mouse** and drag sideways to orbit or vertically to tilt; **Q/C** rotate,
@@ -10,7 +26,9 @@ over the walls. Camera > Invert mouse orbit / tilt reverses both drag axes.
 
 There are eight ambient walkers in Lantern Ward and five on Tide's docks. They follow the existing
 street routes, ease into stops, pause at either end, and yield when the player stands ahead of them.
-They have no dialogue or economic decisions. The named economic agents run on the server; a confirmed
+They make no economic decisions. Walk up to one and press **E** (Interact): they stop, turn to you and say a line
+on a paper panel above Kessa's banner; **E** again for the next. Lines follow their trade, the mood of the Ward's
+Grudge (calm, Rage, Sorrow or Dread) and the story chapter. Words only: nothing is sent to the server. The named economic agents run on the server; a confirmed
 agent purchase can show its visitor marker at the Counting House. Ambient movement is not proof of an
 agent trade or a story event.
 

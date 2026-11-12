@@ -716,6 +716,7 @@ void AGbWardGreybox::BeginPlay()
 		{
 			Walker->SetFlags(RF_Transient);
 			Walker->Setup(Path, GetTypeHash(WardId) + I * 7919);
+			Walker->SetVoice(WardId, I);
 			Walker->FinishSpawning(Walker->GetActorTransform());
 			Townsfolk.Add(Walker);
 		}

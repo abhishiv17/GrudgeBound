@@ -1,6 +1,10 @@
 #include "GbTownsfolk.h"
 
 #include "GbExorcistLook.h"
+#include "GbGreyboxMaterials.h"
+#include "GbUserSettings.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Components/TextRenderComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -23,6 +27,27 @@ AGbTownsfolk::AGbTownsfolk()
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	Look = CreateDefaultSubobject<UGbExorcistLook>(TEXT("Look"));
 	Look->SetupAttachment(RootComponent);
+	Prompt = CreateDefaultSubobject<UTextRenderComponent>(TEXT("Prompt"));
+	Prompt->SetupAttachment(RootComponent);
+	Prompt->SetRelativeLocation(FVector(0.f, 0.f, 232.f));
+	Prompt->SetWorldSize(24.f);
+	Prompt->SetHorizontalAlignment(EHTA_Center);
+	Prompt->SetTextRenderColor(GbGreybox::Color::Paper.ToFColor(true));
+	Prompt->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Prompt->SetCastShadow(false);
+	Prompt->SetVisibility(false);
+}
+
+void AGbTownsfolk::ShowPrompt(bool bShow)
+{
+	if (bShow) Prompt->SetText(FText::FromString(TEXT("Talk  [") + UGbUserSettings::Get()->KeyLabel(TEXT("Interact")) + TEXT("]")));
+	Prompt->SetVisibility(bShow);
+}
+
+void AGbTownsfolk::Hold(float Seconds, const AActor* Toward)
+{
+	HoldTime = FMath::Max(0.f, Seconds);
+	HoldToward = Toward;
 }
 
 void AGbTownsfolk::Setup(const TArray<FVector>& WorldPath, int32 Seed)
@@ -95,6 +120,29 @@ FVector AGbTownsfolk::Along(const TArray<FVector>& Path, float Distance, FVector
 void AGbTownsfolk::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (Prompt->IsVisible())
+	{
+		// The camera turns, so the prompt turns with it (as the door signs do).
+		const APlayerController* Viewer = GetWorld()->GetFirstPlayerController();
+		if (Viewer && Viewer->PlayerCameraManager)
+		{
+			const FRotator Camera = Viewer->PlayerCameraManager->GetCameraRotation();
+			Prompt->SetWorldRotation(FRotator(-Camera.Pitch, Camera.Yaw + 180.f, 0.f));
+		}
+	}
+	if (HoldTime > 0.f)
+	{
+		// Talking: stand, and turn to whoever asked.
+		HoldTime = FMath::Max(0.f, HoldTime - DeltaSeconds);
+		CurrentSpeed = 0.f;
+		if (const AActor* Other = HoldToward.Get())
+		{
+			const FVector To = (Other->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+			if (!To.IsNearlyZero()) SetActorRotation(FMath::RInterpTo(GetActorRotation(), To.Rotation(), DeltaSeconds, 7.f));
+		}
+		Look->SetWalkSpeed(0.f);
+		return;
+	}
 	if (Path.Num() < 2 || PathLength <= 0.f || DeltaSeconds <= 0.f) return;
 
 	const float End = Travelled < PathLength ? PathLength : 2.f * PathLength;

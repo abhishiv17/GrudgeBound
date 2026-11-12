@@ -29,6 +29,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Story") bool ShouldShowIntro() const;
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Story") FString GetChapterTitle() const;
 	UFUNCTION(BlueprintPure, Category = "Grudgebound|Story") FString GetObjective() const;
+	/** 1 Arrival, 2 Debts Come Due, 3 The Calamity. */
+	int32 GetChapter() const { return Data ? GbStory::Chapter(Data->Progress) : 1; }
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Story") void CompleteIntro();
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Story") void VisitBroker();
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Story") FGbStoryChanged OnStoryChanged;
