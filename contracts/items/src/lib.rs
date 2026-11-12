@@ -90,6 +90,31 @@ impl Items {
         token_id
     }
 
+    /// One first partner per recipient. A reserved storage prefix preserves the existing state layout.
+    /// Replaying a transaction after a lost HTTP response returns the original token, even after transfer.
+    pub fn mint_starter(&mut self, to: AccountId, species: String) -> TokenId {
+        self.assert_minter();
+        let emotion = match species.as_str() {
+            "cinder-grin" => "rage", "weepwick" => "sorrow", "hushmoth" => "dread",
+            _ => env::panic_str("unknown starter"),
+        };
+        let mut starters: LookupMap<AccountId, TokenId> = LookupMap::new(b"s");
+        if let Some(id) = starters.get(&to) {
+            require!(self.talismans.get(id).map(|m| &m.species) == Some(&species), "starter already chosen");
+            return id.clone();
+        }
+        let id = self.mint_talisman(to.clone(), TalismanMeta {
+            species, emotion: emotion.into(), omen: "whisper".into(), level: 1, wins: 0,
+        });
+        starters.insert(to, id.clone());
+        id
+    }
+
+    pub fn starter_for(&self, account_id: AccountId) -> Option<TalismanView> {
+        let starters: LookupMap<AccountId, TokenId> = LookupMap::new(b"s");
+        starters.get(&account_id).and_then(|id| self.talisman(id.clone()))
+    }
+
     /// Bounty reward paid into a talisman's purse.
     pub fn credit_purse(&mut self, token_id: TokenId, amount: U128) {
         self.assert_minter();
@@ -260,6 +285,43 @@ mod tests {
         let view = c.talisman(id).unwrap();
         assert_eq!(view.owner, accounts(1));
         assert_eq!(view.meta.species, "weepwick");
+    }
+
+    #[test]
+    fn starter_retry_and_transfer_never_create_a_second_token() {
+        let mut c = setup();
+        let id = c.mint_starter(accounts(1), "hushmoth".into());
+        assert_eq!(c.mint_starter(accounts(1), "hushmoth".into()), id);
+        assert_eq!(c.next_talisman, 2);
+        assert_eq!(c.starter_for(accounts(1)).unwrap().meta.emotion, "dread");
+        as_caller(accounts(1), 1);
+        c.mt_transfer(accounts(2), id.clone(), U128(1), None);
+        as_caller(accounts(0), 0);
+        assert_eq!(c.mint_starter(accounts(1), "hushmoth".into()), id);
+        assert_eq!(c.mt_balance_of(accounts(1), id.clone()).0, 0);
+        assert_eq!(c.mt_balance_of(accounts(2), id).0, 1);
+        assert_eq!(c.talismans_of(accounts(2), None, None).talismans.len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "starter already chosen")]
+    fn starter_cannot_be_rerolled() {
+        let mut c = setup();
+        c.mint_starter(accounts(1), "weepwick".into());
+        c.mint_starter(accounts(1), "cinder-grin".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "only the minter")]
+    fn starter_requires_minter() {
+        let mut c = setup(); as_caller(accounts(1), 0);
+        c.mint_starter(accounts(1), "hushmoth".into());
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown starter")]
+    fn starter_cannot_request_a_calamity() {
+        let mut c = setup(); c.mint_starter(accounts(1), "riot-bell".into());
     }
 
     #[test]
