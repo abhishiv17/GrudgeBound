@@ -540,6 +540,9 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	bInputTouched = true;
 
 	PC->SetShowMouseCursor(true);
+	// A key held when a dialog opens is released while the dialog has the keyboard, so the game never hears it go
+	// up and keeps walking that way afterwards. Drop every held key on each switch, both ways.
+	PC->FlushPressedKeys();
 	if (Screen == EScreen::Ward)
 	{
 		// Back to walking: the world gets clicks and keys again. SetIgnoreMoveInput is a counter, and a fight
