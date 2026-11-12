@@ -55,7 +55,7 @@ void UGbPlayerSubsystem::RefreshFromChain()
 
 FString UGbPlayerSubsystem::ServerTokenId(const FGbTalisman& T)
 {
-	return T.Id == StarterId ? FString(TEXT("starter")) : T.ChainTokenId;
+	return !T.ChainTokenId.IsEmpty() ? T.ChainTokenId : T.Id == StarterId ? FString(TEXT("starter")) : FString();
 }
 
 FString UGbPlayerSubsystem::GetPartnerTokenId() const { return ServerTokenId(GetPartner()); }
@@ -68,6 +68,7 @@ bool UGbPlayerSubsystem::CanChoosePartner(const FGbTalisman& T) const
 bool UGbPlayerSubsystem::CanStartBattle(FString& Hint) const
 {
 	if (!Satchel.bValid) { Hint = TEXT("Your Satchel is not ready. Open it with B and refresh before fighting."); return false; }
+    if (Satchel.Profile.bValid && (!Satchel.Profile.bComplete || Satchel.Profile.Mint==TEXT("pending"))) { Hint=TEXT("Meet Kessa on the harbour pier to finish choosing your first partner."); return false; }
 	const FString Token = GetPartnerTokenId();
 	if (!Satchel.Carried.Contains(Token)) { Hint = TEXT("Carry a talisman and choose your partner in the Satchel (B)."); return false; }
 	if (!Satchel.CanFight(Token)) { Hint = TEXT("Visit the Mender or rest. Your partner needs ink."); return false; }
@@ -79,6 +80,17 @@ void UGbPlayerSubsystem::HandleSatchel(const FGbSatchel& View)
 	Satchel = View;
 	if (Data && View.bValid)
 	{
+        if (View.Profile.bValid)
+        {
+            FGbTalisman* Starter=Data->Talismans.FindByPredicate([](const FGbTalisman& T){return T.Id==StarterId;});
+            if (Starter)
+            {
+                Starter->SpeciesId=View.Profile.Starter;
+                if (View.Profile.Mint==TEXT("done")) Starter->ChainTokenId=View.Profile.TokenId;
+            }
+            if (Starter && !Starter->ChainTokenId.IsEmpty())
+                Data->Talismans.RemoveAll([&View](const FGbTalisman& T){return T.Id!=StarterId && T.ChainTokenId==View.Profile.TokenId;});
+        }
 		if (View.Points >= 0) Data->Points = View.Points;
 		if (View.Ember >= 0) Data->Ember = View.Ember;
 		// A partner put in the Case cannot silently keep fighting.

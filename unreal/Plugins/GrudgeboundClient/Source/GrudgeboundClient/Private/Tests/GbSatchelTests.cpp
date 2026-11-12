@@ -121,6 +121,11 @@ bool FGbSatchelPartnerTest::RunTest(const FString&)
 	TestEqual(TEXT("Legacy starter maps to the server's reserved id"), UGbPlayerSubsystem::ServerTokenId(Starter), FString(TEXT("starter")));
 	TestEqual(TEXT("Same-species partner keeps its specific token"), P->GetPartnerTokenId(), FString(TEXT("tal-1")));
 	FString Hint; TestTrue(TEXT("A carried partner with ink may fight"), P->CanStartBattle(Hint));
+    P->Satchel.Profile.bValid=true;
+    TestFalse(TEXT("Leaving arrival cannot consume the default starter choice"),P->CanStartBattle(Hint));
+    P->Satchel.Profile.bComplete=true; P->Satchel.Profile.Mint=TEXT("pending");
+    TestFalse(TEXT("Pending first partner waits for settlement"),P->CanStartBattle(Hint));
+    P->Satchel.Profile.Mint=TEXT("done"); TestTrue(TEXT("Completed arrival may fight"),P->CanStartBattle(Hint));
 	P->SetPartner(B.Id); TestEqual(TEXT("The old Case panel cannot bypass carry rules"), P->Data->PartnerId, A.Id);
 	P->SetPartner(Starter.Id); TestFalse(TEXT("A downed partner cannot open a fight"), P->CanStartBattle(Hint));
 	TestTrue(TEXT("The refusal points to Mender/rest"), Hint.Contains(TEXT("Mender")) && Hint.Contains(TEXT("rest")));

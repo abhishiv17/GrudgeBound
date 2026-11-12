@@ -330,3 +330,10 @@ On a machine with the GitHub CLI the same thing is:
 | Visual Studio | **Community 2026** (18.x), workloads in section 2 | 2 Nov, build laptop |
 
 A packaged build can point at a hosted server without rebuilding: `Grudgebound.exe -GbServer=https://<host>`.
+
+The draft harbour opening uses the same server's versioned Satchel profile. An old server without a profile
+keeps exploration available; it cannot save the new choices. Use a matching local server to test arrival.
+`Grudgebound.Arrival` checks profile parsing, legacy partner-page skipping, both character silhouettes,
+name retention and native panel previews at 1920x1080 and 1280x720 (`Saved/ArrivalPreview`).
+The development screenshot harness accepts `-GbShot=<folder> -GbShotCams="arrival;arrival-name;arrival-partner"`
+to capture Kessa and the player on the actual pier with fixture choices, without an account or live mint.

@@ -22,6 +22,7 @@ class UGbSatchelWidget;
 class UGbMenderWidget;
 class UGbRoomWidget;
 class UGbObservatoryWidget;
+class UGbArrivalWidget;
 enum class EGbAudioScene : uint8;
 
 UCLASS(NotPlaceable, Transient)
@@ -66,7 +67,13 @@ private:
     float SightlineClock=0.f;
     bool bSightlinesCached=false;
     void UpdateSightlines(float DeltaSeconds, const APlayerController* PC, const APawn* Pawn);
-	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel, Mender, Room, Observatory };
+	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel, Mender, Room, Observatory, Arrival };
+    void OpenArrival();
+    void CloseArrival();
+    void SpawnMentor();
+    UPROPERTY() TObjectPtr<UGbArrivalWidget> Arrival;
+    UPROPERTY() TObjectPtr<AActor> PierMentor;
+    UPROPERTY() TObjectPtr<class ACameraActor> ArrivalCamera;
 	void ToggleObservatory();
 	void CloseBuildingPanel();
 	void RoomCase();

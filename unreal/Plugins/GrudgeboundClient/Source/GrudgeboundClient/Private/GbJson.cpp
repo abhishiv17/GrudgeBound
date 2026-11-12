@@ -467,6 +467,16 @@ namespace GbJson
 		if (!S.bValid) return S;
 		S.Carried = Strings(O, TEXT("carried")); S.Case = Strings(O, TEXT("case"));
 		S.Keepsakes = Strings(O, TEXT("keepsakes"));
+        const auto Profile=Obj(O,TEXT("profile"));
+        if (Profile && Int(Profile,TEXT("version"))==1)
+        {
+            auto& P=S.Profile; P.bValid=true; P.bComplete=Bool(Profile,TEXT("complete")); P.bLegacyStarter=Bool(Profile,TEXT("legacyStarter"));
+            P.Name=Str(Profile,TEXT("name")); P.Look=Str(Profile,TEXT("look")); P.Pronouns=Str(Profile,TEXT("pronouns"));
+            P.Starter=Str(Profile,TEXT("starter")); P.TokenId=Str(Profile,TEXT("tokenId")); P.Mint=Str(Profile,TEXT("mint")); P.ProofUrl=Str(Profile,TEXT("proofUrl"));
+            for (const auto& V:Arr(Profile,TEXT("choices"))) {const auto C=AsObj(V); if (!C) continue; const auto Stats=Obj(C,TEXT("stats")); FGbStarterChoice Choice;
+                Choice.Id=Str(C,TEXT("id")); Choice.Name=Str(C,TEXT("name")); Choice.Emotion=Str(C,TEXT("emotion")); Choice.Personality=Str(C,TEXT("personality"));
+                Choice.Hp=Int(Stats,TEXT("hp")); Choice.Attack=Int(Stats,TEXT("attack")); Choice.Guard=Int(Stats,TEXT("guard")); Choice.Speed=Int(Stats,TEXT("speed")); P.Choices.Add(Choice);}
+        }
         const auto E = Obj(O, TEXT("exploration"));
         S.bExplorationAvailable = E.IsValid() && Int(E, TEXT("version")) == 1;
         if (S.bExplorationAvailable)

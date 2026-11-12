@@ -11,6 +11,8 @@
 #include "GbWardGreybox.h"
 #include "GbVowWidget.h"
 #include "GbIntroWidget.h"
+#include "GbArrivalWidget.h"
+#include "GbGreyboxMaterials.h"
 #include "GbSatchelWidget.h"
 #include "GbObservatoryWidget.h"
 #include "GbPanelFixtures.h"
@@ -76,6 +78,8 @@ void AGbUiDirector::Tick(float DeltaSeconds)
     UpdateSightlines(DeltaSeconds,PC,Pawn);
 	UGbUserSettings* Settings = UGbUserSettings::Get();
 	UGbExorcistLook::Ensure(Pawn); // the exorcist's body instead of the template mannequin
+    if (Current!=EScreen::Arrival) if (const UGbPlayerSubsystem* P=PlayerOf(GetWorld()))
+        UGbExorcistLook::Ensure(Pawn)->SetPresentation(P->GetSatchel().Profile.Look);
 	if (bCrossing) TickCrossing(DeltaSeconds, PC, Pawn);
 
 	// No walking or camera keys while a panel, the menu or a door fade has the player (the same rule as clicks).
@@ -186,6 +190,7 @@ void AGbUiDirector::BeginPlay()
 	Mender = CreateWidget<UGbMenderWidget>(PC, UGbMenderWidget::StaticClass());
 	Room = CreateWidget<UGbRoomWidget>(PC, UGbRoomWidget::StaticClass());
 	Observatory = CreateWidget<UGbObservatoryWidget>(PC, UGbObservatoryWidget::StaticClass());
+    Arrival = CreateWidget<UGbArrivalWidget>(PC, UGbArrivalWidget::StaticClass());
 
 	Hud->AddToViewport(0);
 	Encounter->AddToViewport(10);
@@ -199,6 +204,7 @@ void AGbUiDirector::BeginPlay()
 	Satchel->AddToViewport(30);
 	Mender->AddToViewport(30); Room->AddToViewport(30);
 	Observatory->AddToViewport(30);
+    Arrival->AddToViewport(80); SpawnMentor();
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -208,6 +214,7 @@ void AGbUiDirector::BeginPlay()
 	Shop->OnClose.AddUObject(this, &AGbUiDirector::ToggleShop);
 	VowShrine->OnClose.AddUObject(this, &AGbUiDirector::ToggleVows);
 	Intro->OnFinished.AddUObject(this, &AGbUiDirector::FinishIntro);
+    Arrival->OnClose.AddUObject(this,&AGbUiDirector::CloseArrival);
 	SignIn->OnEnter.AddUObject(this, &AGbUiDirector::EnterWard);
 	Satchel->OnClose.AddUObject(this, &AGbUiDirector::ToggleSatchel);
 	Mender->OnClose.AddUObject(this, &AGbUiDirector::CloseBuildingPanel);
@@ -286,6 +293,7 @@ bool AGbUiDirector::CloseTopPanel()
 {
 	switch (Current)
 	{
+    case EScreen::Arrival: CloseArrival(); return true;
 	case EScreen::TalismanCase: case EScreen::Rules: case EScreen::Shop: case EScreen::Vows: case EScreen::Satchel:
 	case EScreen::Mender: case EScreen::Room: case EScreen::Observatory:
 		ShowScreen(EScreen::Ward);
@@ -343,13 +351,46 @@ void AGbUiDirector::ShowEntry()
 	{
 		Intro->Open(); ShowScreen(EScreen::Intro);
 	}
-	else ShowScreen(EScreen::Ward);
+	else if (!PlayerOf(GetWorld())->GetSatchel().Profile.bValid || !PlayerOf(GetWorld())->GetSatchel().Profile.bComplete || PlayerOf(GetWorld())->GetSatchel().Profile.Mint==TEXT("pending")) OpenArrival();
+    else ShowScreen(EScreen::Ward);
 }
 
 void AGbUiDirector::FinishIntro()
 {
 	GetGameInstance()->GetSubsystem<UGbStorySubsystem>()->CompleteIntro();
-	ShowScreen(EScreen::Ward);
+    OpenArrival();
+}
+
+void AGbUiDirector::SpawnMentor()
+{
+ const FVector Feet(-1030,-65,5);
+ PierMentor=GetWorld()->SpawnActor<AActor>();
+ USceneComponent* Root=NewObject<USceneComponent>(PierMentor); PierMentor->SetRootComponent(Root); Root->RegisterComponent(); PierMentor->SetActorLocation(Feet);
+ UGbExorcistLook* Doll=NewObject<UGbExorcistLook>(PierMentor); UGbExorcistLook::FOutfit Outfit;
+ Outfit.Top=GbGreybox::Color::Hex(TEXT("5A2E4F")); Outfit.TopSh=Outfit.Top*.82f; Outfit.Hair=GbGreybox::Color::Hex(TEXT("C9C3D6")); Outfit.HairHi=Outfit.Hair;
+ Outfit.bSkirt=true; Outfit.Skirt=Outfit.Top; Outfit.bSatchel=false; Outfit.bCoatTails=false; Outfit.bScarfTail=false; Outfit.bTalisman=false; Outfit.bPonytail=false;
+ Doll->SetOutfit(Outfit); Doll->SetupAttachment(Root); Doll->SetRelativeRotation(FRotator(0,134,0)); Doll->RegisterComponent();
+ AGbBuildingDoor* Door=GetWorld()->SpawnActor<AGbBuildingDoor>(Feet+FVector(-55,80,0),FRotator::ZeroRotator);
+ Door->Building=EGbBuilding::Outside; Door->Use=EGbBuildingUse::Arrival; Door->Label=TEXT("Kessa"); Door->OnConstruction(Door->GetActorTransform());
+}
+void AGbUiDirector::OpenArrival()
+{
+ APlayerController* PC=GetWorld()->GetFirstPlayerController(); if (!PC || !PC->GetPawn() || !Arrival) return;
+ CurrentBuilding=EGbBuilding::Outside; GbBuildings::Teleport(PC->GetPawn(),FVector(-1130,40,5));
+ PC->GetPawn()->SetActorRotation(FRotator(0,-46,0));
+ if (UGbPlayerSubsystem* P=PlayerOf(GetWorld())) P->SetWardId(TEXT("lantern"));
+ if (!ArrivalCamera)
+ {
+  const FVector Eye(-1600,-520,300), Focus(-1080,-12,0); // both figures in the upper half, above the panel
+  ArrivalCamera=GetWorld()->SpawnActor<ACameraActor>(Eye,(Focus-Eye).Rotation());
+  ArrivalCamera->GetCameraComponent()->SetFieldOfView(60); ArrivalCamera->GetCameraComponent()->SetConstraintAspectRatio(false);
+ }
+ Arrival->Open(); ShowScreen(EScreen::Arrival); PC->SetViewTargetWithBlend(ArrivalCamera,.5f);
+}
+void AGbUiDirector::CloseArrival()
+{
+ if (APlayerController* PC=GetWorld()->GetFirstPlayerController()) PC->SetViewTargetWithBlend(PC->GetPawn(),.5f);
+ ShowScreen(EScreen::Ward);
 }
 
 void AGbUiDirector::ReplayIntro()
@@ -409,6 +450,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	Mender->SetVisibility(Screen == EScreen::Mender ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Room->SetVisibility(Screen == EScreen::Room ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Observatory->SetVisibility(Screen == EScreen::Observatory ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    Arrival->SetVisibility(Screen == EScreen::Arrival ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (Screen != EScreen::Observatory) Observatory->Stop();
 	// The HUD stays in the street and at an encounter; a panel carries its own status line and key hints, and the
 	// HUD's corner boxes would sit half under the wider panels.
@@ -440,13 +482,14 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 			: Screen == EScreen::SignIn ? static_cast<UUserWidget*>(SignIn.Get())
 			: Screen == EScreen::Vows ? static_cast<UUserWidget*>(VowShrine.Get())
 			: Screen == EScreen::Intro ? static_cast<UUserWidget*>(Intro.Get())
+            : Screen == EScreen::Arrival ? static_cast<UUserWidget*>(Arrival.Get())
 			: Screen == EScreen::Satchel ? static_cast<UUserWidget*>(Satchel.Get())
 			: Screen == EScreen::Mender ? static_cast<UUserWidget*>(Mender.Get())
 			: Screen == EScreen::Room ? static_cast<UUserWidget*>(Room.Get())
 			: Screen == EScreen::Observatory ? static_cast<UUserWidget*>(Observatory.Get())
 			: Screen == EScreen::Rules ? static_cast<UUserWidget*>(Rules.Get())
 			: Screen == EScreen::Shop ? static_cast<UUserWidget*>(Shop.Get()) : static_cast<UUserWidget*>(TalismanCase.Get());
-		if (Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows || Screen == EScreen::Satchel || Screen == EScreen::Mender || Screen == EScreen::Room || Screen == EScreen::Observatory)
+		if (Screen == EScreen::Arrival || Screen == EScreen::TalismanCase || Screen == EScreen::Rules || Screen == EScreen::Shop || Screen == EScreen::Vows || Screen == EScreen::Satchel || Screen == EScreen::Mender || Screen == EScreen::Room || Screen == EScreen::Observatory)
 		{
 			// Keep game input so T closes the case again.
 			FInputModeGameAndUI Mode;
@@ -659,6 +702,7 @@ void AGbUiDirector::UseBuilding(AGbBuildingDoor* Door)
  if (!Door || !IsWalking()) return;
  APlayerController* PC=GetWorld()->GetFirstPlayerController(); APawn* Pawn=PC?PC->GetPawn():nullptr;
  if (!Pawn || FVector::DistSquared(Pawn->GetActorLocation(),Door->GetActorLocation())>FMath::Square(230.f)) return;
+ if (Door->Use==EGbBuildingUse::Arrival) {OpenArrival();return;}
  if (Door->Use==EGbBuildingUse::Discover || (Door->Use==EGbBuildingUse::Enter && !Door->DiscoveryId.IsEmpty()))
  {
   UGbApiSubsystem* A=ApiOf(GetWorld()); const UGbPlayerSubsystem* P=PlayerOf(GetWorld()); if (!A || !P) return;
@@ -910,7 +954,17 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			const int32 V = (K - 1) / 2;
 			if (V < Views)
 			{
-				if ((K - 1) % 2 == 1) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/shot%d.png"), *ShotFolder, V), false, false); return; }
+				if ((K - 1) % 2 == 1) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/shot%d.png"), *ShotFolder, V), Shots->Cams[V].StartsWith(TEXT("arrival")), false); return; }
+				if (Shots->Cams[V].StartsWith(TEXT("arrival")))
+				{
+					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director)
+                    {
+                        Director->OpenArrival(); Director->SignIn->SetVisibility(ESlateVisibility::Collapsed); Director->Hud->SetVisibility(ESlateVisibility::Collapsed);
+                        Director->Arrival->SetVisibility(ESlateVisibility::Visible); Director->Current=AGbUiDirector::EScreen::Arrival;
+                        PC->SetViewTarget(Director->ArrivalCamera); FGbPanelFixtures::Fill(Director->Arrival,Shots->Cams[V]);
+                    }
+					return;
+				}
 				TArray<FString> P; Shots->Cams[V].ParseIntoArray(P, TEXT(","));
 				// "f": board the ferry where the player is; follow with "p" views to watch the crossing.
 				if (Shots->Cams[V] == TEXT("f") && PC->GetPawn())

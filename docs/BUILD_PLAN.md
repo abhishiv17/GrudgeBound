@@ -30,6 +30,11 @@ The lead (Abhishek) decides every submission field and approves anything public:
 
 ## Status at a glance
 
+| Polish item | State | Review and remaining gate |
+|---|---|---|
+| Opening, identity and first partner | In validation | DRAFT dialogue/personalities in STORY.md. Server profile v1 inside Satchel v3; two looks and three starter choices; legacy migration; idempotent testnet contract code. Contract upgrade and live mint activation require owner approval. Native capture and owner review remain acceptance gates. |
+
+
 **Delivery confirmed 7 Nov:** the final player-facing game is the packaged **Unreal Windows client**.
 The Node game server remains necessary for shared world state, authoritative battles, AI agents and NEAR
 settlement. The existing browser sign-in page is a support service for Unreal's email handoff. No new web-game

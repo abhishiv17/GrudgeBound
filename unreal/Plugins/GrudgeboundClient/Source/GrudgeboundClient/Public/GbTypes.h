@@ -376,6 +376,35 @@ struct FGbKeepsake
 
 /** Authoritative pockets from GET /satchel. Unknown balances remain -1; no client starter-kit grants. */
 USTRUCT(BlueprintType)
+struct FGbStarterChoice
+{
+ GENERATED_BODY()
+ UPROPERTY(BlueprintReadOnly) FString Id;
+ UPROPERTY(BlueprintReadOnly) FString Name;
+ UPROPERTY(BlueprintReadOnly) FString Emotion;
+ UPROPERTY(BlueprintReadOnly) FString Personality;
+ UPROPERTY(BlueprintReadOnly) int32 Hp=0;
+ UPROPERTY(BlueprintReadOnly) int32 Attack=0;
+ UPROPERTY(BlueprintReadOnly) int32 Guard=0;
+ UPROPERTY(BlueprintReadOnly) int32 Speed=0;
+};
+USTRUCT(BlueprintType)
+struct FGbArrivalProfile
+{
+ GENERATED_BODY()
+ UPROPERTY(BlueprintReadOnly) bool bValid=false;
+ UPROPERTY(BlueprintReadOnly) bool bComplete=false;
+ UPROPERTY(BlueprintReadOnly) bool bLegacyStarter=false;
+ UPROPERTY(BlueprintReadOnly) FString Name;
+ UPROPERTY(BlueprintReadOnly) FString Look=TEXT("masculine");
+ UPROPERTY(BlueprintReadOnly) FString Pronouns=TEXT("they");
+ UPROPERTY(BlueprintReadOnly) FString Starter=TEXT("cinder-grin");
+ UPROPERTY(BlueprintReadOnly) FString TokenId=TEXT("starter");
+ UPROPERTY(BlueprintReadOnly) FString Mint;
+ UPROPERTY(BlueprintReadOnly) FString ProofUrl;
+ UPROPERTY(BlueprintReadOnly) TArray<FGbStarterChoice> Choices;
+};
+USTRUCT(BlueprintType)
 struct FGbSatchel
 {
 	GENERATED_BODY()
@@ -398,6 +427,7 @@ struct FGbSatchel
  UPROPERTY(BlueprintReadOnly) TArray<FGbJournalEntry> Journal;
  UPROPERTY(BlueprintReadOnly) TArray<FGbKeepsake> Notes;
 	static constexpr int32 CarryLimit = 5;
+ UPROPERTY(BlueprintReadOnly) FGbArrivalProfile Profile;
 	bool HasToken(const FString& Id) const { return Carried.Contains(Id) || Case.Contains(Id); }
 	bool CanCarry(const FString& Id) const { return bValid && Case.Contains(Id) && Carried.Num() < CarryLimit; }
 	bool CanUseSalve(const FString& Id) const

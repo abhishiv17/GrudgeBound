@@ -12,6 +12,8 @@
 #include "Interfaces/IHttpResponse.h"
 #include "TimerManager.h"
 #include "GenericPlatform/GenericPlatformHttp.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogGrudgebound, Log, All);
 
@@ -42,6 +44,8 @@ FString UGbApiSubsystem::GetPlayerAccount() const
 
 FString UGbApiSubsystem::GetPlayerName() const
 {
+	const UGbPlayerSubsystem* P=GetGameInstance()->GetSubsystem<UGbPlayerSubsystem>();
+	if (P && !P->GetSatchel().Profile.Name.IsEmpty()) return P->GetSatchel().Profile.Name;
 	return GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetPlayerName();
 }
 
@@ -493,6 +497,13 @@ void UGbApiSubsystem::UseSalve(const FString& TokenId) { MutateSatchel(TEXT("sat
 void UGbApiSubsystem::RestoreInk(const FString& TokenId) { MutateSatchel(TEXT("mender/restore"), GbJson::TokenBody(TokenId), TEXT("The Mender restored your talisman's ink.")); }
 void UGbApiSubsystem::Explore(const FString& Id) { MutateSatchel(TEXT("exploration/interact"), GbJson::NamedBody(TEXT("id"), Id), TEXT("Journal updated.")); }
 void UGbApiSubsystem::Equip(const FString& ItemId) { MutateSatchel(TEXT("satchel/equip"), GbJson::NamedBody(TEXT("itemId"), ItemId), TEXT("Equipment updated.")); }
+void UGbApiSubsystem::CompleteProfile(const FString& Name,const FString& Look,const FString& Pronouns,const FString& Starter)
+{
+ TSharedRef<FJsonObject> O=MakeShared<FJsonObject>(); O->SetStringField(TEXT("name"),Name); O->SetStringField(TEXT("look"),Look);
+ O->SetStringField(TEXT("pronouns"),Pronouns); O->SetStringField(TEXT("starter"),Starter);
+ FString Body; auto Writer=TJsonWriterFactory<>::Create(&Body); FJsonSerializer::Serialize(O,Writer);
+ MutateSatchel(TEXT("profile/complete"),Body,TEXT("Your arrival is recorded."));
+}
 void UGbApiSubsystem::Rest() { MutateSatchel(TEXT("rest"), TEXT("{}"), TEXT("You rested until morning. Your talismans' ink is restored.")); }
 
 void UGbApiSubsystem::MutateSatchel(const FString& Path, const FString& Body, const FString& Message)

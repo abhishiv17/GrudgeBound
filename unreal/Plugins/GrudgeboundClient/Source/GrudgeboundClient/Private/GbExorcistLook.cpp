@@ -89,6 +89,31 @@ UStaticMeshComponent* UGbExorcistLook::Box(USceneComponent* Parent, const FVecto
 void UGbExorcistLook::BeginPlay()
 {
 	Super::BeginPlay();
+    BuildDoll();
+}
+UGbExorcistLook::FOutfit UGbExorcistLook::PresentationOutfit(const FString& Look)
+{
+ FOutfit Out;
+ const bool Feminine=Look==TEXT("feminine");
+ Out.bPonytail=Feminine; Out.bTopKnot=!Feminine; Out.bBun=Feminine;
+ Out.bSkirt=Feminine; Out.Skirt=Out.Pants;
+ return Out;
+}
+void UGbExorcistLook::SetPresentation(const FString& Look)
+{
+ const FString Id=Look==TEXT("feminine")?TEXT("feminine"):TEXT("masculine");
+ if (Presentation==Id) return; Presentation=Id; Outfit=PresentationOutfit(Id);
+ if (Doll)
+ {
+  TArray<USceneComponent*> Children; GetChildrenComponents(true,Children);
+  for (int32 I=Children.Num()-1;I>=0;--I) if (Children[I]) Children[I]->DestroyComponent();
+  Doll=nullptr; Upper=nullptr; Legs[0]=Legs[1]=nullptr; Arms[0]=Arms[1]=nullptr;
+  ScarfTail=nullptr; ScarfTip=nullptr; Ponytail=nullptr;
+ }
+ if (HasBegunPlay()) BuildDoll();
+}
+void UGbExorcistLook::BuildDoll()
+{
 	AActor* Owner = GetOwner();
 	if (!Owner || Doll || !Cube || !BaseMaterial) return;
 

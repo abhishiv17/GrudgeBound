@@ -88,6 +88,29 @@ $storyReport = Join-Path (Split-Path $storyProject) 'Saved/Automation/Story'
 The report is `Saved/Automation/Story/index.json`. The full Play-mode acceptance and lead's script review
 below remain separate from the automated checks.
 
+## Draft: harbour arrival and first partner (12 Nov)
+
+Implementation draft for owner review; the names, dialogue and personalities below are not final writing.
+After the four opening panels, Kessa stands beside the player on the harbour pier. The player advances
+five short spoken pages explaining how market harms leave Rage, Sorrow and Dread; how Grudge wakes curses;
+how weakened curses can be bound with blank talismans; how the Rite changes town rules; and how independent
+merchants make bargains with their own money. She introduces the Satchel and Journal before asking who arrived.
+
+The player chooses a validated name, a masculine or feminine presentation, he/she/they, and one existing
+whisper species: Cinder Grin (Rage, impatient and bright), Weepwick (Sorrow, quiet and stubborn), or Hushmoth
+(Dread, watchful and listening). Displayed stats come from the server's species definitions. These choices
+are stored per account. Existing players keep their partner and skip only the partner page. Later/Escape
+returns to town; Kessa remains available on the pier. New arrivals finish this choice before starting combat.
+
+The choice is permanent and identical retries return the same partner. The items contract has a tested,
+minter-only `mint_starter` method, with a permanent recipient record surviving transfers. It has **not been
+deployed**. `STARTER_MINT=off` keeps the chosen partner virtual on current deployments. Enabling minting
+requires the owner-approved contract upgrade and server configuration; pending replies retry the same
+choice. A previously selected virtual partner can then settle without healing or a second welcome kit.
+
+Rival encounters, partner growth, wider NPC pronoun/deed reactions and guidance are subsequent polish
+items, not delivered by this opening change. All text still needs owner review and an interactive play-through.
+
 ## Acceptance
 
 - [ ] First sign-in shows all four panels; Next, Enter/Space and Skip/Escape work; walking stays blocked until closing.

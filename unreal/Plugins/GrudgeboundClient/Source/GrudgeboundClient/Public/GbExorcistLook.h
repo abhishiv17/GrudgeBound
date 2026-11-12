@@ -41,6 +41,8 @@ public:
 	};
 	/** Before the doll is built (before the component registers on a running actor). */
 	void SetOutfit(const FOutfit& In) { Outfit = In; }
+    void SetPresentation(const FString& Look);
+    static FOutfit PresentationOutfit(const FString& Look);
 	/** Walk at this speed (cm/s) instead of reading the owner's velocity; negative = read the velocity. */
 	void SetWalkSpeed(float Speed) { ForcedSpeed = Speed; }
 
@@ -62,6 +64,8 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+    void BuildDoll();
+    FString Presentation;
 	USceneComponent* Pivot(USceneComponent* Parent, const FVector& At);
 	UStaticMeshComponent* Box(USceneComponent* Parent, const FVector& Centre, const FVector& Size, const FLinearColor& Color, UStaticMesh* Shape = nullptr);
 	UMaterialInstanceDynamic* Paint(const FLinearColor& Color);

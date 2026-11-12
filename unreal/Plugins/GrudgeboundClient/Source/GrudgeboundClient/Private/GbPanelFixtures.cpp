@@ -5,6 +5,7 @@
 #include "GbSatchelWidget.h"
 #include "GbVowWidget.h"
 #include "GbObservatoryWidget.h"
+#include "GbArrivalWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
 
@@ -46,6 +47,17 @@ const TArray<FString>& FGbPanelFixtures::Shots()
 void FGbPanelFixtures::Fill(UGbWidgetBase* Widget, const FString& Shot)
 {
 	using namespace GbPanelFixture;
+    if (UGbArrivalWidget* W=Cast<UGbArrivalWidget>(Widget))
+    {
+        W->Profile=FGbArrivalProfile(); W->Profile.bValid=true;
+        const TCHAR* Ids[]={TEXT("cinder-grin"),TEXT("weepwick"),TEXT("hushmoth")};
+        const TCHAR* Names[]={TEXT("Cinder Grin"),TEXT("Weepwick"),TEXT("Hushmoth")};
+        const TCHAR* Emotions[]={TEXT("rage"),TEXT("sorrow"),TEXT("dread")};
+        for (int32 I=0;I<3;++I) {FGbStarterChoice C; C.Id=Ids[I]; C.Name=Names[I]; C.Emotion=Emotions[I]; C.Personality=TEXT("A companion for the road ahead."); C.Hp=40; C.Attack=10; C.Guard=8; C.Speed=10; W->Profile.Choices.Add(C);}
+        W->ChosenName=TEXT("Ari"); W->ChosenLook=TEXT("feminine"); W->ChosenPronouns=TEXT("they"); W->ChosenStarter=TEXT("hushmoth");
+        W->Page=Shot==TEXT("arrival-name")?5:Shot==TEXT("arrival-partner")?6:0;
+        W->Redraw(); W->PreviewLook(); return;
+    }
 	if (UGbTalismanCaseWidget* W = Cast<UGbTalismanCaseWidget>(Widget))
 	{
 		TArray<FGbTalisman> Ts; TMap<FString, FGbCurseInfo> Cs; CaseData(Ts, Cs);

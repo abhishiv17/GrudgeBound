@@ -12,7 +12,7 @@ class UTextRenderComponent;
 UENUM()
 enum class EGbBuilding : uint8 { Outside, CountingHouse, Mender, RiteHall, Room, Storehouse };
 UENUM()
-enum class EGbBuildingUse : uint8 { Enter, Exit, Broker, Mender, Rules, Vows, Room, Case, Travel, Discover };
+enum class EGbBuildingUse : uint8 { Enter, Exit, Broker, Mender, Rules, Vows, Room, Case, Travel, Discover, Arrival };
 
 namespace GbBuildings
 {
