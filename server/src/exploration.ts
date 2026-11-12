@@ -9,13 +9,49 @@ export interface Exploration { flags: string[]; gear: string[]; equipped: string
 export const newExploration = (): Exploration => ({ flags: [], gear: [], equipped: "", tracked: "rival" });
 const TASKS = ["rival", "lamp", "net", "storehouse"];
 const FLAGS = ["alley-parcel", "lamp-kit", "delivery-slip", "reed-bundle", "dock-tin", "door-seen",
-  "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "net-done", "clerk-done", "storehouse-open", "storehouse-chest", ...RIVAL_FLAGS];
+  "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "tide-bound", "net-done", "clerk-done", "storehouse-open", "storehouse-chest", ...RIVAL_FLAGS];
 export function validExploration(e: Exploration): boolean {
   return !!e && Array.isArray(e.flags) && e.flags.every(f => FLAGS.includes(f)) && new Set(e.flags).size === e.flags.length
     && Array.isArray(e.gear) && e.gear.every(id => !!equipmentSnapshot(id)) && new Set(e.gear).size === e.gear.length
     && (e.equipped === "" || e.gear.includes(e.equipped)) && TASKS.includes(e.tracked);
 }
-interface RewardPocket { exploration: Exploration; keepsakes: string[]; supplies: { blank: number; gilded: number; salve: number } }
+interface RewardPocket { exploration: Exploration; keepsakes: string[]; supplies: { blank: number; gilded: number; salve: number }; profile?: Who }
+/** Who the townsfolk are talking to or about: the arrival profile's name and pronouns. */
+export interface Who { name: string; pronouns: string }
+const PRONOUNS: Record<string, [string, string, string]> = { he: ["he", "him", "his"], she: ["she", "her", "her"], they: ["they", "them", "their"] };
+function words(who?: Who) {
+  const [they, them, their] = PRONOUNS[who?.pronouns ?? ""] ?? PRONOUNS.they!;
+  const name = who?.name || "the new exorcist";
+  return { name, Name: name[0]!.toUpperCase() + name.slice(1), they, them, their };
+}
+/** Flags are kept in the order they happened: true when `first` happened and `then` did not, or happened later. */
+const earlier = (e: Exploration, first: string, then: string) => {
+  const i = e.flags.indexOf(first), j = e.flags.indexOf(then);
+  return i >= 0 && (j < 0 || i < j);
+};
+
+/**
+ * What the streets say about the player's own deeds, newest first (DRAFT lines). Townsfolk mix these into their talk.
+ * Only facts the server recorded for this account are used, so nobody gossips about something that did not happen.
+ */
+export function gossip(e: Exploration, who?: Who): string[] {
+  const has = (f: string) => e.flags.includes(f);
+  const { name, Name, they, them, their } = words(who);
+  const out: string[] = [];
+  if (has("rival-3-won")) out.push(`Dace Marrow lost to ${name} three times and still talks to ${them}. Now the two of them pester the Rite Hall together.`);
+  if (has("storehouse-chest")) out.push(`Someone opened the sealed storehouse in Tide. People say it was ${name}, and that ${they} came out with a ledger leaf.`);
+  if (has("net-done")) out.push(has("tide-bound")
+    ? `${Name} bound a curse out of Tide's reeds. The Net mender says it is the first quiet night in a month.`
+    : `${Name} beat a curse in Tide's reeds but left it loose. The Net mender is still counting the knots.`);
+  if (has("rival-2-won")) out.push(`The ferryman will take ${name} across now. Dace Marrow lost at the southern pier and went quiet for once.`);
+  if (has("lamp-done")) out.push(earlier(e, "lamp-kit", "lamp-accepted")
+    ? `The Lamplighter's kit came back before anyone asked. ${Name} found it and walked it over.`
+    : `The Lamplighter asked ${name} to find the kit, and ${they} did. Every wick on the north lane is trimmed again.`);
+  if (has("rival-1-won") && !has("rival-2-won")) out.push(`${Name} beat Dace Marrow on the pier, first day off the boat. Dace tells everyone it was luck.`);
+  if (has("rival-1-lost") && !has("rival-2-won")) out.push(`Dace Marrow beat ${name} on the pier and tells everyone. Don't let ${them} hear you mention it.`);
+  if (out.length === 0) out.push(`There's a new exorcist in town. ${Name}, I think. Nobody knows ${their} business yet.`);
+  return out;
+}
 const NOTES = [
   { id: "lamp-kit", title: "Lamp kit", text: "A bundle of spare wicks and tools. The Lamplighter walks the north market lane in Lantern Ward." },
   { id: "delivery-slip", title: "Marked delivery slip", text: "A dockside storehouse stamp marks this delivery. Ask the Receipt clerk after finding its key." },
@@ -23,7 +59,7 @@ const NOTES = [
   { id: "storehouse-key", title: "Brass storehouse key", text: "The bow bears the same mark as the delivery slip. The Receipt clerk may recognise it." },
   { id: "storehouse-record", title: "A copied ledger leaf", text: "The same stamped symbol appears on this storehouse record and your debt notice. A line beneath it reads: Copy retained; original forwarded to the Rite Hall. Who kept the original?" },
 ];
-export function explorationView(e: Exploration, keepsakes: string[]) {
+export function explorationView(e: Exploration, keepsakes: string[], who?: Who) {
   const has = (flag: string) => e.flags.includes(flag);
   const rivalStatus = has("rival-3-won") ? "complete" : "active";
   const journal = [
@@ -46,7 +82,7 @@ export function explorationView(e: Exploration, keepsakes: string[]) {
       hint: "The door sits along Tide's northern quay. The slip and key are kept when used." },
   ];
   return { version: 1, flags: e.flags, equipped: e.equipped, tracked: e.tracked,
-    gear: GEAR.filter(g => e.gear.includes(g.id)), journal, notes: NOTES.filter(n => keepsakes.includes(n.id)) };
+    gear: GEAR.filter(g => e.gear.includes(g.id)), journal, notes: NOTES.filter(n => keepsakes.includes(n.id)), gossip: gossip(e, who) };
 }
 
 export function interact(p: RewardPocket, id: unknown): string {
@@ -56,6 +92,7 @@ export function interact(p: RewardPocket, id: unknown): string {
   const mark = (f: string) => { if (!has(f)) e.flags.push(f); };
   const note = (n: string) => { if (!p.keepsakes.includes(n)) p.keepsakes.push(n); };
   const gear = (g: string) => { if (!e.gear.includes(g)) e.gear.push(g); };
+  const { name, Name } = words(p.profile);
   const supplies = (key: keyof RewardPocket["supplies"], count: number) => {
     if (!Number.isSafeInteger(p.supplies[key] + count)) throw new AuthError(409, "Your supplies are full.");
     p.supplies[key] += count;
@@ -79,27 +116,47 @@ export function interact(p: RewardPocket, id: unknown): string {
       if (has(id)) return "The supply tin is empty.";
       mark(id); supplies("salve", 1); return "Found: 1 Ink Salve.";
     case "lamplighter":
-      if (has("lamp-done")) return "Lamplighter: My kit is back where it belongs. Keep that focus close.";
+      if (has("lamp-done")) {
+        if (has("storehouse-chest")) return `Lamplighter: That slip in my kit led you to a whole storehouse? I only trim wicks, ${name}. Still, I'm glad it was you who found it.`;
+        if (has("rival-2-won")) return `Lamplighter: I watched you beat that Dace boy from the end of the lane. The focus suits you.`;
+        return earlier(e, "lamp-kit", "lamp-accepted")
+          ? `Lamplighter: You brought my kit back before I'd even asked, ${name}. I still owe you for that.`
+          : `Lamplighter: My kit is back where it belongs. Keep that focus close, ${name}.`;
+      }
+      const unasked = !has("lamp-accepted");
       mark("lamp-accepted"); e.tracked = "lamp";
-      if (!has("lamp-kit")) return "Lamplighter: My kit went missing by the western service lane. Bring it back and this focus is yours.";
+      if (!has("lamp-kit")) return has("rival-1-lost")
+        ? "Lamplighter: Lost to Dace on the pier? Then you'll want a focus. My kit went missing by the western service lane. Bring it back and this one is yours."
+        : "Lamplighter: My kit went missing by the western service lane. Bring it back and this focus is yours.";
       mark("lamp-done"); gear("worn-focus"); mark("delivery-slip"); note("delivery-slip");
-      return "Received: Worn Focus (+1 Attack). A delivery slip in the kit bears a Tide storehouse stamp. Equip your charm in Satchel > Gear.";
+      return (unasked ? `Lamplighter: My kit! I hadn't even asked yet, ${name}. ` : "Lamplighter: You found it. ")
+        + "Received: Worn Focus (+1 Attack). A delivery slip in the kit bears a Tide storehouse stamp. Equip your charm in Satchel > Gear.";
     case "net-mender":
-      if (has("net-done")) return "Net mender: The bundle is safe. That brass key is yours now.";
+      if (has("net-done")) {
+        if (has("storehouse-chest")) return `Net mender: So my old key opened the sealed storehouse. Copies of everyone's debts, they say. Mind who you show that leaf to, ${name}.`;
+        return has("tide-bound")
+          ? `Net mender: The reeds have been quiet since you bound that curse. The brass key is yours, ${name}.`
+          : "Net mender: You beat it, but you let it go. It'll be back in the reeds by the next tide. The key is yours all the same.";
+      }
+      const brought = has("reed-bundle") && !has("net-accepted");
       mark("net-accepted"); e.tracked = "net";
       if (!has("reed-bundle")) return "Net mender: Recover my bundle by the eastern reeds, and win or bind a curse here in Tide. I will make it worth your while.";
-      if (!has("tide-cleared")) return "Net mender: You found it. Now win or bind a Tide curse before coming back; fleeing will not do.";
+      if (!has("tide-cleared")) return brought
+        ? "Net mender: You already found my bundle? Then do one more thing: win or bind a Tide curse before coming back. Fleeing will not do."
+        : "Net mender: You found it. Now win or bind a Tide curse before coming back; fleeing will not do.";
       mark("net-done"); gear("ward-clasp"); note("storehouse-key");
-      return "Received: Ward Clasp (+2 Guard) and a brass storehouse key. Ask the Receipt clerk about its mark.";
+      return (has("tide-bound") ? "Net mender: Bound it, too. That one won't trouble my nets again. " : "Net mender: Beaten, if not bound. It'll do. ")
+        + "Received: Ward Clasp (+2 Guard) and a brass storehouse key. Ask the Receipt clerk about its mark.";
     case "receipt-clerk":
       e.tracked = "storehouse";
+      if (has("storehouse-chest")) return `Receipt clerk: "Copy retained; original forwarded to the Rite Hall." I've stamped that line a thousand times, ${name}. I never asked who reads the originals.`;
       if (has("clerk-done")) return "Receipt clerk: The marked storehouse stands on Tide's northern quay. Your key fits its door.";
       if (!has("delivery-slip") || !has("net-done")) return "Receipt clerk: Bring me the marked delivery slip and its matching brass key. Then I can trace the address.";
       mark("clerk-done"); return "Lead discovered: the sealed storehouse on Tide's northern quay. The marks match; take your key to its door.";
     case "storehouse-door":
       mark("door-seen"); e.tracked = "storehouse";
       if (!has("clerk-done")) return "A marked lock holds the door. Find its key and ask the Receipt clerk about the matching delivery slip.";
-      mark("storehouse-open"); return "The brass key turns. The storehouse is open; interact with the door again to enter.";
+      mark("storehouse-open"); return `The brass key turns. ${Name}, the storehouse is open; interact with the door again to enter.`;
     case "storehouse-chest":
       if (!has("storehouse-open")) throw new AuthError(403, "Find the storehouse key and follow the delivery slip first.");
       if (has(id)) return "The chest is empty. Read the copied ledger leaf in Keepsakes.";

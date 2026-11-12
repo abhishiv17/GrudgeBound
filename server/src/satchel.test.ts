@@ -118,6 +118,50 @@ test("exploration rewards are once per account, ordered, and survive restart", a
   assert.deepEqual(reloaded.supplies(OTHER), STARTER_KIT);
 });
 
+test("townsfolk remember how and when each task was done, by name and pronouns, and only for that account", async () => {
+  const s = new Satchels(createWorld(2), null, { starterKit: STARTER_KIT });
+  await s.completeProfile(ACCOUNT, { name: "Mira Vale", look: "feminine", pronouns: "she", starter: "weepwick" });
+  await s.completeProfile(OTHER, { name: "Ari", look: "masculine", pronouns: "they", starter: "hushmoth" });
+  const say = async (account: string, id: string) => (await s.explore(account, id)).message;
+  const gossip = async (account: string) => (await s.view(account)).exploration.gossip;
+  assert.match((await gossip(ACCOUNT))[0]!, /new exorcist.*Mira Vale.*her business/, "a stranger before any deed");
+
+  // Mira finds the kit before anyone asks; Ari is asked first.
+  await s.explore(ACCOUNT, "lamp-kit");
+  assert.match(await say(ACCOUNT, "lamplighter"), /hadn't even asked yet, Mira Vale/);
+  assert.match(await say(OTHER, "lamplighter"), /went missing/);
+  await s.explore(OTHER, "lamp-kit");
+  assert.match(await say(OTHER, "lamplighter"), /^Lamplighter: You found it\. Received/);
+  assert.match(await say(ACCOUNT, "lamplighter"), /before I'd even asked, Mira Vale/, "after: remembers it was unasked");
+  assert.match(await say(OTHER, "lamplighter"), /Keep that focus close, Ari/);
+  assert.match((await gossip(ACCOUNT)).join(" "), /came back before anyone asked/);
+  assert.match((await gossip(OTHER)).join(" "), /asked Ari to find the kit, and they did/);
+
+  // Tide: Mira beats a curse and leaves it loose; Ari binds one.
+  for (const a of [ACCOUNT, OTHER]) { beatRivalToTide(s, a); await s.explore(a, "net-mender"); await s.explore(a, "reed-bundle"); }
+  const won = createBattle({ wild: "cinder-grin" }); won.outcome = "won";
+  s.applyTurn(ACCOUNT, "starter", "w", { kind: "attack" }, won, "tide");
+  const bound = createBattle({ wild: "cinder-grin" }); bound.outcome = "bound";
+  s.applyTurn(OTHER, "starter", "b", { kind: "seal" }, bound, "tide");
+  s.completeOfflineBinding(OTHER, "b");
+  assert.match(await say(ACCOUNT, "net-mender"), /Beaten, if not bound/);
+  assert.match(await say(OTHER, "net-mender"), /Bound it, too/);
+  assert.match(await say(ACCOUNT, "net-mender"), /let it go/);
+  assert.match(await say(OTHER, "net-mender"), /quiet since you bound/);
+  assert.ok((await s.view(OTHER)).exploration.flags.includes("tide-bound"));
+  assert.ok(!(await s.view(ACCOUNT)).exploration.flags.includes("tide-bound"), "a later bind does not rewrite how it was done");
+  s.applyTurn(ACCOUNT, "starter", "late", { kind: "seal" }, bound, "tide"); s.completeOfflineBinding(ACCOUNT, "late");
+  assert.ok(!(await s.view(ACCOUNT)).exploration.flags.includes("tide-bound"));
+
+  // Later progress changes what the same people say.
+  await s.explore(ACCOUNT, "receipt-clerk"); await s.explore(ACCOUNT, "storehouse-door"); await s.explore(ACCOUNT, "storehouse-chest");
+  assert.match(await say(ACCOUNT, "lamplighter"), /whole storehouse/);
+  assert.match(await say(ACCOUNT, "receipt-clerk"), /never asked who reads the originals/);
+  const mira = await gossip(ACCOUNT);
+  assert.match(mira[0]!, /storehouse.*Mira Vale.*she came out/, "newest deed first");
+  assert.ok(!mira.join(" ").includes("Ari") && !(await gossip(OTHER)).join(" ").includes("storehouse"), "no gossip crosses accounts");
+});
+
 test("enabling starter settlement preserves the virtual partner's ink and welcome supplies", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "gb-starter-upgrade-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const file = join(dir, "satchels.json"), world = createWorld(2);

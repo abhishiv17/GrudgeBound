@@ -47,6 +47,8 @@ interface Pocket {
 const empty = (): Pocket => ({ initialized: false, carried: [], supplies: { blank: 0, gilded: 0, salve: 0 },
   keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {}, exploration: newExploration(), pendingTideBindings: [], profile: newProfile(), xp: {} });
 
+/** A Tide binding that settles clears the Net mender's condition, and records that it was cleared by binding. */
+function tideBound(e: Exploration) { if (!e.flags.includes("tide-cleared")) e.flags.push("tide-cleared", "tide-bound"); }
 export function supplyForItem(itemId: string): Supply | null {
   // Keep the existing merchant item id as a purchase alias for plain blanks.
   return ({ "blank-talisman": "blank", "binding-seal": "blank", "gilded-talisman": "gilded", "ink-salve": "salve" } as Record<string, Supply>)[itemId] ?? null;
@@ -213,8 +215,7 @@ export class Satchels {
     this.update(account, (p) => {
       const supply = p.pendingBindings[battleId]!;
       if (receipt.status === "failed" && !receipt.tokenId) p.supplies[supply]++;
-      if (p.pendingTideBindings.includes(battleId) && (receipt.status === "done" || receipt.tokenId)
-        && !p.exploration.flags.includes("tide-cleared")) p.exploration.flags.push("tide-cleared");
+      if (p.pendingTideBindings.includes(battleId) && (receipt.status === "done" || receipt.tokenId)) tideBound(p.exploration);
       p.pendingTideBindings = p.pendingTideBindings.filter(id => id !== battleId);
       delete p.pendingBindings[battleId];
     });
@@ -223,7 +224,7 @@ export class Satchels {
   completeOfflineBinding(account: string, battleId: string) {
     if (this.read(account).pendingBindings[battleId]) this.update(account, (p) => {
       delete p.pendingBindings[battleId];
-      if (p.pendingTideBindings.includes(battleId) && !p.exploration.flags.includes("tide-cleared")) p.exploration.flags.push("tide-cleared");
+      if (p.pendingTideBindings.includes(battleId)) tideBound(p.exploration);
       p.pendingTideBindings = p.pendingTideBindings.filter(id => id !== battleId);
     });
     this.binding.delete(account);
@@ -253,7 +254,7 @@ export class Satchels {
     const [owned, ember, points] = await Promise.all([this.owned(account), this.chain?.ember(account) ?? null, this.chain?.points(account) ?? null]);
     this.sync(account, owned); const p = this.read(account);
     return { carried: p.carried, case: owned.filter((t) => !p.carried.includes(t.tokenId)).map((t) => t.tokenId),
-      supplies: p.supplies, keepsakes: p.keepsakes, exploration: explorationView(p.exploration, p.keepsakes),
+      supplies: p.supplies, keepsakes: p.keepsakes, exploration: explorationView(p.exploration, p.keepsakes, p.profile),
       profile: profileView(p.profile),
       levels: Object.fromEntries(owned.map((t) => { const xp = p.xp[t.tokenId] ?? 0; const level = levelForXp(xp); return [t.tokenId, { level, xp, next: nextLevelXp(level) }]; })),
       rival: rivalView(p.exploration, p.profile.starter, p.profile.name, this.arrived(p)), tideOpen: tideOpen(p.exploration),
