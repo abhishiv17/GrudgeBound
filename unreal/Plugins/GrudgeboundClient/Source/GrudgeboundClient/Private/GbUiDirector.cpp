@@ -379,7 +379,9 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	Room->SetVisibility(Screen == EScreen::Room ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	Observatory->SetVisibility(Screen == EScreen::Observatory ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	if (Screen != EScreen::Observatory) Observatory->Stop();
-	Hud->SetVisibility(Screen == EScreen::Battle || Screen == EScreen::Intro || Screen == EScreen::SignIn ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	// The HUD stays in the street and at an encounter; a panel carries its own status line and key hints, and the
+	// HUD's corner boxes would sit half under the wider panels.
+	Hud->SetVisibility(Screen == EScreen::Ward || Screen == EScreen::Encounter ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
 	if (!bInputTouched && Screen == EScreen::Ward) return;
@@ -802,7 +804,7 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 				Director->SignIn, Director->VowShrine, Director->Intro, Director->Satchel, Director->Mender, Director->Room, Director->Observatory };
 			for (UUserWidget* Other : Others) if (Other && Other != Panel) Other->SetVisibility(ESlateVisibility::Collapsed);
 			PC->SetViewTarget(PC->GetPawn());
-			Director->Hud->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Director->Hud->SetVisibility(ESlateVisibility::Collapsed); // as ShowScreen does for every panel
 			Panel->SetVisibility(ESlateVisibility::Visible);
 			FGbPanelFixtures::Fill(Panel, Name);
 		}), 1.5f, true, 8.f);
