@@ -671,6 +671,40 @@ test("partners level up from won fights only, and a level is frozen into the bat
   assert.throws(() => createBattle({ wild: "weepwick", playerLevel: 11 }), /level/);
 });
 
+test("walking away from the pier fight counts as losing it; later stages can be retried", async () => {
+  const s = setup();
+  const partner = await s.satchels.partner(ACCOUNT);
+  const battles = new BattleSessions(s.world, { satchels: s.satchels, newSeed: () => 77 });
+  const one = battles.start({ ward: "lantern", account: ACCOUNT, rival: 1 }, undefined, partner);
+  assert.equal(one.status, 200);
+  assert.match((one.body as StartAnswer).lines[0]!, /Kessa gave you/, "the pier line, not the next stage's");
+  battles.abandonAccount(ACCOUNT); // the fight expires or is abandoned
+  assert.equal(battles.start({ ward: "lantern", account: ACCOUNT, rival: 1 }, undefined, partner).status, 409, "no free retry");
+  const view = await s.satchels.view(ACCOUNT);
+  assert.equal(view.rival.where, "ferry"); assert.equal(view.rival.results[1], "lost");
+  const two = battles.start({ ward: "lantern", account: ACCOUNT, rival: 2 }, undefined, partner);
+  assert.equal(two.status, 200); battles.abandonAccount(ACCOUNT);
+  assert.equal(battles.start({ ward: "lantern", account: ACCOUNT, rival: 2 }, undefined, partner).status, 200, "stage 2 must be won, so it can be retried");
+});
+
+test("levels, rival results and tips survive a restart; a tampered store is refused", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gb-levels-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "satchels.json"), world = createWorld(2);
+  const s = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  beatRivalToTide(s); s.seeTip(ACCOUNT, "tide");
+  const before = await s.view(ACCOUNT);
+  assert.ok(before.levels.starter!.level >= 4, "two rival wins: 40 + 55 experience");
+  const again = await new Satchels(world, null, { file, starterKit: STARTER_KIT }).view(ACCOUNT);
+  assert.deepEqual(again.levels, before.levels); assert.deepEqual(again.rival, before.rival);
+  assert.ok(again.tideOpen && again.exploration.tips.find(x => x.id === "tide")!.seen);
+  for (const bad of [{ starter: -5 }, { starter: 1.5 }, { starter: "9" }, []]) {
+    const saved = JSON.parse(readFileSync(file, "utf8"));
+    for (const [, p] of saved.players) p.xp = bad;
+    writeFileSync(file, JSON.stringify(saved));
+    assert.throws(() => new Satchels(world, null, { file, starterKit: STARTER_KIT }), /Invalid Satchel store/, `xp ${JSON.stringify(bad)} is refused`);
+  }
+});
+
 test("the rival: stages in order, no sealing or running, points and experience once, Tide opens after stage 2", async () => {
   const s = setup();
   const partner = await s.satchels.partner(ACCOUNT);
@@ -692,6 +726,8 @@ test("the rival: stages in order, no sealing or running, points and experience o
   assert.equal(end.points, end.outcome === "won" ? 10 : 0);
   if (end.outcome === "won") assert.equal(end.progress!.gained, 40);
   assert.equal((await startRival(1)).status, 409, "stage 1 is fought once, won or lost");
+  const flags = (await s.satchels.view(ACCOUNT)).exploration.flags;
+  assert.equal(flags.filter(f => f.startsWith("rival-1-")).length, 1, end.outcome === "won" ? "a win replaces the provisional loss" : "one loss");
   assert.equal((await s.satchels.view(ACCOUNT)).rival.where, "ferry");
 
   // Stage 2 must be won; a loss can be retried and gives nothing.

@@ -76,7 +76,7 @@ export class Satchels {
         if (typeof account !== "string" || !Array.isArray(p.carried) || p.carried.length > CARRY_LIMIT ||
             ![p.supplies.blank, p.supplies.gilded, p.supplies.salve, p.personalTick].every((n) => Number.isSafeInteger(n) && n >= 0) ||
             !p.ink || !p.pendingBindings || !Array.isArray(p.keepsakes) || !validExploration(p.exploration)
-            || !validProfile(p.profile) || !p.xp || typeof p.xp !== "object" || !Object.values(p.xp).every((n) => Number.isSafeInteger(n) && n >= 0) || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
+            || !validProfile(p.profile) || !p.xp || typeof p.xp !== "object" || Array.isArray(p.xp) || !Object.values(p.xp).every((n) => Number.isSafeInteger(n) && n >= 0) || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
         this.pockets.set(account, p);
       }
     }
@@ -137,6 +137,13 @@ export class Satchels {
     const p = this.read(account); return rivalRefusal(p.exploration, stage, this.arrived(p));
   }
   tideOpen(account: string): boolean { return tideOpen(this.read(account).exploration); }
+  /**
+   * The pier fight is fought once, win or lose. It is recorded as lost when it starts, so walking away (an expired,
+   * abandoned or interrupted fight) is a loss rather than a free retry; a win replaces it.
+   */
+  rivalBegun(account: string, stage: number) {
+    if (stage === 1) this.update(account, p => { if (!p.exploration.flags.includes("rival-1-lost")) p.exploration.flags.push("rival-1-lost"); });
+  }
   /** What the rival says before the fight that can start now. */
   rivalLine(account: string): string { const p = this.read(account); return rivalView(p.exploration, p.profile.starter, p.profile.name, this.arrived(p)).line; }
   /**
@@ -157,6 +164,7 @@ export class Satchels {
       let rivalLine: string | undefined;
       if (rival && (outcome === "won" || outcome === "lost")) {
         const flag = outcome === "won" ? `rival-${rival}-won` : rival === 1 ? "rival-1-lost" : "";
+        if (rival === 1 && outcome === "won") p.exploration.flags = p.exploration.flags.filter(f => f !== "rival-1-lost");
         if (flag && !p.exploration.flags.includes(flag)) p.exploration.flags.push(flag);
         rivalLine = rivalEndLine(rival, outcome, hpLeftFraction, p.profile.name);
       }

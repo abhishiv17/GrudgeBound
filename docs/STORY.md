@@ -127,7 +127,9 @@ simulated fights and was dropped.
 | 2 | By the Tide ferry | Stage 1 is done | 4 | Must be won. **The ferry to Tide opens only after this.** A win gives 20 points |
 | 3 | Tide quay, where the pier meets the wharf | Stage 2 is won and the storehouse chest is opened | 7 | A win gives 30 points |
 
-After stage 3 he waits in Lantern plaza. A rival fight has no sealing and no running. His line before a
+After stage 3 he waits in Lantern plaza. A rival fight has no sealing and no running. The pier fight counts
+as lost from the moment it starts until it is won. If the player walks away, lets it expire or the server
+restarts mid-fight, it is a loss rather than a free retry. His line before a
 fight depends on the stage and on whether you lost on the pier. His line after a fight depends on the
 result and on how close it was.
 

@@ -270,7 +270,10 @@ export class BattleSessions {
       rng: createRng(seed), state, actions: [], lastSeen: this.now(),
       partnerTokenId: partner?.tokenId, initial, playerLevel, wildLevel: foeLevel, ...(stage ? { rival: stage.stage } : {}),
     };
+    // The rival's line is read before the fight is recorded as begun (stage 1 counts as lost until it is won).
+    const rivalSays = stage ? this.satchels!.rivalLine(account!) : "";
     this.open.set(s.id, s);
+    if (stage) this.satchels!.rivalBegun(account!, stage.stage);
 
     const m = typeMultiplier(state.player.emotion, state.wild.emotion);
     return ok({
@@ -281,7 +284,7 @@ export class BattleSessions {
       view: this.view(s, guard),
       ...(stage ? { rival: { stage: stage.stage, name: RIVAL_NAME } } : {}),
       lines: [
-        ...(stage ? [`${RIVAL_NAME}: "${this.satchels!.rivalLine(account!)}"`] : []),
+        ...(stage ? [`${RIVAL_NAME}: "${rivalSays}"`] : []),
         stage ? `${RIVAL_NAME} sends out ${state.wild.name} (level ${foeLevel}). No sealing a rival's partner, and no running.` : introLine(state),
         ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
         ...(noBind ? [`Kessa: "Curfew: ${noBind}. Drive it off, don't seal it."`] : []),
