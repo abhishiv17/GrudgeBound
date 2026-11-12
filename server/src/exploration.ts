@@ -71,6 +71,24 @@ const NOTES = [
   { id: "storehouse-key", title: "Brass storehouse key", text: "The bow bears the same mark as the delivery slip. The Receipt clerk may recognise it." },
   { id: "storehouse-record", title: "A copied ledger leaf", text: "The same stamped symbol appears on this storehouse record and your debt notice. A line beneath it reads: Copy retained; original forwarded to the Rite Hall. Who kept the original?" },
 ];
+/**
+ * Hollowmere lore (DRAFT for the owner's review): short Journal pages that open as the player learns the town, so
+ * the world explains itself in play. `after` is the flag that opens a page ("" = from the start).
+ */
+const LORE = [
+  { id: "hollowmere", after: "", title: "Hollowmere",
+    text: "A harbour town that keeps receipts. A thousand lanterns burn over a market that never quite closes, and every bargain made under them is written down somewhere." },
+  { id: "grudge", after: "", title: "Grudge",
+    text: "A stolen wage, a rigged price, a shop shuttered for good: each leaves Rage, Sorrow or Dread behind. Enough of it pools into Grudge, and Grudge gives the town's discarded things teeth. Those are the curses in the tall grass." },
+  { id: "talismans", after: "lamp-accepted", title: "Talismans and the Rite",
+    text: "A weakened curse can be bound into a blank talisman. The Rite records who holds each one, and the points it pays can write a town rule or back a sworn vow. On NEAR every binding is a real token you own." },
+  { id: "rival", after: "rival-1-won|rival-1-lost", title: "Dace Marrow",
+    text: "Dace came in on the same boat, with the same kind of notice and a partner from Kessa just like yours. He wants to know who in Hollowmere sends the notices, and he means to find out first." },
+  { id: "tide", after: "rival-2-won", title: "Tide Ward",
+    text: "Across the water, every crate is counted twice: once for the ledger, once for the truth. Tide's curses run stronger, and its quay hides a storehouse nobody admits to owning." },
+  { id: "ledger", after: "storehouse-chest", title: "The original record",
+    text: "The storehouse keeps copies. The stamp on the copied leaf matches your own debt notice, and the line beneath it says the original went to the Rite Hall. Someone there decides whose debts are remembered." },
+];
 export function explorationView(e: Exploration, keepsakes: string[], who?: Who) {
   const has = (flag: string) => e.flags.includes(flag);
   const rivalStatus = has("rival-3-won") ? "complete" : "active";
@@ -101,7 +119,8 @@ export function explorationView(e: Exploration, keepsakes: string[], who?: Who) 
   ];
   return { version: 1, flags: e.flags, equipped: e.equipped, tracked: e.tracked,
     gear: GEAR.filter(g => e.gear.includes(g.id)), journal, notes: NOTES.filter(n => keepsakes.includes(n.id)), gossip: gossip(e, who),
-    tips: TIPS.map(t => ({ ...t, seen: e.flags.includes(`tip-${t.id}`) })) };
+    tips: TIPS.map(t => ({ ...t, seen: e.flags.includes(`tip-${t.id}`) })),
+    lore: LORE.filter(l => !l.after || l.after.split("|").some(has)).map(({ id, title, text }) => ({ id, title, text })) };
 }
 /** Remembers that a tip was shown. Allowed mid-battle and beside other actions: it changes nothing else. */
 export function seeTip(e: Exploration, id: unknown): void {

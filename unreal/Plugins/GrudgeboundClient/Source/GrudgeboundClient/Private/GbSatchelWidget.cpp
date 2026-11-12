@@ -256,6 +256,8 @@ void UGbSatchelWidget::Redraw()
    JournalRows->AddChild(R);
    JournalRows->AddChild(MakeText(bDone?FString():TEXT("Hint: ")+J.Hint+TEXT("\n"),bDone?8:16,Ink));
   }
+  if (Data.Lore.Num()) JournalRows->AddChild(MakeText(TEXT("Hollowmere"),18,Ink,true));
+  for (const FGbKeepsake& L : Data.Lore) JournalRows->AddChild(MakeText(L.Title+TEXT("\n")+L.Text+TEXT("\n"),15,Ink));
   bool bTips=false;
   for (const FGbTip& T : Data.Tips) if (T.bSeen)
   {

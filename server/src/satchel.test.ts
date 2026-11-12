@@ -194,6 +194,8 @@ test("every unfinished task names where to go next, and tips are remembered once
   assert.equal(await target("storehouse"), "");
   assert.equal(await target("rival"), "rival");
 
+  assert.deepEqual((await s.view(ACCOUNT)).exploration.lore.map(l => l.id), ["hollowmere", "grudge", "talismans", "rival", "tide", "ledger"]);
+  assert.deepEqual((await s.view(OTHER)).exploration.lore.map(l => l.id), ["hollowmere", "grudge"], "lore opens with each player's own progress");
   const tips = async (account: string) => (await s.view(account)).exploration.tips;
   assert.ok((await tips(ACCOUNT)).every(t => !t.seen && t.text.length > 0));
   s.seeTip(ACCOUNT, "battle"); s.seeTip(ACCOUNT, "battle");

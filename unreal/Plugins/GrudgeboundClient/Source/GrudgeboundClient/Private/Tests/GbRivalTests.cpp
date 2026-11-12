@@ -74,9 +74,11 @@ bool FGbGuideTest::RunTest(const FString&)
 	TestTrue(TEXT("Satchel parses"), GbJson::ParseObject(TEXT(R"({"carried":[],"case":[],"supplies":{},"ink":{},"profile":{"version":1,"complete":true,"name":"Mira"},
 		"exploration":{"version":1,"flags":[],"equipped":"","tracked":"net","gear":[],"notes":[],
 		"journal":[{"id":"lamp","title":"A","status":"complete","objective":"x","hint":"y","target":""},{"id":"net","title":"B","status":"active","objective":"x","hint":"y","target":"find:reed-bundle"}],
-		"tips":[{"id":"battle","text":"Attack, then seal.","seen":true},{"id":"tide","text":"Tide Ward.","seen":false},{"id":"","text":"dropped"}]}})"), O));
+		"tips":[{"id":"battle","text":"Attack, then seal.","seen":true},{"id":"tide","text":"Tide Ward.","seen":false},{"id":"","text":"dropped"}],
+		"lore":[{"id":"grudge","title":"Grudge","text":"Rage, Sorrow and Dread."}]}})"), O));
 	const FGbSatchel S = GbJson::Satchel(O);
 	TestEqual(TEXT("Tips read, blank ones dropped"), S.Tips.Num(), 2);
+	TestTrue(TEXT("Lore read"), S.Lore.Num() == 1 && S.Lore[0].Title == TEXT("Grudge"));
 	TestTrue(TEXT("Seen flag read"), S.Tips[0].bSeen && !S.Tips[1].bSeen);
 	const FGbJournalEntry* J = GbGuide::Tracked(S);
 	TestTrue(TEXT("Tracked task has a target"), J && J->Target == TEXT("find:reed-bundle"));

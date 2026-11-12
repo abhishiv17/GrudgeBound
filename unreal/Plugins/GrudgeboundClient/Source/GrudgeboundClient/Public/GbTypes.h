@@ -473,6 +473,8 @@ struct FGbSatchel
  /** What townsfolk say about this player's own deeds, newest first (server-written, by name and pronouns). */
  UPROPERTY(BlueprintReadOnly) TArray<FString> Gossip;
  UPROPERTY(BlueprintReadOnly) TArray<FGbTip> Tips;
+ /** Hollowmere lore pages opened so far (Title + Text). */
+ UPROPERTY(BlueprintReadOnly) TArray<FGbKeepsake> Lore;
 	static constexpr int32 CarryLimit = 5;
  UPROPERTY(BlueprintReadOnly) FGbArrivalProfile Profile;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TMap<FString, FGbLevel> Levels;

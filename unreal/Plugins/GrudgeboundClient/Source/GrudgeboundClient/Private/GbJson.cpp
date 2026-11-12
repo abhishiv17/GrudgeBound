@@ -504,6 +504,8 @@ namespace GbJson
             for (const auto& V : Arr(E, TEXT("notes"))) { const auto G=AsObj(V); if (!G) continue; FGbKeepsake R;
                 R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Text=Str(G,TEXT("text")); S.Notes.Add(R); }
             S.Gossip = Strings(E, TEXT("gossip"));
+            for (const auto& V : Arr(E, TEXT("lore"))) { const auto G=AsObj(V); if (!G) continue; FGbKeepsake R;
+                R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Text=Str(G,TEXT("text")); if (!R.Title.IsEmpty()) S.Lore.Add(R); }
             for (const auto& V : Arr(E, TEXT("tips"))) { const auto G=AsObj(V); if (!G) continue; FGbTip R;
                 R.Id=Str(G,TEXT("id")); R.Text=Str(G,TEXT("text")); G->TryGetBoolField(TEXT("seen"), R.bSeen); if (!R.Id.IsEmpty() && !R.Text.IsEmpty()) S.Tips.Add(R); }
         }

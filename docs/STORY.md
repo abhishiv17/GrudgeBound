@@ -151,6 +151,16 @@ Players who already reached Tide before the rival existed keep the ferry.
   - Each of them changes their line again after later deeds, such as beating Dace at the ferry or opening the storehouse.
 - **Street walkers work your own deeds into their talk.** One line in four is gossip about you, using your chosen name and pronouns. The server writes it from facts recorded for your account only.
 
+**Hollowmere lore** (draft): six short Journal pages open as the player learns the town:
+- Hollowmere
+- Grudge
+- Talismans and the Rite (the first quest)
+- Dace Marrow (the pier fight)
+- Tide Ward (the ferry)
+- The original record (the storehouse)
+
+They let the world explain itself in play.
+
 On-chain, every won fight or bind with a minted talisman partner (`tal-…`) queues the deployed
 `items.record_win`, which raises that talisman's `wins` and `level` in its NEP-245 metadata. Set
 `RECORD_WINS=off` to keep this off-chain.
