@@ -136,6 +136,12 @@ protected:
 	float SkyBaseIntensity = 0.f;
 	float NightBlend = 0.f;
 	float SunPitch = -45.f;
+	/** 1 around sunset and sunrise: the warm grade, and the hour the lanterns come on. */
+	float DuskBlend = 0.f;
+	/** How strongly this Ward's lanterns burn now (1 by day, more after dark). */
+	float LampGlow = 1.f;
+	/** Each lantern's own strength (X) and reach (Y), read once at BeginPlay. */
+	TMap<TWeakObjectPtr<class UPointLightComponent>, FVector2D> LampBase;
 
 	/** The land: walkable, and what a click-to-walk lands on. */
 	UPROPERTY(VisibleAnywhere, Category = "Grudgebound|Parts") TObjectPtr<UInstancedStaticMeshComponent> Ground;

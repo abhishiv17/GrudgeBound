@@ -730,6 +730,10 @@ void AGbWardGreybox::BeginPlay()
 		GetWorldTimerManager().SetTimerForNextTick(this, &AGbWardGreybox::MovePlayerToStart);
 	}
 
+	// Every Ward brightens its own lanterns after dark; only one Ward turns the level's sun.
+	TArray<UPointLightComponent*> Lamps; GetComponents(Lamps);
+	for (UPointLightComponent* L : Lamps) if (L) LampBase.Add(L, FVector2D(L->Intensity, L->AttenuationRadius));
+	if (!bFollowServerClock) GetWorldTimerManager().SetTimer(LightingTimer, this, &AGbWardGreybox::UpdateLighting, 0.1f, true);
 	if (bFollowServerClock)
 	{
 		for (TActorIterator<ADirectionalLight> It(GetWorld()); It; ++It) { Sun = *It; break; }
@@ -766,10 +770,25 @@ void AGbWardGreybox::UpdateLighting()
 	const UGameInstance* GI = GetGameInstance();
 	const UGbApiSubsystem* Api = GI ? GI->GetSubsystem<UGbApiSubsystem>() : nullptr;
 	if (!Api) return;
-	const FGbWorldState State = Api->GetWorldState();
+	FGbWorldState State = Api->GetWorldState();
+	// Development aid: -GbHour=<0-23> fixes the clock (stills and trailer shots need no server).
+	static const int32 FixedHour = []{ int32 H = -1; FParse::Value(FCommandLine::Get(), TEXT("GbHour="), H); return H; }();
+	if (FixedHour >= 0) { State.bValid = true; State.Hour = FixedHour % 24; State.bNight = State.Hour >= 20 || State.Hour < 6; }
 	if (!State.bValid) return;
 
 	constexpr float Step = 0.1f;
+	// Dusk and dawn: the two hours either side of the night (18:00-19:59 and 06:00-06:59), half strength at 17:00.
+	const float DuskTarget = (State.Hour == 18 || State.Hour == 19 || State.Hour == 6) ? 1.f : (State.Hour == 17 || State.Hour == 5) ? 0.5f : 0.f;
+	DuskBlend = FMath::FInterpConstantTo(DuskBlend, DuskTarget, Step, 0.5f);
+	// Lanterns: as placed by day, stronger from dusk, strongest at night.
+	LampGlow = FMath::FInterpConstantTo(LampGlow, State.bNight ? 7.f : 1.f + 2.5f * DuskTarget, Step, 2.5f);
+	// After dark a lantern also reaches further, so the streets between them stay readable.
+	const float Reach = FMath::GetMappedRangeValueClamped(FVector2D(1.f, 7.f), FVector2D(1.f, 1.7f), LampGlow);
+	for (const TPair<TWeakObjectPtr<UPointLightComponent>, FVector2D>& Lamp : LampBase)
+	{
+		if (UPointLightComponent* L = Lamp.Key.Get()) { L->SetIntensity(Lamp.Value.X * LampGlow); L->SetAttenuationRadius(Lamp.Value.Y * Reach); }
+	}
+	if (!bFollowServerClock) return;
 	// Sun height above the horizon: low at 06:00 and 18:00, highest at noon. At night a fixed "moon".
 	const float DayT = FMath::Clamp((State.Hour - 6.f) / 12.f, 0.f, 1.f);
 	const float Elevation = State.bNight ? 40.f : 12.f + 53.f * FMath::Sin(PI * DayT);
@@ -782,18 +801,20 @@ void AGbWardGreybox::UpdateLighting()
 		Sun->SetActorRotation(FRotator(SunPitch, SunBaseRotation.Yaw, SunBaseRotation.Roll));
 		// Warm near the horizon, white at noon, pale blue moonlight at night.
 		const float High = FMath::Clamp((Elevation - 12.f) / 40.f, 0.f, 1.f);
-		const FLinearColor DayColor = FMath::Lerp(FLinearColor(1.f, 0.62f, 0.38f), FLinearColor(1.f, 0.97f, 0.92f), High);
+		const FLinearColor DayColor = FMath::Lerp(FMath::Lerp(FLinearColor(1.f, 0.62f, 0.38f), FLinearColor(1.f, 0.97f, 0.92f), High), FLinearColor(1.f, 0.66f, 0.42f), DuskBlend * (1.f - NightBlend));
 		L->SetLightColor(FMath::Lerp(DayColor, FLinearColor(0.55f, 0.66f, 1.f), NightBlend));
 		L->SetIntensity(SunBaseIntensity * FMath::Lerp(1.f, 0.25f, NightBlend));
 	}
 	if (SkyLight && SkyLight->GetLightComponent())
 	{
-		SkyLight->GetLightComponent()->SetIntensity(SkyBaseIntensity * FMath::Lerp(1.f, 0.45f, NightBlend));
+		SkyLight->GetLightComponent()->SetIntensity(SkyBaseIntensity * FMath::Lerp(1.f, 0.6f, NightBlend));
 	}
 	if (NightGrade)
 	{
-		NightGrade->Settings.ColorGain = FMath::Lerp(FVector4(1.f, 1.f, 1.f, 1.f), FVector4(0.5f, 0.6f, 0.95f, 0.8f), NightBlend);
-		NightGrade->Settings.AutoExposureBias = FMath::Lerp(0.f, -0.8f, NightBlend);
+		// Dusk warms and deepens the picture; night cools it. The lanterns carry the warmth after dark.
+		const FVector4 DayGain = FMath::Lerp(FVector4(1.f, 1.f, 1.f, 1.f), FVector4(1.03f, 0.94f, 0.84f, 0.98f), DuskBlend);
+		NightGrade->Settings.ColorGain = FMath::Lerp(DayGain, FVector4(0.58f, 0.66f, 0.98f, 0.85f), NightBlend);
+		NightGrade->Settings.AutoExposureBias = FMath::Lerp(-0.1f * DuskBlend, -0.55f, NightBlend);
 	}
 }
 
