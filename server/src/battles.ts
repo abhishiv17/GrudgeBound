@@ -281,6 +281,7 @@ export class BattleSessions {
       view: this.view(s, guard),
       ...(stage ? { rival: { stage: stage.stage, name: RIVAL_NAME } } : {}),
       lines: [
+        ...(stage ? [`${RIVAL_NAME}: "${this.satchels!.rivalLine(account!)}"`] : []),
         stage ? `${RIVAL_NAME} sends out ${state.wild.name} (level ${foeLevel}). No sealing a rival's partner, and no running.` : introLine(state),
         ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
         ...(noBind ? [`Kessa: "Curfew: ${noBind}. Drive it off, don't seal it."`] : []),

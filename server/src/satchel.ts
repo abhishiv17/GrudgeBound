@@ -33,6 +33,8 @@ export interface SatchelView {
   profile: ReturnType<typeof profileView>;
   levels: Record<string, LevelView>;
   rival: ReturnType<typeof rivalView>;
+  /** The ferry takes this player to Tide. */
+  tideOpen: boolean;
 }
 interface Pocket {
   initialized: boolean; carried: string[]; supplies: Record<Supply, number>; keepsakes: string[];
@@ -133,6 +135,8 @@ export class Satchels {
     const p = this.read(account); return rivalRefusal(p.exploration, stage, this.arrived(p));
   }
   tideOpen(account: string): boolean { return tideOpen(this.read(account).exploration); }
+  /** What the rival says before the fight that can start now. */
+  rivalLine(account: string): string { const p = this.read(account); return rivalView(p.exploration, p.profile.starter, p.profile.name, this.arrived(p)).line; }
   /**
    * A finished battle, applied once by the battle session that ended it: experience for a won or bound fight (none for
    * fleeing or losing), the rival's result, and the ink a level-up adds. Returns what to show on the battle screen.
@@ -252,7 +256,7 @@ export class Satchels {
       supplies: p.supplies, keepsakes: p.keepsakes, exploration: explorationView(p.exploration, p.keepsakes),
       profile: profileView(p.profile),
       levels: Object.fromEntries(owned.map((t) => { const xp = p.xp[t.tokenId] ?? 0; const level = levelForXp(xp); return [t.tokenId, { level, xp, next: nextLevelXp(level) }]; })),
-      rival: rivalView(p.exploration, p.profile.starter, p.profile.name, this.arrived(p)),
+      rival: rivalView(p.exploration, p.profile.starter, p.profile.name, this.arrived(p)), tideOpen: tideOpen(p.exploration),
       ink: Object.fromEntries(owned.map((t) => [t.tokenId, this.inkFor(account, t)])), ember, points };
   }
   async carry(account: string, tokenId: unknown, carry: unknown): Promise<SatchelView> {
