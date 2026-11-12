@@ -7,16 +7,15 @@ then spend the points they earn to add rules to the game for everyone.
 
 Built at [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), track **Games With Real Economies**.
 
-<!-- OWNER: add the demo video link, and update the build link at each release. -->
+<!-- OWNER: add the demo video link. -->
 | | |
 |---|---|
 | Demo video | added with the demo post |
-| Windows build (GitHub Release) | [Grudgebound for Windows (12 Nov)](https://github.com/abhishiv17/GrudgeBound/releases/tag/build-2026-11-12), 344 MB zip |
+| Windows build (GitHub Release) | [Grudgebound for Windows (13 Nov)](https://github.com/abhishiv17/GrudgeBound/releases/tag/build-2026-11-13), 344 MB zip, built from `eb7f5a6` (SHA-256 in the release notes) |
 | Hosted game server | `https://grudgebound-server.onrender.com` ([health](https://grudgebound-server.onrender.com/health), [live town](https://grudgebound-server.onrender.com/state), [AI agents' accounts](https://grudgebound-server.onrender.com/agents)). Free hosting: the first request after a quiet spell can take up to a minute. |
 | Contracts (NEAR testnet) | [`items.grudgebound.testnet`](https://testnet.nearblocks.io/address/items.grudgebound.testnet) · [`rite.grudgebound.testnet`](https://testnet.nearblocks.io/address/rite.grudgebound.testnet) |
 
-> **Build status (13 Nov).** The published build is from 12 Nov. The rows marked **(next build)** below are in
-> this repository and pass its tests, but are not in that zip yet. Testnet only.
+> **Build status (13 Nov).** Every feature listed below is in the published 13 Nov build. Testnet only.
 
 ## The problem
 
@@ -38,21 +37,21 @@ Needs Windows 10/11 64-bit and a DirectX 12 GPU with 4 GB of video memory.
 | Do this in the game | You'll see |
 |---|---|
 | First entry | A four-panel paper intro: you arrive in Hollowmere in debt, and Kessa, the Rite's referee, offers a way out. The HUD then shows your chapter and objective (**I** replays the intro). |
-| Arrive on the pier **(next build)** | Kessa meets you: you choose a name, a look, how you are addressed, and one of three first partners. The choice is saved to your account and cannot be changed. |
+| Arrive on the pier | Kessa meets you: you choose a name, a look, how you are addressed, and one of three first partners. The choice is saved to your account and cannot be changed. |
 | Walk (WASD, or click to move) into the dark tall grass | A curse appears, chosen by the Ward's live Grudge (Rage, Sorrow or Dread). |
 | **Fight!** → attack / ward → **Seal** when it's weak | A server-run battle. A successful seal mints the talisman to your NEAR account; the HUD shows your new points. Press **L** to open the transaction on the explorer. |
 | **B** (Satchel) | Your carried talismans with their ink (HP), supplies (blank talismans, Ink Salves), keepsakes and your ledger (Ember, points, debt). Binding uses up a blank talisman. Ink stays low after a fight. |
-| Satchel > **Journal**, **Gear** **(next build)** | Tasks from townsfolk with their next step, three charms that change battle numbers, lore pages opened by your progress. A gold beacon in the Ward marks the tracked task. |
-| Satchel > **Ledger** > **Open my page** **(next build)** | Your own NEAR testnet account on the explorer: the talismans sealed under your name and the wins written on them. |
-| Win fights with one partner **(next build)** | The partner gains levels (1-10). For a minted talisman each win is also written on the token (`record_win` on `items`). |
-| Meet **Dace Marrow** on the pier, at the ferry, on Tide's quay **(next build)** | A rival who arrived on your boat: three fights against a mirror of your own partner. The ferry to Tide Ward opens after the second. |
+| Satchel > **Journal**, **Gear** | Tasks from townsfolk with their next step, three charms that change battle numbers, lore pages opened by your progress. A gold beacon in the Ward marks the tracked task. |
+| Satchel > **Ledger** > **Open my page** | Your own NEAR testnet account on the explorer: the talismans sealed under your name and the wins written on them. |
+| Win fights with one partner | The partner gains levels (1-10). For a minted talisman each win is also written on the token (`record_win` on `items`). |
+| Meet **Dace Marrow** on the pier, at the ferry, on Tide's quay | A rival who arrived on your boat: three fights against a mirror of your own partner. The ferry to Tide Ward opens after the second. |
 | Enter the **Counting House** | The AI Broker's prices, each with a one-line reason (scarcity, demand, fear). Buy and sell talismans and supplies for Ember. Agents appear at the counter when they trade. |
 | Enter the **Mender's House** / your **room** | Restore ink for Ember (price rises with the Ward's Sorrow), or rest for free until morning. |
 | Enter the **Rite Hall**, press **R** | Kessa checks your rule proposal; a contradiction is rejected with her reason, a valid rule is written to the `rite` contract and applies to every player and agent (prices or curfews change). |
 | **V** at the Rite Hall's shrine | Swear a vow and stake points on it. The `rite` contract returns the stake with a bonus if you keep it, or burns it if you break it. |
 | Take the ferry at the southern pier | Tide Ward: docks, its own curses and townsfolk. Walk up to anyone and press **E** to talk. |
 | **O** (Observatory) | Grudge, prices and rules over time, including rules added by AI agents, plus a fast-forward preview of the next seven days. |
-| Observatory > **Agents** **(next build)** | The five AI agents: each one's own NEAR account, its points and Ember as the contracts report them, and its latest actions with a button that opens the transaction. An agent's Ember usually reads 0: the game mints exactly what a purchase needs and the agent pays it in the same step. |
+| Observatory > **Agents** | The five AI agents: each one's own NEAR account, its points and Ember as the contracts report them, and its latest actions with a button that opens the transaction. An agent's Ember usually reads 0: the game mints exactly what a purchase needs and the agent pays it in the same step. |
 | **The Ninth Bell** (2-4 players, LAN) | A co-op story level: shared clues, two players holding the seal anchors together, a boss fight with revives, and a party vote between two endings. Not connected to the economy. How to host and join: [`docs/UNREAL_SETUP.md`](docs/UNREAL_SETUP.md), section 7. |
 
 Run against your own server instead of the hosted one: start the game with `-GbServer=http://127.0.0.1:8787`.
