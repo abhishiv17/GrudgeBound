@@ -66,17 +66,23 @@ function setup(points?: Record<string, number>) {
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 40));
+/** Waits until a proposal's chain job has a final receipt, so a slow machine cannot assert on "pending". */
+async function untilFinal(chain: ReturnType<typeof setup>["chain"], answer: { body: unknown }) {
+  const jobId = (answer.body as ProposeAnswer).jobId;
+  const deadline = Date.now() + 3000;
+  while (chain.ruleReceipt(jobId)?.status === "pending" && Date.now() < deadline) await settle();
+}
 const PVP_BAN = { templateId: "R8", params: { ward: "lantern" } };
 const PVP_BONUS = { templateId: "R1", params: { action: "pvp", ward: "lantern", multiplier: 2 } };
 
 describe("rules through the rite contract", () => {
   test("one pending proposal per account, then a cooldown, including concurrent checks", async () => {
-    const { rules, advance } = setup({ [AFREEN]: 500 });
+    const { rules, advance, chain } = setup({ [AFREEN]: 500 });
     const first = rules.propose({ account: AFREEN, ...PVP_BAN });
     assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 409);
-    await first;
+    const firstAnswer = await first;
     assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 409);
-    await settle();
+    await untilFinal(chain, firstAnswer);
     assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 429);
     advance();
     assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 200);
@@ -116,7 +122,7 @@ describe("rules through the rite contract", () => {
     const { rite, chain, rules, advance } = setup({ [AFREEN]: 500 });
     rite.resolveFailures.push("before", "before");
     const r = await rules.propose({ account: AFREEN, ...PVP_BAN });
-    await settle();
+    await untilFinal(chain, r);
     assert.equal(chain.ruleReceipt((r.body as ProposeAnswer).jobId)!.status, "failed");
     advance();
     assert.equal((await rules.propose({ account: AFREEN, ...PVP_BONUS })).status, 409);
@@ -131,7 +137,7 @@ describe("rules through the rite contract", () => {
     assert.equal(a.cost, 50);
     assert.equal(a.chain.status, "pending");
     assert.equal(world.rules.length, 0, "not in force before the chain says so");
-    await settle();
+    await untilFinal(chain, r);
     assert.deepEqual(rite.calls, [`${AFREEN} propose_rule`, "game resolve_rule"]);
     const receipt = chain.ruleReceipt(a.jobId)!;
     assert.equal(receipt.status, "done");
