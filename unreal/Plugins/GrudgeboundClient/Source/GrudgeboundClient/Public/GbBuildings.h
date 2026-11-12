@@ -5,6 +5,7 @@
 #include "GbBuildings.generated.h"
 
 class UBoxComponent;
+class UStaticMesh;
 class UInstancedStaticMeshComponent;
 class UTextRenderComponent;
 
@@ -66,6 +67,17 @@ protected:
 private:
  UFUNCTION() void TownEvents(const TArray<FGbTownEvent>& Events);
  void ClearVisitor();
+ /** Picture only, on Play: kit furniture, floor and wall trim, a lamp and whoever keeps the building. The grey
+  *  Furniture boxes keep their collision (and the saved nav) but are hidden. */
+ void Dress();
+ /** A kit mesh (Env/<Pack>/<name>) scaled so its larger side is Fit cm (or its height, bHeight), standing on At. */
+ void Prop(FName Mesh, const FVector& At, float Yaw, float Fit, bool bHeight=false);
+ /** A painted box, Size in cm, Centre in room space. */
+ void Slab(const FVector& Centre, const FVector& Size, const FLinearColor& Color);
+ void Keeper(const FVector& At, const FLinearColor& Top, const FLinearColor& Hair, const FLinearColor& Scarf, bool bHat);
+ UPROPERTY() TMap<FName, TObjectPtr<UStaticMesh>> PropMeshes;
+ UPROPERTY(Transient) TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> PropParts;
+ UPROPERTY(Transient) TMap<FColor, TObjectPtr<UInstancedStaticMeshComponent>> SlabParts;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Structure;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Furniture;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Visitor;

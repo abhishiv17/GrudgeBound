@@ -16,6 +16,10 @@
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "Camera/PlayerCameraManager.h"
+#include "GbExorcistLook.h"
+#include "Components/PointLightComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 
 FVector GbBuildings::Origin(EGbBuilding Kind) { return FVector(20000 + static_cast<int32>(Kind)*1600, 0, 0); }
 FVector GbBuildings::Spawn(EGbBuilding Kind) { return Origin(Kind) + FVector(-50,0,0); }
@@ -100,6 +104,19 @@ AGbBuildingRoom::AGbBuildingRoom()
  VisitorName->SetRelativeLocation(FVector(100,100,190));
  DebtNotice=CreateDefaultSubobject<UTextRenderComponent>(TEXT("DebtNotice")); DebtNotice->SetupAttachment(Structure);
  DebtNotice->SetRelativeLocation(FVector(300,-200,160)); DebtNotice->SetRelativeRotation(FRotator(55,180,0)); DebtNotice->SetWorldSize(17);
+ VisitorName->SetText(FText::GetEmpty());
+ // Hard references, so the furniture is cooked into a packaged game.
+ for (const TCHAR* Path:{TEXT("/Game/Grudgebound/Env/Pirate/chest.chest"),
+  TEXT("/Game/Grudgebound/Env/Pirate/barrel.barrel"),
+  TEXT("/Game/Grudgebound/Env/Pirate/crate.crate"),
+  TEXT("/Game/Grudgebound/Env/Pirate/crate_bottles.crate_bottles"),
+  TEXT("/Game/Grudgebound/Env/Pirate/bottle.bottle"),
+  TEXT("/Game/Grudgebound/Env/Pirate/bottle_large.bottle_large"),
+  TEXT("/Game/Grudgebound/Env/FantasyTown/stall_bench.stall_bench")})
+ {
+  ConstructorHelpers::FObjectFinder<UStaticMesh> Found(Path);
+  if (Found.Succeeded()) PropMeshes.Add(FName(FPaths::GetBaseFilename(Path)),Found.Object);
+ }
 }
 void AGbBuildingRoom::OnConstruction(const FTransform& T)
 {
@@ -129,6 +146,8 @@ void AGbBuildingRoom::CalcCamera(float,FMinimalViewInfo& Out)
 }
 void AGbBuildingRoom::BeginPlay()
 {
+ Dress(); // before Super, so the keepers' dolls begin play with the room
+ VisitorName->SetText(FText::GetEmpty());
  Super::BeginPlay(); if (Building==EGbBuilding::CountingHouse && GetGameInstance())
  if (UGbApiSubsystem* Api=GetGameInstance()->GetSubsystem<UGbApiSubsystem>()) Api->OnTownEvents.AddUniqueDynamic(this,&AGbBuildingRoom::TownEvents);
 }
@@ -155,3 +174,117 @@ void AGbBuildingRoom::TownEvents(const TArray<FGbTownEvent>& Events)
  }
 }
 void AGbBuildingRoom::ClearVisitor() { Visitor->ClearInstances(); VisitorName->SetText(FText::GetEmpty()); }
+
+// ---------------------------------------------------------------- interior dressing (picture only)
+
+void AGbBuildingRoom::Prop(FName Mesh,const FVector& At,float Yaw,float Fit,bool bHeight)
+{
+ UStaticMesh* Asset=PropMeshes.FindRef(Mesh); if (!Asset) return;
+ TObjectPtr<UInstancedStaticMeshComponent>& Part=PropParts.FindOrAdd(Mesh);
+ if (!Part)
+ {
+  Part=NewObject<UInstancedStaticMeshComponent>(this); Part->SetStaticMesh(Asset); Part->SetupAttachment(Structure);
+  Part->SetCollisionEnabled(ECollisionEnabled::NoCollision); Part->SetCanEverAffectNavigation(false);
+  AddInstanceComponent(Part); Part->RegisterComponent();
+ }
+ const FBox Box=Asset->GetBoundingBox(); const FVector Size=Box.GetSize();
+ const float Scale=Fit/FMath::Max(1.,bHeight?Size.Z:FMath::Max(Size.X,Size.Y));
+ const FRotator Turn(0,Yaw,0);
+ // Stand the mesh's footprint centre on At.
+ const FVector Centre=Turn.RotateVector(FVector(Box.GetCenter().X,Box.GetCenter().Y,Box.Min.Z)*Scale);
+ Part->AddInstance(FTransform(Turn,At-Centre,FVector(Scale)));
+}
+
+void AGbBuildingRoom::Slab(const FVector& Centre,const FVector& Size,const FLinearColor& Color)
+{
+ TObjectPtr<UInstancedStaticMeshComponent>& Part=SlabParts.FindOrAdd(Color.ToFColor(true));
+ if (!Part)
+ {
+  Part=NewObject<UInstancedStaticMeshComponent>(this); GbGreybox::SetupMesh(Part,GbGreybox::EShape::Cube); Part->SetupAttachment(Structure);
+  Part->SetCollisionEnabled(ECollisionEnabled::NoCollision); Part->SetCanEverAffectNavigation(false);
+  AddInstanceComponent(Part); Part->RegisterComponent(); GbGreybox::Paint(Part,Color,this);
+ }
+ Part->AddInstance(FTransform(FRotator::ZeroRotator,Centre,Size/100.f));
+}
+
+void AGbBuildingRoom::Keeper(const FVector& At,const FLinearColor& Top,const FLinearColor& Hair,const FLinearColor& Scarf,bool bHat)
+{
+ UGbExorcistLook* Doll=NewObject<UGbExorcistLook>(this);
+ UGbExorcistLook::FOutfit Outfit; Outfit.Top=Top; Outfit.TopSh=Top*.82f; Outfit.Hair=Hair; Outfit.HairHi=Hair*1.3f; Outfit.Scarf=Scarf;
+ Outfit.Pants=GbGreybox::Color::Hex(TEXT("3E3A4A")); Outfit.bTalisman=false; Outfit.bScarfTail=false; Outfit.bHat=bHat; Outfit.bTopKnot=!bHat; Outfit.bPonytail=false;
+ Doll->SetOutfit(Outfit); Doll->SetWalkSpeed(0.f);
+ Doll->SetupAttachment(Structure); Doll->SetRelativeLocation(At); Doll->SetRelativeRotation(FRotator(0,180,0)); // facing the door
+ AddInstanceComponent(Doll); Doll->RegisterComponent();
+}
+
+void AGbBuildingRoom::Dress()
+{
+ using namespace GbGreybox::Color;
+ if (!Structure || !PropParts.IsEmpty() || !SlabParts.IsEmpty()) return;
+ Furniture->SetVisibility(false); // collision and the saved nav stay as they were
+ const FLinearColor Floor=Hex(TEXT("C9965F")), Seam=Hex(TEXT("A87A4A")), Linen=Hex(TEXT("FFF6E4"));
+ const auto Candle=[this](const FVector& On) { Slab(On+FVector(0,0,9),FVector(8,8,18),GbGreybox::Color::Paper); Slab(On+FVector(0,0,21),FVector(4,4,6),GbGreybox::Color::Lantern); };
+ // Floorboards, wainscot and trim on the walls, a rug by the door, a warm lamp.
+ Slab(FVector(0,0,.6f),FVector(780,680,1.2f),Floor);
+ for (float X=-330;X<=330;X+=60) Slab(FVector(X,0,1.3f),FVector(3,680,.4f),Seam);
+ Slab(FVector(387,0,45),FVector(6,680,90),Wood); Slab(FVector(386,0,93),FVector(8,680,6),WoodDark);
+ for (const float Side:{-1.f,1.f}) { Slab(FVector(0,Side*337,45),FVector(780,6,90),Wood); Slab(FVector(0,Side*336,93),FVector(780,8,6),WoodDark); }
+ Slab(FVector(-90,0,1.5f),FVector(270,200,1),Gold); Slab(FVector(-90,0,1.8f),FVector(250,180,1),Crimson);
+ UPointLightComponent* Lamp=NewObject<UPointLightComponent>(this); Lamp->SetupAttachment(Structure); Lamp->SetRelativeLocation(FVector(40,0,240));
+ Lamp->SetLightColor(Lantern); Lamp->SetIntensity(3000); Lamp->SetAttenuationRadius(900); Lamp->SetCastShadows(false);
+ AddInstanceComponent(Lamp); Lamp->RegisterComponent();
+
+ switch (Building)
+ {
+ case EGbBuilding::Room:
+ {
+  // The bed fills the grey bed box (180,0); the bookshelf stands where the headboard box is (240,0).
+  Slab(FVector(180,40,22),FVector(104,220,44),Wood); Slab(FVector(180,40,50),FVector(96,212,14),Linen);
+  Slab(FVector(176,0,59),FVector(100,140,6),Crimson); Slab(FVector(176,-68,61),FVector(100,6,2),Gold);
+  Slab(FVector(180,118,62),FVector(66,38,14),Paper);
+  Slab(FVector(242,0,80),FVector(16,300,160),WoodDark);
+  for (const float Z:{108.f,152.f}) Slab(FVector(232,0,Z),FVector(20,296,4),Wood);
+  const FLinearColor Books[]={Crimson,Teal,Gold,Leaf,Dread,Paper}; int32 I=0;
+  for (float Y=-130;Y<=120;Y+=17) { if ((I%5)!=4) Slab(FVector(230,Y,128+(I%3)*2),FVector(16,12,36-(I%3)*4),Books[I%6]); ++I; }
+  Slab(FVector(180,-100,30),FVector(56,46,60),WoodDark); Candle(FVector(180,-100,60));
+  Prop(TEXT("chest"),FVector(180,-230,0),90,95);
+  Prop(TEXT("barrel"),FVector(330,290,0),0,62); Prop(TEXT("crate"),FVector(330,215,0),15,58);
+  // A writing table by the door with the debt notice on it.
+  Slab(FVector(-150,-285,72),FVector(80,100,6),Wood);
+  for (const FVector& Leg:{FVector(-180,-325,36),FVector(-120,-325,36),FVector(-180,-245,36),FVector(-120,-245,36)}) Slab(Leg,FVector(6,6,72),WoodDark);
+  Slab(FVector(-150,-285,75.6f),FVector(34,44,1),Paper); Slab(FVector(-150,-285,76.4f),FVector(4,26,.4f),Crimson);
+  DebtNotice->SetRelativeLocation(FVector(-150,-285,110));
+  break;
+ }
+ case EGbBuilding::RiteHall:
+  // Kessa behind the Rite's altar (the grey altar box and her pillar); the Vow Shrine to her right.
+  Slab(FVector(180,0,44),FVector(100,300,88),WoodDark); Slab(FVector(180,0,90),FVector(106,306,4),Crimson);
+  Slab(FVector(127,0,62),FVector(3,130,52),Crimson); Slab(FVector(126,0,62),FVector(3,130,4),Gold);
+  Slab(FVector(185,40,94),FVector(42,54,6),Paper);
+  Candle(FVector(180,-120,92)); Candle(FVector(180,-100,92)); Candle(FVector(180,120,92)); Candle(FVector(180,100,92));
+  Keeper(FVector(285,0,0),Hex(TEXT("5A2E4F")),Hex(TEXT("C9C3D6")),Gold,false);
+  Slab(FVector(200,-262,45),FVector(56,56,90),Stone); Slab(FVector(200,-262,92),FVector(64,64,4),StoneDark); Slab(FVector(200,-262,95),FVector(50,50,2),Crimson);
+  Candle(FVector(188,-274,96)); Candle(FVector(212,-250,96));
+  Prop(TEXT("stall_bench"),FVector(-120,-200,0),90,150); Prop(TEXT("stall_bench"),FVector(-120,200,0),90,150);
+  break;
+ case EGbBuilding::CountingHouse:
+  // The Broker behind the counter, stock along the back wall.
+  Slab(FVector(180,0,44),FVector(100,300,88),Wood); Slab(FVector(180,0,91),FVector(108,308,6),WoodDark);
+  Prop(TEXT("crate_bottles"),FVector(180,-95,94),0,52); Prop(TEXT("bottle_large"),FVector(175,20,94),0,30,true);
+  Slab(FVector(185,90,96),FVector(40,50,4),Paper); for (const float Y:{70.f,82.f,94.f}) Slab(FVector(160,Y,96),FVector(10,10,4),Gold);
+  Keeper(FVector(285,0,0),Hex(TEXT("2F6B5E")),Hex(TEXT("5A3A26")),Gold,true);
+  Prop(TEXT("crate"),FVector(345,-260,0),0,70); Prop(TEXT("crate"),FVector(345,-260,70),20,56); Prop(TEXT("crate"),FVector(345,-180,0),-10,60);
+  Prop(TEXT("barrel"),FVector(345,180,0),0,62); Prop(TEXT("barrel"),FVector(345,255,0),0,62);
+  break;
+ case EGbBuilding::Mender:
+  // The Mender at a table of salves; a cot by the right wall.
+  Slab(FVector(180,0,44),FVector(100,300,88),Wood); Slab(FVector(180,0,90),FVector(106,306,4),WoodDark); Slab(FVector(180,0,92.5f),FVector(60,290,1),Linen);
+  Prop(TEXT("bottle"),FVector(175,-110,92),0,24,true); Prop(TEXT("bottle_large"),FVector(185,-70,92),0,30,true); Prop(TEXT("bottle"),FVector(170,90,92),0,22,true);
+  Slab(FVector(185,10,96),FVector(30,60,8),Leaf);
+  Keeper(FVector(285,0,0),Linen,Hex(TEXT("8A8590")),Leaf,false);
+  Slab(FVector(40,265,22),FVector(190,84,44),Wood); Slab(FVector(40,265,50),FVector(182,76,12),Linen); Slab(FVector(15,265,58),FVector(120,80,5),Leaf);
+  Prop(TEXT("crate_bottles"),FVector(345,-250,0),0,60); Prop(TEXT("barrel"),FVector(345,250,0),0,62);
+  break;
+ default: break;
+ }
+}
