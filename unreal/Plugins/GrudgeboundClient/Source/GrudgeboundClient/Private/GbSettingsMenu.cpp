@@ -509,6 +509,10 @@ private:
 		TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Master volume"), Slider(0.f, 1.f, [S]() { return S->MasterVolume; }, [S, Apply](float V) { S->MasterVolume = V; Apply(); },
 			[](float V) { return FString::Printf(TEXT("%.0f%%"), V * 100.f); }, [S]() { S->Save(); })) ];
+		Rows->AddSlot().AutoHeight()[ Row(TEXT("Market and music"), Slider(0.f, 1.f, [S]() { return S->AmbienceVolume; }, [S](float V) { S->AmbienceVolume = V; },
+			[](float V) { return FString::Printf(TEXT("%.0f%%"), V * 100.f); }, [S]() { S->Save(); }), TEXT("The night market you hear in the Wards.")) ];
+		Rows->AddSlot().AutoHeight()[ Row(TEXT("Effects"), Slider(0.f, 1.f, [S]() { return S->EffectsVolume; }, [S](float V) { S->EffectsVolume = V; },
+			[](float V) { return FString::Printf(TEXT("%.0f%%"), V * 100.f); }, [S]() { S->Save(); }), TEXT("Footsteps, doors, panels and battles.")) ];
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Mute in the background"), Toggle([S]() { return S->bMuteInBackground; }, [S, Apply](bool B) { S->bMuteInBackground = B; Apply(); S->Save(); }),
 			TEXT("Silence the game while another window is in front.")) ];
 		return Scroll(Rows);

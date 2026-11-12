@@ -312,7 +312,8 @@ private:
 	void ShowEnd(EGbOutcome Outcome, int32 Points, const FString& Wild);
 	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 
-	/** Something to play a moment from now: Type 0 lunge, 1 hit, 2 heal, 3 seal stamp, 4 shrink away, 5 fade away. */
+	/** Something to play a moment from now: Type 0 lunge, 1 hit, 2 heal, 3 seal stamp, 4 shrink away, 5 fade away,
+	    6 ward, 7 HP bar moves, 8 the sound of the ending (Amount 0 bound, 1 exorcised, 2 lost), 9 the seal breaks. */
 	struct FCue { float Delay = 0.f; int32 Type = 0; int32 Side = 0; int32 Amount = 0; };
 	void Cue(int32 Type, int32 Side, float Delay, int32 Amount = 0);
 	void Play(const FCue& C);
@@ -381,6 +382,19 @@ private:
 	float NumberTime[2] = { 0.f, 0.f };
 	float SealTime = 0.f;
 	bool bSealHolds = false;
+	// Staging: the stage is the camera. It pulls back as the curses step in, punches on a hit and closes on the seal.
+	UPROPERTY() TObjectPtr<UCanvasPanel> StagePanel;
+	UPROPERTY() TObjectPtr<UBorder> Flash;
+	UPROPERTY() TObjectPtr<class UImage> Rings[2];
+	UPROPERTY() TObjectPtr<class UImage> SealRing;
+	float Enter = 0.f;
+	float Impact[2] = { 0.f, 0.f };
+	float FlashTime = 0.f;
+	float Punch = 0.f;
+	float Squash = 0.f;
+	float SealRingTime = 0.f;
+	float SealPop = 0.f;
+	bool bSealLanded = false;
 
 	FGbBattleView LastView;
 	TArray<FString> LogLines;

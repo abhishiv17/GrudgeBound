@@ -119,7 +119,7 @@ void UGbUserSettings::ResetCamera()
 
 void UGbUserSettings::ResetSound()
 {
-	MasterVolume = 1.f; bMuteInBackground = true;
+	MasterVolume = 1.f; AmbienceVolume = 0.7f; EffectsVolume = 1.f; bMuteInBackground = true;
 	Save();
 }
 

@@ -1,5 +1,7 @@
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 #include "Misc/AutomationTest.h"
+#include "Components/CanvasPanel.h"
+#include "Components/Border.h"
 #include "GbWidgets.h"
 #include "GbUserSettings.h"
 #include "Blueprint/WidgetTree.h"
@@ -46,6 +48,7 @@ bool FGbBattlePresentationTest::RunTest(const FString&)
 	const auto Capture=[&](const TCHAR* Name)
 	{
 		// ShowStart swaps in the species' textures: wait for those too, or the offscreen render shows empty frames.
+		FAssetCompilingManager::Get().FinishAllCompilation();
 		TArray<UWidget*> Now; W->WidgetTree->GetAllWidgets(Now);
 		for(UWidget* Widget:Now)if(UImage* Image=Cast<UImage>(Widget))if(UTexture2D* Texture=Cast<UTexture2D>(Image->GetBrush().GetResourceObject()))Texture->WaitForPendingInitOrStreaming();
 		FlushRenderingCommands();
@@ -62,7 +65,7 @@ bool FGbBattlePresentationTest::RunTest(const FString&)
 			TestTrue(TEXT("Review PNG saved"),FFileHelper::SaveArrayToFile(Png,*File));
 		}
 	};
-	W->ShowStart(Start); Advance(.1f);
+	W->ShowStart(Start); Advance(.7f); // past the step-in
 	for(UImage* I:{W->Sprites[0].Get(),W->Sprites[1].Get(),W->Portraits[0].Get(),W->EmotionIcons[0].Get(),W->SealStamp.Get(),W->WardImages[1].Get()})
 	{
 		const auto* Texture=Cast<UTexture2D>(I->GetBrush().GetResourceObject());
@@ -82,12 +85,18 @@ bool FGbBattlePresentationTest::RunTest(const FString&)
 	W->ShowProblem(TEXT("Request failed"),false);
 	TestTrue(TEXT("Recoverable request failure restores commands"),W->AttackButton->GetIsEnabled());
 	W->ShowStart(Start); Turn.Action=TEXT("seal"); Turn.View=Start.View; Turn.bEnded=true; Turn.Outcome=EGbOutcome::Bound; Turn.Points=30;
-	W->ApplyTurn(Turn); Advance(.25f); Capture(TEXT("battle-seal"));
+	W->ApplyTurn(Turn); Advance(.1f);
+	TestTrue(TEXT("The seal is still falling"),W->SealStamp->GetRenderTransform().Translation.Y<-40.f);
+	Advance(.2f); Capture(TEXT("battle-seal"));
+	TestTrue(TEXT("The seal has landed"),W->bSealLanded&&FMath::IsNearlyZero(W->SealStamp->GetRenderTransform().Translation.Y,1.f));
+	TestTrue(TEXT("The camera closes on the sealed curse"),W->StagePanel->GetRenderTransform().Scale.X>1.04f);
 	TestEqual(TEXT("Result does not cover seal animation"),W->EndPanel->GetVisibility(),ESlateVisibility::Collapsed);
 	Advance(1.5f); TestEqual(TEXT("Result appears after animation"),W->EndPanel->GetVisibility(),ESlateVisibility::Visible);
 	TestFalse(TEXT("Ended battle never re-enables actions"),W->AttackButton->GetIsEnabled()); Capture(TEXT("battle-result"));
 	Settings->bReducedBattleMotion=true;
 	W->ShowStart(Start); Turn.Action=TEXT("attack"); Turn.bEnded=false; Turn.Outcome=EGbOutcome::None; Turn.View.Wild.Hp=48; W->ApplyTurn(Turn); Advance(.28f);
+	TestTrue(TEXT("Reduced motion holds the camera still"),W->StagePanel->GetRenderTransform().Translation.IsNearlyZero()&&W->StagePanel->GetRenderTransform().Scale.Equals(FVector2D(1)));
+	TestEqual(TEXT("Reduced motion shows no flash"),W->Flash->GetVisibility(),ESlateVisibility::Collapsed);
 	TestTrue(TEXT("Reduced motion stops sprite travel"),W->Sprites[0]->GetRenderTransform().Translation.IsNearlyZero()&&W->Sprites[1]->GetRenderTransform().Translation.IsNearlyZero());
 	TestTrue(TEXT("Reduced motion keeps damage text stationary"),W->Numbers[0]->GetRenderTransform().Translation.IsNearlyZero()); Capture(TEXT("battle-reduced-motion"));
 	Advance(1.5f); Turn.Action=TEXT("seal"); Turn.bEnded=true; Turn.Outcome=EGbOutcome::Bound; W->ApplyTurn(Turn); Advance(2);
@@ -119,6 +128,7 @@ bool FGbEncounterPresentationTest::RunTest(const FString&)
 	{
 		// Let the shared open fade finish, or the capture is the panel at zero opacity.
 		for(int32 T=0;T<40;++T) W->NativeTick(FGeometry(),.02f);
+		FAssetCompilingManager::Get().FinishAllCompilation();
 		TArray<UWidget*> Now; W->WidgetTree->GetAllWidgets(Now);
 		for(UWidget* Widget:Now)if(UImage* Image=Cast<UImage>(Widget))if(UTexture2D* Texture=Cast<UTexture2D>(Image->GetBrush().GetResourceObject()))Texture->WaitForPendingInitOrStreaming();
 		FlushRenderingCommands();

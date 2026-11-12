@@ -22,6 +22,7 @@ class UGbSatchelWidget;
 class UGbMenderWidget;
 class UGbRoomWidget;
 class UGbObservatoryWidget;
+enum class EGbAudioScene : uint8;
 
 UCLASS(NotPlaceable, Transient)
 class GRUDGEBOUNDCLIENT_API AGbUiDirector : public AActor
@@ -36,6 +37,10 @@ public:
 	void RestoreInput();
 	/** Esc: closes the open panel, if there is one. */
 	bool CloseTopPanel();
+	/** What the sound follows: title, street, a room, a panel or a battle. */
+	EGbAudioScene GetAudioScene() const;
+	/** Walking the Ward with nothing open (townsfolk only talk then). */
+	bool IsWalking() const { return Current == EScreen::Ward && !bBuildingTransition && !bCrossing; }
 
 protected:
 	virtual void BeginPlay() override;

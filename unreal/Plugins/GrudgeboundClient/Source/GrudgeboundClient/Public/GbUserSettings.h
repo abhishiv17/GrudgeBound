@@ -71,6 +71,9 @@ public:
 	UPROPERTY(Config) bool bSmoothCamera = true;
 
 	UPROPERTY(Config) float MasterVolume = 1.f;
+	/** The night-market loop, and footsteps / panel / battle effects. Both sit under the master volume. */
+	UPROPERTY(Config) float AmbienceVolume = 0.7f;
+	UPROPERTY(Config) float EffectsVolume = 1.f;
 	UPROPERTY(Config) bool bMuteInBackground = true;
 	UPROPERTY(Config) bool bShowFps = false;
 	/** Stops battle bobbing, lunges, shakes and moving numbers; keeps static outcome feedback. */

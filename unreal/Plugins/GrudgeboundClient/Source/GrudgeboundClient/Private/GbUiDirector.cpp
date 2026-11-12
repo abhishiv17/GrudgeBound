@@ -1,6 +1,7 @@
 #include "GbUiDirector.h"
 
 #include "GbApiSubsystem.h"
+#include "GbAudio.h"
 #include "GbAuthSubsystem.h"
 #include "GbPlayerSubsystem.h"
 #include "GbSettings.h"
@@ -266,6 +267,17 @@ void AGbUiDirector::RestoreInput()
 		return;
 	}
 	ShowScreen(Current);
+}
+
+EGbAudioScene AGbUiDirector::GetAudioScene() const
+{
+	switch (Current)
+	{
+	case EScreen::SignIn: case EScreen::Intro: return EGbAudioScene::Title;
+	case EScreen::Encounter: case EScreen::Battle: return EGbAudioScene::Battle;
+	case EScreen::Ward: return CurrentBuilding == EGbBuilding::Outside ? EGbAudioScene::Street : EGbAudioScene::Indoors;
+	default: return EGbAudioScene::Panel;
+	}
 }
 
 bool AGbUiDirector::CloseTopPanel()

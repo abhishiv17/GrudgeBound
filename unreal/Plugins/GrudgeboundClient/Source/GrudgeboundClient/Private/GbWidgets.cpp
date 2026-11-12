@@ -1,6 +1,8 @@
 #include "GbWidgets.h"
 
 #include "GbApiSubsystem.h"
+#include "GbAudio.h"
+#include "Sound/SoundBase.h"
 #include "GbAuthSubsystem.h"
 #include "GbStorySubsystem.h"
 #include "GbGreyboxMaterials.h"
@@ -11,6 +13,7 @@
 #include "GbUiStyle.h"
 #include "GbUserSettings.h"
 #include "Styling/CoreStyle.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -450,6 +453,7 @@ UButton* UGbWidgetBase::MakeButton(const FString& Label, UTextBlock*& OutLabel, 
 	FButtonStyle Style=B->GetStyle(); Style.Normal=FrameBrush(2); Style.Hovered=Style.Normal; Style.Pressed=Style.Normal; Style.Disabled=Style.Normal;
 	Style.Hovered.TintColor=FSlateColor(FLinearColor::White*1.08f); Style.Pressed.TintColor=FSlateColor(FLinearColor::White*.83f);
 	Style.Disabled.TintColor=FSlateColor(FLinearColor::White*.55f); Style.NormalPadding=FMargin(12,6,12,9); Style.PressedPadding=FMargin(12,8,12,7);
+	if (UGbAudio* Audio = UGbAudio::Get(this)) if (USoundBase* Click = Audio->Find(TEXT("ui_click"))) Style.PressedSlateSound.SetResourceObject(Click);
 	B->SetStyle(Style);
 	B->SetBackgroundColor(Tint);
 	OutLabel = MakeText(Label, 15, Tint == C::Crimson ? GbUi::PaperHi() : C::Ink, true);
@@ -1082,7 +1086,7 @@ void UGbBattleWidget::BuildTree()
 		auto* I = WidgetTree->ConstructWidget<UImage>(); I->SetBrush(ArtBrush(Name,1)); I->SetVisibility(ESlateVisibility::HitTestInvisible); return I;
 	};
 	UCanvasPanel* Stage = WidgetTree->ConstructWidget<UCanvasPanel>(); Stage->SetClipping(EWidgetClipping::ClipToBounds);
-	Place(Root,Stage,0,0,1920,720);
+	Place(Root,Stage,0,0,1920,720); StagePanel=Stage; Stage->SetRenderTransformPivot(FVector2D(.5,.5));
 	Place(Stage,Art(TEXT("backdrop")),0,0,1920,1080);
 	KessaImage = Art(TEXT("kessa")); Place(Stage,KessaImage,884,42,112,128);
 	// Fixed bounds prevent species texture dimensions from changing the layout.
@@ -1100,7 +1104,17 @@ void UGbBattleWidget::BuildTree()
 		Place(Stage,Numbers[Side],Feet[Side].X-120,Feet[Side].Y-Extent[Side]*.62f-34,240,68);
 		Numbers[Side]->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	// One ring where a blow lands, one where the seal comes down, and a single soft flash over the stage.
+	for(int32 Side=0;Side<2;++Side)
+	{
+		Rings[Side]=WidgetTree->ConstructWidget<UImage>(); Rings[Side]->SetBrush(FSlateRoundedBoxBrush(FLinearColor::Transparent,80.f,GbUi::PaperHi(),7.f,FVector2D(160,160)));
+		Place(Stage,Rings[Side],Feet[Side].X-80,Feet[Side].Y-Extent[Side]*.5f-80,160,160); Rings[Side]->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	SealRing=WidgetTree->ConstructWidget<UImage>(); SealRing->SetBrush(FSlateRoundedBoxBrush(FLinearColor::Transparent,110.f,C::Gold,12.f,FVector2D(220,220)));
+	Place(Stage,SealRing,1306,238,220,220); SealRing->SetVisibility(ESlateVisibility::Collapsed);
+	Flash=WidgetTree->ConstructWidget<UBorder>(); Flash->SetBrushColor(GbUi::PaperHi()); Place(Stage,Flash,0,0,1920,720); Flash->SetVisibility(ESlateVisibility::Collapsed);
 	SealStamp=Art(TEXT("wax_seal")); Place(Stage,SealStamp,1336,260,160,176); SealStamp->SetVisibility(ESlateVisibility::Collapsed);
+	SealStamp->SetRenderTransformPivot(FVector2D(.5,.5));
 	Place(Root,MakePanel(C::Paper,FMargin(24,20)),0,720,1920,360);
 	for(int32 Side=0;Side<2;++Side)
 	{
@@ -1189,12 +1203,18 @@ void UGbBattleWidget::ShowStart(const FGbBattleStart& Battle)
 
 	// A fresh stage: both curses step in, nothing left over from the last fight.
 	Cues.Reset(); SealTime = 0.f; bSealHolds = false;
+	Enter = UGbUserSettings::Get()->bReducedBattleMotion ? 0.f : 1.f;
+	FlashTime = Punch = Squash = SealRingTime = SealPop = 0.f; bSealLanded = false;
+	Flash->SetVisibility(ESlateVisibility::Collapsed); SealRing->SetVisibility(ESlateVisibility::Collapsed);
+	StagePanel->SetRenderScale(FVector2D(1)); StagePanel->SetRenderTranslation(FVector2D::ZeroVector);
+	SealStamp->SetRenderTranslation(FVector2D::ZeroVector); SealStamp->SetRenderTransformAngle(0.f);
 	FeedbackRemaining=0; bBattleEnded=false; bWaitingForReply=false; Clock=0;
 	Problem->GetParent()->SetVisibility(ESlateVisibility::Collapsed);
 	SealStamp->SetVisibility(ESlateVisibility::Collapsed);
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		Lunge[Side] = Hit[Side] = NumberTime[Side] = 0.f;
+		Lunge[Side] = Hit[Side] = NumberTime[Side] = Impact[Side] = 0.f;
+		Rings[Side]->SetVisibility(ESlateVisibility::Collapsed);
 		Shrink[Side] = ShrinkTo[Side] = FadeTo[Side] = Fade[Side] = WardTime[Side] = 0.f;
 		WardImages[Side]->SetVisibility(ESlateVisibility::Collapsed);
 		Sprites[Side]->SetRenderScale(FVector2D(1)); Sprites[Side]->SetRenderTranslation(FVector2D::ZeroVector);
@@ -1229,6 +1249,7 @@ void UGbBattleWidget::ApplyTurn(const FGbBattleTurn& Turn)
 	{
 		bSealHolds = Turn.Outcome == EGbOutcome::Bound;
 		Cue(3, 0, 0.f); Reply = 0.9f;
+		if (!bSealHolds) Cue(9, 0, 0.8f);
 	}
 	else if (Turn.Action.Contains(TEXT("ward"), ESearchCase::IgnoreCase)) { Cue(6,1,0); Reply=.55f; }
 	else if (Turn.Action.Contains(TEXT("salve"), ESearchCase::IgnoreCase)) Reply = 0.5f;
@@ -1238,9 +1259,9 @@ void UGbBattleWidget::ApplyTurn(const FGbBattleTurn& Turn)
 	if (PartnerLost > 0) { Cue(0, 0, Reply); Cue(1, 1, Reply + 0.16f, PartnerLost); }
 	if (Turn.bEnded)
 	{
-		if (Turn.Outcome == EGbOutcome::Bound) Cue(4, 0, 0.45f);
-		else if (Turn.Outcome == EGbOutcome::Won) Cue(5, 0, 0.5f);
-		else if (Turn.Outcome == EGbOutcome::Lost) Cue(5, 1, Reply + 0.5f);
+		if (Turn.Outcome == EGbOutcome::Bound) { Cue(4, 0, 0.45f); Cue(8, 0, 0.55f, 0); }
+		else if (Turn.Outcome == EGbOutcome::Won) { Cue(5, 0, 0.5f); Cue(8, 0, 0.5f, 1); }
+		else if (Turn.Outcome == EGbOutcome::Lost) { Cue(5, 1, Reply + 0.5f); Cue(8, 1, Reply + 0.5f, 2); }
 	}
 
 	ShowView(Turn.View);
@@ -1267,14 +1288,20 @@ void UGbBattleWidget::Play(const FCue& C)
 {
 	switch (C.Type)
 	{
-	case 0: Lunge[C.Side] = 1.f; break;
-	case 1: Hit[C.Side] = 1.f; ShowNumber(C.Side, FString::Printf(TEXT("-%d"), C.Amount), GbUi::PaperHi()); break;
-	case 2: ShowNumber(C.Side, FString::Printf(TEXT("+%d"), C.Amount), FLinearColor(0.55f, 0.95f, 0.45f)); break;
-	case 3: SealTime = 1.4f; SealStamp->SetVisibility(ESlateVisibility::HitTestInvisible); break;
+	case 0: Lunge[C.Side] = 1.f; UGbAudio::Play(this, TEXT("whoosh"), 0.7f, C.Side == 1 ? 1.05f : 0.9f); break;
+	case 1:
+		Hit[C.Side] = Impact[C.Side] = FlashTime = Punch = 1.f;
+		ShowNumber(C.Side, FString::Printf(TEXT("-%d"), C.Amount), GbUi::PaperHi());
+		UGbAudio::Play(this, C.Side == 0 ? TEXT("hit_1") : TEXT("hit_2"), 0.9f, FMath::FRandRange(0.95f, 1.05f));
+		break;
+	case 2: ShowNumber(C.Side, FString::Printf(TEXT("+%d"), C.Amount), FLinearColor(0.55f, 0.95f, 0.45f)); UGbAudio::Play(this, TEXT("heal"), 0.8f); break;
+	case 3: SealTime = 1.4f; bSealLanded = false; SealPop = 0.f; SealStamp->SetVisibility(ESlateVisibility::HitTestInvisible); UGbAudio::Play(this, TEXT("whoosh"), 0.6f, 0.8f); break;
 	case 4: ShrinkTo[C.Side] = 1.f; break;
 	case 5: FadeTo[C.Side] = 1.f; break;
-	case 6: WardTime[C.Side]=1.1f; WardImages[C.Side]->SetVisibility(ESlateVisibility::HitTestInvisible); break;
+	case 6: WardTime[C.Side]=1.1f; WardImages[C.Side]->SetVisibility(ESlateVisibility::HitTestInvisible); UGbAudio::Play(this, TEXT("ward"), 0.8f); break;
 	case 7: TargetHp[C.Side]=HpFraction(C.Side==0?LastView.Wild:LastView.Player); break;
+	case 8: UGbAudio::Play(this, C.Amount == 0 ? TEXT("bound") : C.Amount == 1 ? TEXT("exorcised") : TEXT("lost"), 0.9f); break;
+	case 9: SealPop = 0.001f; UGbAudio::Play(this, TEXT("seal_break"), 0.9f); break;
 	default: break;
 	}
 }
@@ -1299,6 +1326,16 @@ void UGbBattleWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 		const FCue C = Cues[I]; Cues.RemoveAt(I); Play(C);
 	}
 
+	// Staging clocks. Enter runs 1 -> 0 as the curses step in; the rest are short one-shot pulses.
+	Enter = FMath::Max(0.f, Enter - DeltaTime / 0.55f);
+	FlashTime = FMath::Max(0.f, FlashTime - DeltaTime / 0.14f);
+	Punch = FMath::Max(0.f, Punch - DeltaTime / 0.3f);
+	Squash = FMath::Max(0.f, Squash - DeltaTime / 0.28f);
+	SealRingTime = FMath::Max(0.f, SealRingTime - DeltaTime / 0.5f);
+	if (SealPop > 0.f) SealPop = FMath::Min(1.f, SealPop + DeltaTime / 0.45f);
+	const float Arrive = Reduced ? 0.f : FMath::Square(Enter);
+	const float Pop = Reduced ? 0.f : SealPop;
+
 	UProgressBar* Bars[2] = { WildHp, PlayerHp };
 	if(FeedbackRemaining>0)
 	{
@@ -1320,11 +1357,23 @@ void UGbBattleWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 		const float Reach = FMath::Sin(Lunge[Side] * PI);
 		const float Shake = Hit[Side] > 0.f ? FMath::Sin(Clock * 45.f) * 6.f * Hit[Side] : 0.f;
 		const float Bob = FMath::Sin(Clock * (Side == 1 ? 2.9f : 3.5f) + Side) * 4.f;
-		Sprites[Side]->SetRenderTranslation(Reduced?FVector2D::ZeroVector:FVector2D(Toward * 72.f * Reach + Shake, Bob));
-		Sprites[Side]->SetRenderScale(FVector2D(Reduced?1.f:1.f-Shrink[Side]));
-		// One sustained tint, never a repeated red/white flash.
+		// Stepping in from its own side, knocked back by a blow, and (the wild curse) a hop when it throws the seal off.
+		const float Recoil = -Toward * 24.f * FMath::Square(Hit[Side]);
+		const float Hop = Side == 0 ? -22.f * FMath::Sin(Pop * PI) : 0.f;
+		Sprites[Side]->SetRenderTranslation(Reduced?FVector2D::ZeroVector:FVector2D(Toward * 72.f * Reach + Shake + Recoil - Toward * 340.f * Arrive, Bob + Hop));
+		const float Press = Side == 0 && !Reduced ? Squash : 0.f;
+		Sprites[Side]->SetRenderScale(Reduced?FVector2D(1.f):FVector2D((1.f-Shrink[Side])*(1.f+.07f*Press),(1.f-Shrink[Side])*(1.f-.14f*Press)));
+		// One sustained tint, never a repeated red/white flash. A sealed curse turns the gold of the wax.
 		const bool bRed = Hit[Side] > .55f;
-		Sprites[Side]->SetColorAndOpacity(FLinearColor(1.f, bRed ? 0.3f : 1.f, bRed ? 0.3f : 1.f, 1.f - Fade[Side]));
+		const bool bGold = Side == 0 && bSealLanded && bSealHolds && SealTime > 0.f;
+		Sprites[Side]->SetColorAndOpacity(FLinearColor(1.f, bRed ? 0.3f : bGold ? 0.86f : 1.f, bRed ? 0.3f : bGold ? 0.5f : 1.f, (1.f - Fade[Side]) * (1.f - Arrive)));
+		if (Impact[Side] > 0.f)
+		{
+			Impact[Side] = FMath::Max(0.f, Impact[Side] - DeltaTime / 0.28f);
+			Rings[Side]->SetVisibility(Impact[Side] > 0.f && !Reduced ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			Rings[Side]->SetRenderScale(FVector2D(FMath::Lerp(1.9f, 0.5f, Impact[Side])));
+			Rings[Side]->SetRenderOpacity(Impact[Side]);
+		}
 		if(Reduced && Shrink[Side]>=.99f) Sprites[Side]->SetRenderOpacity(0);
 		WardTime[Side]=FMath::Max(0.f,WardTime[Side]-DeltaTime);
 		if(WardTime[Side]==0) WardImages[Side]->SetVisibility(ESlateVisibility::Collapsed);
@@ -1347,10 +1396,32 @@ void UGbBattleWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 	{
 		SealTime = FMath::Max(bSealHolds ? 0.6f : 0.f, SealTime - DeltaTime);
 		const float In = FMath::Clamp((1.4f - SealTime) / 0.22f, 0.f, 1.f);
-		SealStamp->SetRenderScale(FVector2D(Reduced?1.f:FMath::Lerp(1.5f, 1.f, In)));
-		SealStamp->SetRenderOpacity(In * FMath::Clamp(SealTime / 0.3f, 0.f, 1.f));
+		// It falls faster as it comes, tilted, and lands square: a thud, a ring of gold and the curse pressed flat.
+		const float Drop = In * In;
+		if (In >= 1.f && !bSealLanded)
+		{
+			bSealLanded = true; SealRingTime = Punch = Squash = 1.f;
+			UGbAudio::Play(this, TEXT("seal_stamp"), 1.f);
+		}
+		// A seal that breaks is thrown up and aside; one that holds stays on the curse.
+		SealStamp->SetRenderTranslation(Reduced?FVector2D::ZeroVector:FVector2D(90.f * Pop, -280.f * (1.f - Drop) - 210.f * Pop * (2.f - Pop)));
+		SealStamp->SetRenderTransformAngle(Reduced?0.f:-16.f * (1.f - Drop) + 55.f * Pop);
+		SealStamp->SetRenderScale(FVector2D(Reduced?1.f:FMath::Lerp(1.7f, 1.f, Drop) + .1f * Squash));
+		SealStamp->SetRenderOpacity(SealPop > 0.f ? 1.f - SealPop : In * FMath::Clamp(SealTime / 0.3f, 0.f, 1.f));
 		if (SealTime <= 0.f) SealStamp->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	SealRing->SetVisibility(SealRingTime > 0.f && !Reduced ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	SealRing->SetRenderScale(FVector2D(FMath::Lerp(2.3f, 0.6f, SealRingTime)));
+	SealRing->SetRenderOpacity(SealRingTime);
+	Flash->SetVisibility(FlashTime > 0.f && !Reduced ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	Flash->SetRenderOpacity(0.16f * FlashTime);
+
+	// The camera: wide as the curses step in, a short punch on a blow, and in on the wild curse while the seal is on it.
+	const float SealFocus = Reduced || SealTime <= 0.f ? 0.f : FMath::Clamp((1.4f - SealTime) / 0.3f, 0.f, 1.f) * (SealPop > 0.f ? 1.f - SealPop : 1.f);
+	const float Zoom = Reduced ? 1.f : 1.f + .06f * Arrive + .018f * Punch + .07f * SealFocus;
+	const float Rattle = FMath::Sin(Clock * 55.f) * FMath::Min(6.f, (Zoom - 1.f) * 800.f) * Punch;
+	StagePanel->SetRenderScale(FVector2D(Zoom));
+	StagePanel->SetRenderTranslation(Reduced?FVector2D::ZeroVector:FVector2D(Rattle - (1416.f - 960.f) * .07f * SealFocus, -(286.f - 360.f) * .07f * SealFocus));
 	KessaImage->SetRenderTranslation(FVector2D(0.f, Reduced?0.f:FMath::Sin(Clock * 1.7f) * 4.f));
 }
 
