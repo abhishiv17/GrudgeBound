@@ -54,7 +54,7 @@ void UGbApiSubsystem::HandleSessionChanged()
 	const FString NewToken = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>()->GetToken();
 	if (NewToken == SessionToken) return;
 	SessionToken = NewToken; ++SessionSerial;
-	bObservatoryPreviewInFlight = false; bObservatoryLiveInFlight = false;
+	bObservatoryPreviewInFlight = false; bObservatoryLiveInFlight = false; bAgentsInFlight = false;
 	SwearingVowJobs.Reset();
 	MenderJobs.Reset(); bSatchelMutationInFlight = false; PendingSatchelMessage.Reset(); ++SatchelSerial;
 	TradeJobs.Reset(); bTradeRequestInFlight = false;
@@ -92,6 +92,23 @@ void UGbApiSubsystem::Send(const FString& Verb, const FString& Path, const FStri
 			Done(Response->GetResponseCode(), Response->GetContentAsString());
 		});
 	Request->ProcessRequest();
+}
+
+void UGbApiSubsystem::FetchAgents()
+{
+	if (bAgentsInFlight) return;
+	bAgentsInFlight = true;
+	const FString Server = GetServerUrl();
+	Send(TEXT("GET"), TEXT("/agents"), FString(), [this, Server](int32 Status, const FString& Text)
+	{
+		bAgentsInFlight = false;
+		if (Server != GetServerUrl()) return;
+		TSharedPtr<FJsonObject> O;
+		FGbAgentsData Data;
+		if (Status == 200 && GbJson::ParseObject(Text, O)) Data = GbJson::Agents(O);
+		if (!Data.bValid) { OnError.Broadcast(TEXT("agents"), Status, Status == 0 ? TEXT("server not reachable") : GbJson::ErrorMessage(Text)); return; }
+		OnAgents.Broadcast(Data);
+	});
 }
 
 void UGbApiSubsystem::FetchObservatory(bool bPreview)

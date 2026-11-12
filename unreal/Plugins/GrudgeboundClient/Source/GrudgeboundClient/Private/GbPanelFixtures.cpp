@@ -40,7 +40,7 @@ const TArray<FString>& FGbPanelFixtures::Shots()
 {
 	static const TArray<FString> All = { TEXT("TalismanCase"), TEXT("Mender"), TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"),
 		TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger"), TEXT("Satchel-Gear"), TEXT("Satchel-Journal"), TEXT("Broker"), TEXT("Rite"), TEXT("Vows"), TEXT("Observatory-Grudge"),
-		TEXT("Observatory-Prices"), TEXT("Observatory-Rules"), TEXT("Room") };
+		TEXT("Observatory-Prices"), TEXT("Observatory-Rules"), TEXT("Observatory-Agents"), TEXT("Room") };
 	return All;
 }
 
@@ -213,8 +213,20 @@ void FGbPanelFixtures::Fill(UGbWidgetBase* Widget, const FString& Shot)
 		R.Id = TEXT("2"); R.Tick = 72; R.Text = TEXT("Every talisman trade pays 10% Ember to author"); R.Status = TEXT("rejected");
 		R.Reason = TEXT("A toll on every trade for its author alone."); R.Url = TEXT("https://testnet.nearblocks.io/txns/fixture"); D.Rules.Add(R);
 		W->Receive(D);
-		const TCHAR* Tabs[] = { TEXT("Observatory-Grudge"), TEXT("Observatory-Prices"), TEXT("Observatory-Rules") };
-		for (int32 Tab = 0; Tab < 3; ++Tab) if (Shot == Tabs[Tab]) W->Tab = Tab;
+		FGbAgentsData Town; Town.bValid = true; Town.bEnabled = true;
+		const TCHAR* Names[] = { TEXT("Old Mother Fen"), TEXT("Vane"), TEXT("Silk") };
+		const TCHAR* Ids[] = { TEXT("fen"), TEXT("vane"), TEXT("silk") };
+		for (int32 I = 0; I < 3; ++I)
+		{
+			FGbAgentAccount& A = Town.Agents.AddDefaulted_GetRef(); A.Id = Ids[I]; A.Name = Names[I];
+			A.Account = FString::Printf(TEXT("agent-%s.fixture.testnet"), Ids[I]); A.bReady = I < 2; A.Points = I < 2 ? 40 + 15 * I : -1; A.Ember = I < 2 ? 120 - 30 * I : -1;
+			FGbAgentAction& Act = A.Actions.AddDefaulted_GetRef(); Act.Tick = 50 + I; Act.Kind = TEXT("buy");
+			Act.Text = TEXT("Fixture: bought a blank talisman from the Broker, paid from its own page.");
+			Act.Status = I == 2 ? TEXT("sim-only") : TEXT("done"); if (I == 0) Act.Url = TEXT("https://testnet.nearblocks.io/txns/fixture");
+		}
+		W->ReceiveAgents(Town);
+		const TCHAR* Tabs[] = { TEXT("Observatory-Grudge"), TEXT("Observatory-Prices"), TEXT("Observatory-Rules"), TEXT("Observatory-Agents") };
+		for (int32 Tab = 0; Tab < 4; ++Tab) if (Shot == Tabs[Tab]) W->Tab = Tab;
 		W->Redraw();
 		return;
 	}

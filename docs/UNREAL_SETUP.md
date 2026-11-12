@@ -1,5 +1,27 @@
 # Unreal client: setup and first steps
 
+## Dusk, night lanterns and the ledger pages (13 Nov)
+
+**Light.** The Wards now have three looks that follow the server's clock: day, a warm dusk (18:00-19:59, and
+the hour after dawn) and night. From dusk every lantern burns stronger and reaches further, so after dark the
+streets are lit in pools of lantern light instead of going flat blue. Both Wards do this; Lantern Ward still
+turns the level's one sun. For stills and trailer shots without a server, add `-GbHour=<0-23>` to the game or
+shot-harness command line, for example `-GbShot=<dir> -GbShotCams="p" -GbHour=22`.
+
+**Observatory > Agents.** A fourth tab lists the town's AI agents from the server's `GET /agents`: each
+agent's name, its own testnet account, its points and Ember as the contracts report them, and its last three
+actions. An action that was written on chain has a **Ledger proof** button that opens the transaction on the
+testnet explorer; one that only happened in the simulation says "town only". On a server started with
+`AGENT_CHAIN=off` the tab says the agents act in the town only. Nothing on this tab is made up by the client.
+The tab refreshes every ten seconds while open. Check: `Grudgebound.Observatory.AgentsJson`; picture:
+`Saved/PanelPreview/<height>/Observatory-Agents.png`.
+
+**Satchel > Ledger.** Under the two balances there is now "Your page in the Rite's ledger": the signed-in
+account's name, how many talismans are sealed under it and the wins written on them, and **Open my page**,
+which opens that account on the testnet explorer. The button is off until the chain has answered.
+
+The wording on both panels is a draft for the lead's review.
+
 ## Sound, battle staging and street talk (12 Nov)
 
 Every sound is synthesised by `unreal/tools/make-audio.py` (Python 3 + numpy; sine waves and filtered noise, no

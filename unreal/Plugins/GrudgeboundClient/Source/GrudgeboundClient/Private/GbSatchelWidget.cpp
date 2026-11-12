@@ -127,7 +127,17 @@ void UGbSatchelWidget::BuildTree()
 		*BalanceCounts[I] = MakeText(TEXT("-"), 48, Ink, true); SatchelRow(In, *BalanceCounts[I], 0.f, 0.f);
 		SatchelCol(Balances, Card, true, I == 0 ? 14.f : 0.f);
 	}
-	SatchelRow(LedgerPocket, Balances, 0.f, 18.f);
+	SatchelRow(LedgerPocket, Balances, 0.f, 14.f);
+	// Your own page: what you hold is written under your name, not kept by the game. DRAFT wording for the lead.
+	UBorder* PageSlip = MakePanel(GbUi::PaperHi(), FMargin(22.f, 14.f)); UHorizontalBox* PageRow = WidgetTree->ConstructWidget<UHorizontalBox>(); PageSlip->SetContent(PageRow);
+	UVerticalBox* PageCol = WidgetTree->ConstructWidget<UVerticalBox>(); SatchelCol(PageRow, PageCol, true, 16.f);
+	SatchelRow(PageCol, MakeText(TEXT("Your page in the Rite's ledger"), 22, Ink, true), 0.f, 4.f);
+	LedgerPage = MakeText(TEXT("-"), 17, Ink); SatchelRow(PageCol, LedgerPage, 0.f, 2.f);
+	LedgerHoldings = MakeText(TEXT(""), 17, Ink); LedgerHoldings->SetAutoWrapText(true); SatchelRow(PageCol, LedgerHoldings, 0.f, 0.f);
+	UTextBlock* PageLabel = nullptr;
+	LedgerButton = MakeKeyButton(TEXT("Open my page"), FString(), PageLabel, Gold); LedgerButton->OnClicked.AddDynamic(this, &UGbSatchelWidget::OpenLedgerPage);
+	SatchelCol(PageRow, Sized(LedgerButton, 260.f, 56.f), false, 0.f);
+	SatchelRow(LedgerPocket, PageSlip, 0.f, 14.f);
 	UBorder* Slip = MakePanel(GbUi::PaperHi(), FMargin(22.f, 16.f)); UVerticalBox* SlipCol = WidgetTree->ConstructWidget<UVerticalBox>(); Slip->SetContent(SlipCol);
 	SatchelRow(SlipCol, MakeText(TEXT("Debt notice"), 22, Ink, true), 0.f, 6.f);
 	SatchelRow(SlipCol, MakeText(TEXT("You arrived with a debt notice folded inside your coat."), 18, Ink), 0.f, 0.f);
@@ -328,6 +338,26 @@ void UGbSatchelWidget::Redraw()
 	}
 	EmberCount->SetText(FText::FromString(Data.bValid && Data.Ember >= 0 ? FString::FromInt(Data.Ember) : FString(TEXT("Unavailable"))));
 	PointsCount->SetText(FText::FromString(Data.bValid && Data.Points >= 0 ? FString::FromInt(Data.Points) : FString(TEXT("Unavailable"))));
+	if (LedgerPage && LedgerHoldings && LedgerButton)
+	{
+		const UGbPlayerSubsystem* P = Player();
+		const FString Account = P ? P->GetActiveAccount() : FString();
+		const bool bPage = P && P->IsOnChain() && !P->GetAccountUrl().IsEmpty();
+		int32 Sealed = 0, Wins = 0;
+		for (const FGbTalisman& T : Talismans) if (!T.ChainTokenId.IsEmpty()) { ++Sealed; Wins += T.Wins; }
+		LedgerPage->SetText(FText::FromString(Account.IsEmpty() ? FString(TEXT("Sign in to be given a page.")) : Account));
+		LedgerHoldings->SetText(FText::FromString(Account.IsEmpty() ? FString() : !bPage ? FString(TEXT("The ledger has not answered yet. Nothing here is lost; it is read again on Refresh."))
+			: FString::Printf(TEXT("%d talisman%s sealed under your name, %d win%s written on them."), Sealed, Sealed == 1 ? TEXT("") : TEXT("s"), Wins, Wins == 1 ? TEXT("") : TEXT("s"))));
+		LedgerButton->SetIsEnabled(bPage);
+	}
+}
+
+void UGbSatchelWidget::OpenLedgerPage()
+{
+	// Only the server-supplied testnet explorer page of the signed-in account. No arbitrary URI schemes.
+	const UGbPlayerSubsystem* P = Player();
+	const FString Url = P ? P->GetAccountUrl() : FString();
+	if (Url.StartsWith(TEXT("https://testnet.nearblocks.io/")) || Url.StartsWith(TEXT("https://explorer.testnet.near.org/"))) FPlatformProcess::LaunchURL(*Url, nullptr, nullptr);
 }
 
 void UGbSatchelWidget::ShowPocket(int32 Index) { Pockets->SetActiveWidgetIndex(Index); Redraw(); }

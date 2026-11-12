@@ -98,6 +98,43 @@ struct FGbObservatoryEvent
  UPROPERTY() FString Text;
 };
 
+/** One thing a town agent did through its own account (GET /agents). */
+USTRUCT()
+struct FGbAgentAction
+{
+ GENERATED_BODY()
+ UPROPERTY() FString Kind;
+ UPROPERTY() FString Text;
+ UPROPERTY() int32 Tick = 0;
+ /** "done", "pending", "failed" or "sim-only" (decided in the simulation, not written to the ledger). */
+ UPROPERTY() FString Status;
+ UPROPERTY() FString Url;
+};
+
+/** A town agent and the account it acts from. Points and Ember are -1 when the ledger gave no answer. */
+USTRUCT()
+struct FGbAgentAccount
+{
+ GENERATED_BODY()
+ UPROPERTY() FString Id;
+ UPROPERTY() FString Name;
+ UPROPERTY() FString Account;
+ UPROPERTY() bool bReady = false;
+ UPROPERTY() int32 Points = -1;
+ UPROPERTY() int32 Ember = -1;
+ UPROPERTY() TArray<FGbAgentAction> Actions;
+};
+
+USTRUCT()
+struct FGbAgentsData
+{
+ GENERATED_BODY()
+ UPROPERTY() bool bValid = false;
+ /** False when this server keeps its agents in the simulation only. */
+ UPROPERTY() bool bEnabled = false;
+ UPROPERTY() TArray<FGbAgentAccount> Agents;
+};
+
 USTRUCT()
 struct FGbObservatoryData
 {

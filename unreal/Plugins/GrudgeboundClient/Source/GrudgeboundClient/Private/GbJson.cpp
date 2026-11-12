@@ -116,6 +116,29 @@ namespace GbJson
 		return Text.Left(200);
 	}
 
+	FGbAgentsData Agents(const TSharedPtr<FJsonObject>& O)
+	{
+		FGbAgentsData D;
+		if (!O.IsValid() || !O->HasField(TEXT("agents"))) return D;
+		D.bValid = true; D.bEnabled = Bool(O, TEXT("enabled"));
+		for (const auto& V : Arr(O, TEXT("agents")))
+		{
+			const auto A = AsObj(V); if (!A.IsValid()) continue;
+			auto& Out = D.Agents.AddDefaulted_GetRef();
+			Out.Id = Str(A, TEXT("id")); Out.Name = Str(A, TEXT("name")); Out.Account = Str(A, TEXT("account")); Out.bReady = Bool(A, TEXT("ready"));
+			// null (the ledger did not answer) stays -1, never a made-up zero.
+			Out.Points = Int(A, TEXT("points"), -1); Out.Ember = Int(A, TEXT("ember"), -1);
+			for (const auto& W : Arr(A, TEXT("actions")))
+			{
+				const auto Act = AsObj(W); if (!Act.IsValid()) continue;
+				auto& Step = Out.Actions.AddDefaulted_GetRef();
+				Step.Kind = Str(Act, TEXT("kind")); Step.Text = Str(Act, TEXT("text")); Step.Tick = Int(Act, TEXT("tick"));
+				Step.Status = Str(Act, TEXT("status")); Step.Url = Str(Act, TEXT("url"));
+			}
+		}
+		return D;
+	}
+
 	FGbObservatoryData Observatory(const TSharedPtr<FJsonObject>& O)
 	{
 		FGbObservatoryData D;

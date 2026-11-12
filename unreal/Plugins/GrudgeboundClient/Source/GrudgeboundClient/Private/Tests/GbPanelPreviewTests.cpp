@@ -137,7 +137,7 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 	// ---- The Observatory: every tab.
 	{
 		UGbObservatoryWidget* W = Cast<UGbObservatoryWidget>(Make(UGbObservatoryWidget::StaticClass()));
-		for (const TCHAR* Name : { TEXT("Observatory-Grudge"), TEXT("Observatory-Prices"), TEXT("Observatory-Rules") })
+		for (const TCHAR* Name : { TEXT("Observatory-Grudge"), TEXT("Observatory-Prices"), TEXT("Observatory-Rules"), TEXT("Observatory-Agents") })
 		{
 			FGbPanelFixtures::Fill(W, Name); Capture(W, Name);
 		}

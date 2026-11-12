@@ -59,6 +59,9 @@ private:
  UFUNCTION() void Grudge();
  UFUNCTION() void Prices();
  UFUNCTION() void Rules();
+ UFUNCTION() void AgentsTab();
+ UFUNCTION() void ReceiveAgents(const FGbAgentsData& Incoming);
+ void DrawAgents();
  UFUNCTION() void Close();
  UFUNCTION() void WardLantern();
  UFUNCTION() void WardTide();
@@ -76,6 +79,7 @@ private:
  int32 Tab = 0;
  float RefreshElapsed = 0.f;
  FGbObservatoryData Data;
+ FGbAgentsData Agents;
  FString SelectedWard = TEXT("lantern");
  UPROPERTY() TObjectPtr<UTextBlock> Status;
  UPROPERTY() TObjectPtr<UVerticalBox> Content;

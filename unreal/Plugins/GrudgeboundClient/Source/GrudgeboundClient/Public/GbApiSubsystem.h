@@ -19,6 +19,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbBattleTurnEvent, const FGbBattleT
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbPlayerViewEvent, const FGbPlayerView&, Player);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbSatchelEvent, const FGbSatchel&, Satchel);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbObservatoryDataEvent, const FGbObservatoryData&, Data);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbAgentsDataEvent, const FGbAgentsData&, Data);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbShopEvent, const FGbShop&, Shop);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbTradeEvent, const FGbTrade&, Trade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FGbRulesEvent, const FGbRulesOverview&, Rules);
@@ -37,6 +38,9 @@ public:
 	virtual void Deinitialize() override;
 	void FetchObservatory(bool bPreview);
 	UPROPERTY() FGbObservatoryDataEvent OnObservatory;
+	/** GET /agents: the town agents' own accounts, balances and latest ledger actions (public, no session). */
+	void FetchAgents();
+	UPROPERTY() FGbAgentsDataEvent OnAgents;
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void FetchVows();
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void SwearVow(const FString& TemplateId, int32 Days, const TMap<FString, FString>& Params);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Vows") void ReleaseVow(int32 VowId);
@@ -233,6 +237,7 @@ private:
 	FString ObservatoryServer;
 	bool bObservatoryPreviewInFlight = false;
 	bool bObservatoryLiveInFlight = false;
+	bool bAgentsInFlight = false;
 	UFUNCTION() void HandleSessionChanged();
 	FString SessionToken;
 	uint32 SessionSerial = 0;

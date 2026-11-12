@@ -33,6 +33,29 @@ bool FGbObservatoryJsonTest::RunTest(const FString&)
  return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbAgentsJsonTest,"Grudgebound.Observatory.AgentsJson",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
+bool FGbAgentsJsonTest::RunTest(const FString&)
+{
+ TSharedPtr<FJsonObject> O;
+ TestTrue(TEXT("Agents off parses"),GbJson::ParseObject(TEXT(R"({"enabled":false,"agents":[]})"),O));
+ auto D=GbJson::Agents(O); TestTrue(TEXT("Empty list is valid"),D.bValid); TestFalse(TEXT("Simulation-only server"),D.bEnabled);
+ TestTrue(TEXT("Other JSON parses"),GbJson::ParseObject(TEXT(R"({"error":"nope"})"),O));
+ TestFalse(TEXT("An error answer is not an agents list"),GbJson::Agents(O).bValid);
+ TestTrue(TEXT("Agents on parses"),GbJson::ParseObject(TEXT(R"({"enabled":true,"agents":[{"id":"fen","name":"Old Mother Fen","account":"agent-fen.game.testnet","ready":true,"points":55,"ember":120,"actions":[{"kind":"buy","text":"bought a blank","tick":50,"status":"done","url":"https://testnet.nearblocks.io/txns/abc"},{"kind":"sim-only","text":"waited","tick":49,"status":"sim-only"}]},{"id":"vane","name":"Vane","account":"agent-vane.game.testnet","ready":false,"points":null,"ember":null,"actions":[]}]})"),O));
+ D=GbJson::Agents(O); TestTrue(TEXT("Ledger agents"),D.bEnabled); TestEqual(TEXT("Two agents"),D.Agents.Num(),2);
+ if (D.Agents.Num()==2)
+ {
+  TestEqual(TEXT("Own account kept"),D.Agents[0].Account,FString(TEXT("agent-fen.game.testnet")));
+  TestEqual(TEXT("Points"),D.Agents[0].Points,55); TestEqual(TEXT("Ember"),D.Agents[0].Ember,120);
+  TestEqual(TEXT("Newest action first, as sent"),D.Agents[0].Actions[0].Tick,50);
+  TestEqual(TEXT("Proof link kept"),D.Agents[0].Actions[0].Url,FString(TEXT("https://testnet.nearblocks.io/txns/abc")));
+  TestTrue(TEXT("No link for a town-only step"),D.Agents[0].Actions[1].Url.IsEmpty());
+  TestEqual(TEXT("A null balance is unknown, not zero"),D.Agents[1].Points,-1); TestEqual(TEXT("Null Ember unknown"),D.Agents[1].Ember,-1);
+  TestFalse(TEXT("Not ready"),D.Agents[1].bReady);
+ }
+ return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbObservatoryScaleTest,"Grudgebound.Observatory.FlatAndEmptyScale",EAutomationTestFlags::EditorContext|EAutomationTestFlags::EngineFilter)
 bool FGbObservatoryScaleTest::RunTest(const FString&)
 {
@@ -64,8 +87,12 @@ bool FGbObservatoryRenderTest::RunTest(const FString&)
  FGbObservatoryRule R; R.Id=TEXT("1"); R.Tick=24; R.Author=TEXT("Fen"); R.AuthorKind=TEXT("agent"); R.Text=TEXT("Fixture rule supplied by the server."); R.Status=TEXT("active"); D.Rules.Add(R);
  R.Id=TEXT("2"); R.Tick=72; R.Status=TEXT("rejected"); R.Reason=TEXT("Fixture rejection reason supplied by the server."); R.Url=TEXT("https://testnet.nearblocks.io/txns/fixture"); D.Rules.Add(R);
  W->Receive(D); TestEqual(TEXT("UI keeps newest rule first"),W->Data.Rules[0].Id,FString(TEXT("2")));
+ FGbAgentsData Town; Town.bValid=true; Town.bEnabled=true;
+ { auto& A=Town.Agents.AddDefaulted_GetRef(); A.Name=TEXT("Fen"); A.Account=TEXT("agent-fen.fixture.testnet"); A.bReady=true; A.Points=55; A.Ember=120;
+   auto& Act=A.Actions.AddDefaulted_GetRef(); Act.Tick=50; Act.Text=TEXT("Fixture action supplied by the server."); Act.Status=TEXT("done"); Act.Url=TEXT("https://testnet.nearblocks.io/txns/fixture"); }
+ W->ReceiveAgents(Town);
  const auto Slate=W->WidgetTree->RootWidget->TakeWidget(); FWidgetRenderer Renderer(false);
- for (int32 Tab=0;Tab<3;++Tab)
+ for (int32 Tab=0;Tab<4;++Tab)
  {
   W->Tab=Tab; W->Redraw();
   Renderer.DrawWidget(Slate,FVector2D(1040,720)); Slate->Invalidate(EInvalidateWidgetReason::Layout); Slate->SlatePrepass(1.f);

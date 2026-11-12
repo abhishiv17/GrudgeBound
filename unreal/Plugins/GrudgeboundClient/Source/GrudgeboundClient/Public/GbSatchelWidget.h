@@ -88,4 +88,9 @@ private:
 	UPROPERTY() TObjectPtr<UScrollBox> Keepsakes;
 	UPROPERTY() TObjectPtr<UTextBlock> EmberCount;
 	UPROPERTY() TObjectPtr<UTextBlock> PointsCount;
+	/** Ledger pocket: the player's own page in the Rite's ledger (their account), and a button that opens it. */
+	UFUNCTION() void OpenLedgerPage();
+	UPROPERTY() TObjectPtr<UTextBlock> LedgerPage;
+	UPROPERTY() TObjectPtr<UTextBlock> LedgerHoldings;
+	UPROPERTY() TObjectPtr<UButton> LedgerButton;
 };

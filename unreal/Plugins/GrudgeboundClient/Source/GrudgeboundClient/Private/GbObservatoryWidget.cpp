@@ -103,9 +103,10 @@ void UGbObservatoryWidget::BuildTree()
  AddTab(TEXT("This town"),250.f,ModeButtons,ModeLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Live);
  AddTab(TEXT("Seven days ahead"),300.f,ModeButtons,ModeLabels,0.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Preview);
  ObsCol(Tabs,WidgetTree->ConstructWidget<USpacer>(),true,0.f);
- AddTab(TEXT("Grudge"),200.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Grudge);
- AddTab(TEXT("Prices"),200.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Prices);
- AddTab(TEXT("Rules"),200.f,TabButtons,TabLabels,0.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Rules);
+ AddTab(TEXT("Grudge"),176.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Grudge);
+ AddTab(TEXT("Prices"),176.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Prices);
+ AddTab(TEXT("Rules"),176.f,TabButtons,TabLabels,8.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::Rules);
+ AddTab(TEXT("Agents"),176.f,TabButtons,TabLabels,0.f)->OnClicked.AddDynamic(this,&UGbObservatoryWidget::AgentsTab);
  ObsRow(Body,Tabs,0.f,12.f);
 
  // Ward buttons (Grudge only): the picked Ward's chart also draws rage, sorrow and dread.
@@ -130,19 +131,19 @@ void UGbObservatoryWidget::BuildTree()
 }
 void UGbObservatoryWidget::NativeConstruct()
 {
- Super::NativeConstruct(); if (auto* A=Api()) { A->OnObservatory.AddUniqueDynamic(this,&UGbObservatoryWidget::Receive); A->OnError.AddUniqueDynamic(this,&UGbObservatoryWidget::Error); }
+ Super::NativeConstruct(); if (auto* A=Api()) { A->OnObservatory.AddUniqueDynamic(this,&UGbObservatoryWidget::Receive); A->OnAgents.AddUniqueDynamic(this,&UGbObservatoryWidget::ReceiveAgents); A->OnError.AddUniqueDynamic(this,&UGbObservatoryWidget::Error); }
 }
 void UGbObservatoryWidget::NativeDestruct()
 {
- Stop(); if (auto* A=Api()) { A->OnObservatory.RemoveDynamic(this,&UGbObservatoryWidget::Receive); A->OnError.RemoveDynamic(this,&UGbObservatoryWidget::Error); } Super::NativeDestruct();
+ Stop(); if (auto* A=Api()) { A->OnObservatory.RemoveDynamic(this,&UGbObservatoryWidget::Receive); A->OnAgents.RemoveDynamic(this,&UGbObservatoryWidget::ReceiveAgents); A->OnError.RemoveDynamic(this,&UGbObservatoryWidget::Error); } Super::NativeDestruct();
 }
 void UGbObservatoryWidget::Open() { bOpen=true; RefreshElapsed=0; Refresh(); }
 void UGbObservatoryWidget::Stop() { bOpen=false; }
 void UGbObservatoryWidget::NativeTick(const FGeometry& G,float Delta)
 {
- Super::NativeTick(G,Delta); if (bOpen && !bPreview && IsVisible()) { RefreshElapsed+=Delta; if (RefreshElapsed>=10) { RefreshElapsed=0; Refresh(); } }
+ Super::NativeTick(G,Delta); if (bOpen && (!bPreview || Tab==3) && IsVisible()) { RefreshElapsed+=Delta; if (RefreshElapsed>=10) { RefreshElapsed=0; Refresh(); } }
 }
-void UGbObservatoryWidget::Refresh() { if (auto* A=Api()) A->FetchObservatory(bPreview); }
+void UGbObservatoryWidget::Refresh() { if (auto* A=Api()) { A->FetchObservatory(bPreview); if (Tab==3) A->FetchAgents(); } }
 void UGbObservatoryWidget::SetMode(bool Value)
 {
  if (bPreview==Value) return;
@@ -153,6 +154,8 @@ void UGbObservatoryWidget::Preview() { SetMode(true); }
 void UGbObservatoryWidget::Grudge() { Tab=0; Redraw(); }
 void UGbObservatoryWidget::Prices() { Tab=1; Redraw(); }
 void UGbObservatoryWidget::Rules() { Tab=2; Redraw(); }
+void UGbObservatoryWidget::AgentsTab() { Tab=3; Redraw(); if (auto* A=Api()) A->FetchAgents(); }
+void UGbObservatoryWidget::ReceiveAgents(const FGbAgentsData& Incoming) { if (!bOpen) return; Agents=Incoming; if (Tab==3) Redraw(); }
 void UGbObservatoryWidget::Close() { Stop(); OnClose.Broadcast(); }
 void UGbObservatoryWidget::SelectWard(const FString& Id) { SelectedWard=Id; Redraw(); }
 void UGbObservatoryWidget::WardLantern() { SelectWard(TEXT("lantern")); }
@@ -166,7 +169,7 @@ void UGbObservatoryWidget::Receive(const FGbObservatoryData& Incoming)
 }
 void UGbObservatoryWidget::Error(const FString& What,int32,const FString& Message)
 {
- if (bOpen && What==TEXT("observatory")) Status->SetText(FText::FromString(Message));
+ if (bOpen && (What==TEXT("observatory") || (What==TEXT("agents") && Tab==3))) Status->SetText(FText::FromString(Message));
 }
 void UGbObservatoryWidget::AddChart(const FString& Title,TArray<FGbPlotLine> Lines,float Height,const FString& Ward)
 {
@@ -227,6 +230,7 @@ void UGbObservatoryWidget::Redraw()
   TArray<FString> Closed; for (const auto& Sample:Data.Samples) for (const auto& Id:Sample.Closed) Closed.AddUnique(Id);
   ObsRow(Content,MakeText(Closed.IsEmpty()?TEXT("No shop closures in this history."):TEXT("Closed during this history: ")+FString::Join(Closed,TEXT(", ")),16,Ink),2.f,2.f);
  }
+ else if (Tab==3) DrawAgents();
  else
  {
   if (Data.Rules.IsEmpty()) ObsRow(Content,MakeText(TEXT("No rules in this history."),17,Ink));
@@ -250,7 +254,7 @@ void UGbObservatoryWidget::Redraw()
    ObsRow(Content,Slip,0.f,8.f);
   }
  }
- if (Tab!=2)
+ if (Tab<2)
  {
   // Day labels centred under the chart's seven day columns (slip padding 14 + plot inset 6).
   UHorizontalBox* Axis=WidgetTree->ConstructWidget<UHorizontalBox>(); ObsRow(Content,Axis,0.f,2.f)->SetPadding(FMargin(20.f,0.f,20.f,2.f));
@@ -260,5 +264,44 @@ void UGbObservatoryWidget::Redraw()
    ObsCol(Axis,DayText,true,0.f);
   }
   ObsRow(Content,MakeText(TEXT("Gold tick: bankruptcy   Crimson tick: Calamity"),16,Ink),2.f,2.f);
+ }
+}
+
+// The town's agents and the accounts they act from. Every number and line here is the server's (GET /agents);
+// nothing is made up on this side. DRAFT wording, for the lead's review.
+void UGbObservatoryWidget::DrawAgents()
+{
+ if (!Agents.bValid) { Status->SetText(FText::FromString(TEXT("Reading the agents' ledger pages..."))); return; }
+ Status->SetText(FText::FromString(Agents.bEnabled?FString::Printf(TEXT("%d agents, each with its own ledger page"),Agents.Agents.Num()):FString(TEXT("On this server the agents act in the town only, not on the ledger."))));
+ UTextBlock* Lead=MakeText(TEXT("These traders are not scripted shopkeepers. Each holds its own page in the Rite's ledger, pays and proposes rules from it, and can do nothing else with it: a daily Ember cap, a few actions a day."),16,Ink);
+ Lead->SetAutoWrapText(true); ObsRow(Content,Lead,0.f,10.f);
+ if (Agents.Agents.IsEmpty()) ObsRow(Content,MakeText(TEXT("No agent pages yet."),17,Ink));
+ for (const auto& Agent:Agents.Agents)
+ {
+  UBorder* Slip=MakePanel(GbUi::PaperHi(),FMargin(14.f,10.f)); UVerticalBox* In=WidgetTree->ConstructWidget<UVerticalBox>(); Slip->SetContent(In);
+  UHorizontalBox* Head=WidgetTree->ConstructWidget<UHorizontalBox>(); ObsRow(In,Head,0.f,4.f);
+  ObsCol(Head,MakeText(Agent.Name,20,Ink,true),false,14.f);
+  ObsCol(Head,MakeText(Agent.Account,15,Ink),true,14.f);
+  const auto Amount=[](int32 V){ return V<0?FString(TEXT("-")):FString::FromInt(V); };
+  ObsCol(Head,MakeText(FString::Printf(TEXT("Points %s"),*Amount(Agent.Points)),17,Ink,true),false,18.f);
+  ObsCol(Head,MakeText(FString::Printf(TEXT("Ember %s"),*Amount(Agent.Ember)),17,Ink,true),false,12.f);
+  UTextBlock* ChipText=nullptr; ObsCol(Head,MakeChip(Agent.bReady?TEXT("On the ledger"):TEXT("Town only"),Agent.bReady?Leaf:GbUi::Paper3(),ChipText),false,0.f);
+  if (Agent.Actions.IsEmpty()) ObsRow(In,MakeText(TEXT("Nothing written yet."),15,Ink),0.f,0.f);
+  for (int32 I=0;I<Agent.Actions.Num() && I<3;++I)
+  {
+   const auto& Act=Agent.Actions[I];
+   UHorizontalBox* Line=WidgetTree->ConstructWidget<UHorizontalBox>(); ObsRow(In,Line,2.f,2.f);
+   ObsCol(Line,MakeText(FString::Printf(TEXT("Day %d, %02d:00"),Act.Tick/24+1,Act.Tick%24),15,Ink,true),false,12.f);
+   UTextBlock* Words=MakeText(Act.Text,15,Ink); Words->SetAutoWrapText(true); ObsCol(Line,Words,true,12.f);
+   const bool bProof=Act.Url.StartsWith(TEXT("https://testnet.nearblocks.io/")) || Act.Url.StartsWith(TEXT("https://explorer.testnet.near.org/"));
+   if (bProof)
+   {
+    auto* Proof=NewObject<UGbObservatoryProof>(this); Proof->Url=Act.Url; Proofs.Add(Proof);
+    UTextBlock* Label=nullptr; UButton* B=MakeKeyButton(TEXT("Ledger proof"),FString(),Label,GbUi::Paper2()); Label->SetFont(GbUi::Font(15,true));
+    B->OnClicked.AddDynamic(Proof,&UGbObservatoryProof::Open); ObsCol(Line,Sized(B,180.f,40.f),false,0.f);
+   }
+   else ObsCol(Line,MakeText(Act.Status==TEXT("sim-only")?TEXT("town only"):Act.Status==TEXT("failed")?TEXT("not written"):Act.Status==TEXT("pending")?TEXT("being written"):TEXT("written"),15,Ink),false,0.f);
+  }
+  ObsRow(Content,Slip,0.f,8.f);
  }
 }
