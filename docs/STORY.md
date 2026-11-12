@@ -151,6 +151,11 @@ Players who already reached Tide before the rival existed keep the ferry.
   - Each of them changes their line again after later deeds, such as beating Dace at the ferry or opening the storehouse.
 - **Street walkers work your own deeds into their talk.** One line in four is gossip about you, using your chosen name and pronouns. The server writes it from facts recorded for your account only.
 
+**Optional finds** (draft, 12 Nov): three more rewards for players who look around. None of them is needed for a quest.
+- A notice on Lantern's shut east gate: a keepsake and 1 blank talisman.
+- A dropped purse in the south-east tall grass: 1 blank talisman and 1 salve.
+- A bottle in Tide's west reeds: a keepsake hinting at the Rite Hall, and 1 salve.
+
 **Hollowmere lore** (draft): six short Journal pages open as the player learns the town:
 - Hollowmere
 - Grudge

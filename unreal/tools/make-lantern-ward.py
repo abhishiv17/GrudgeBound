@@ -140,6 +140,10 @@ finds = [
     ("delivery-slip", "Read delivery slip", tile(8.8, 12)),
     ("reed-bundle", "Recover netting", TIDE + tile(33, 17.2)),
     ("dock-tin", "Inspect supply tin", TIDE + tile(18.5, 23)),
+    # Optional, off the quest path: the shut east gate, the south-east tall grass, Tide's west reeds.
+    ("gate-notice", "Read gate notice", tile(40.5, 12.2)),
+    ("garden-purse", "Search the grass", tile(36.4, 19.9)),
+    ("reed-bottle", "Pick up bottle", TIDE + tile(11, 19)),
 ]
 for find_id, label, at in finds:
     find = named_actor("Discovery " + find_id, unreal.GbBuildingDoor, at)

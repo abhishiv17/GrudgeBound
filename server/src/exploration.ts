@@ -19,7 +19,7 @@ export const TIPS = [
   { id: "level", text: "Your partner grew a level: more ink, more strength. Its experience is shown in the Satchel." },
   { id: "tide", text: "Tide Ward. Its curses are stronger, levels 3 to 7. The Net mender works the docks; a sealed storehouse stands on the north quay." },
 ];
-const FLAGS = ["alley-parcel", "lamp-kit", "delivery-slip", "reed-bundle", "dock-tin", "door-seen",
+const FLAGS = ["alley-parcel", "gate-notice", "garden-purse", "reed-bottle", "lamp-kit", "delivery-slip", "reed-bundle", "dock-tin", "door-seen",
   "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "tide-bound", "net-done", "clerk-done", "storehouse-open", "storehouse-chest", ...RIVAL_FLAGS,
   ...TIPS.map(t => `tip-${t.id}`)];
 export function validExploration(e: Exploration): boolean {
@@ -69,6 +69,8 @@ const NOTES = [
   { id: "delivery-slip", title: "Marked delivery slip", text: "A dockside storehouse stamp marks this delivery. Ask the Receipt clerk after finding its key." },
   { id: "reed-bundle", title: "Reed-edge bundle", text: "A spool of netting recovered from Tide's eastern reeds. The Net mender works along the docks." },
   { id: "storehouse-key", title: "Brass storehouse key", text: "The bow bears the same mark as the delivery slip. The Receipt clerk may recognise it." },
+  { id: "gate-notice", title: "Notice on the east gate", text: "By order of the Rite: the roads to Ash Ward and Bone Ward stay shut while the Grudge runs high. Someone has scratched beneath it: they shut them the week the notices started." },
+  { id: "reed-bottle", title: "A note in a bottle", text: "A Tide clerk's hand: Second copies to the quay storehouse. Firsts go up to the Rite Hall. Don't ask whose debts they are; I asked once." },
   { id: "storehouse-record", title: "A copied ledger leaf", text: "The same stamped symbol appears on this storehouse record and your debt notice. A line beneath it reads: Copy retained; original forwarded to the Rite Hall. Who kept the original?" },
 ];
 /**
@@ -144,12 +146,22 @@ export function interact(p: RewardPocket, id: unknown): string {
     if (!Number.isSafeInteger(p.supplies[key] + count)) throw new AuthError(409, "Your supplies are full.");
     p.supplies[key] += count;
   };
-  if (["reed-bundle", "dock-tin", "net-mender", "storehouse-door", "storehouse-chest"].includes(id) && !tideOpen(e))
+  if (["reed-bundle", "reed-bottle", "dock-tin", "net-mender", "storehouse-door", "storehouse-chest"].includes(id) && !tideOpen(e))
     throw new AuthError(403, "The ferryman won't take you to Tide until you beat Dace Marrow at the southern pier.");
   switch (id) {
     case "alley-parcel":
       if (has(id)) return "The parcel is empty. You already packed its supplies.";
       mark(id); supplies("blank", 2); supplies("salve", 1); return "Found: 2 blank talismans and 1 Ink Salve. Open your Satchel to see them.";
+    // Optional finds off the quest path, for players who look around (DRAFT text).
+    case "gate-notice":
+      if (has(id)) return "The notice is in your Keepsakes. The gate stays shut.";
+      mark(id); note(id); supplies("blank", 1); return "Found a notice nailed to the shut east gate, and a blank talisman tucked behind it. Read the notice in Keepsakes.";
+    case "garden-purse":
+      if (has(id)) return "Only flattened grass where the purse lay.";
+      mark(id); supplies("blank", 1); supplies("salve", 1); return "Found a dropped purse in the tall grass: 1 blank talisman and 1 Ink Salve.";
+    case "reed-bottle":
+      if (has(id)) return "The bottle is empty now. Its note is in your Keepsakes.";
+      mark(id); note(id); supplies("salve", 1); return "Found a stoppered bottle in the west reeds: a clerk's note and 1 Ink Salve. Read the note in Keepsakes.";
     case "lamp-kit":
       if (has(id)) return "You already found the lamp kit. Check your Journal.";
       mark(id); note(id); return "Found the lamp kit. The Lamplighter will want this back.";

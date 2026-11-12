@@ -88,13 +88,18 @@ test("exploration rewards are once per account, ordered, and survive restart", a
   await assert.rejects(s.explore(ACCOUNT, "fake-discovery"), isStatus(400));
   await Promise.all(Array.from({ length: 12 }, () => s.explore(ACCOUNT, "alley-parcel")));
   assert.deepEqual(s.supplies(ACCOUNT), { blank: 5, salve: 2, gilded: 0 });
+  for (const find of ["gate-notice", "garden-purse", "gate-notice", "garden-purse"]) await s.explore(ACCOUNT, find);
+  assert.deepEqual(s.supplies(ACCOUNT), { blank: 7, salve: 3, gilded: 0 }, "optional finds pay once");
+  await assert.rejects(s.explore(ACCOUNT, "reed-bottle"), isStatus(403), "the west reeds are in Tide");
   await s.explore(ACCOUNT, "lamp-kit"); // find before accepting
   await s.explore(ACCOUNT, "lamplighter");
   await s.equip(ACCOUNT, "worn-focus");
   assert.equal(s.equipment(ACCOUNT)?.attack, 1);
   await assert.rejects(s.explore(ACCOUNT, "reed-bundle"), isStatus(403), "Tide stays closed until the rival is beaten at the ferry");
   beatRivalToTide(s);
-  await s.explore(ACCOUNT, "reed-bundle");
+  await s.explore(ACCOUNT, "reed-bundle"); await s.explore(ACCOUNT, "reed-bottle"); await s.explore(ACCOUNT, "reed-bottle");
+  assert.equal(s.supplies(ACCOUNT).salve, 4);
+  assert.ok((await s.view(ACCOUNT)).exploration.notes.some(n => n.id === "reed-bottle"));
   const won = createBattle({ wild: "cinder-grin" }); won.outcome = "won";
   s.applyTurn(ACCOUNT, "starter", "before", { kind: "ward" }, won, "tide");
   assert.ok(!(await s.explore(ACCOUNT, "net-mender")).exploration.flags.includes("net-done"));
