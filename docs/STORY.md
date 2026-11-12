@@ -141,6 +141,14 @@ Partners have **levels 1-10**:
 
 Players who already reached Tide before the rival existed keep the ferry.
 
+**Townsfolk remember** (draft lines, 12 Nov):
+
+- **What the quest NPCs say depends on how and when you did their task.**
+  - The Lamplighter knows whether you brought the kit before being asked.
+  - The Net mender knows whether you bound the Tide curse or only beat it.
+  - Each of them changes their line again after later deeds, such as beating Dace at the ferry or opening the storehouse.
+- **Street walkers work your own deeds into their talk.** One line in four is gossip about you, using your chosen name and pronouns. The server writes it from facts recorded for your account only.
+
 On-chain, every won fight or bind with a minted talisman partner (`tal-…`) queues the deployed
 `items.record_win`, which raises that talisman's `wins` and `level` in its NEP-245 metadata. Set
 `RECORD_WINS=off` to keep this off-chain.

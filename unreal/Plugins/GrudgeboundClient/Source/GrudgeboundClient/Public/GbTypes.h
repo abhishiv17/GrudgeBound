@@ -459,6 +459,8 @@ struct FGbSatchel
  UPROPERTY(BlueprintReadOnly) TArray<FGbGear> Gear;
  UPROPERTY(BlueprintReadOnly) TArray<FGbJournalEntry> Journal;
  UPROPERTY(BlueprintReadOnly) TArray<FGbKeepsake> Notes;
+ /** What townsfolk say about this player's own deeds, newest first (server-written, by name and pronouns). */
+ UPROPERTY(BlueprintReadOnly) TArray<FString> Gossip;
 	static constexpr int32 CarryLimit = 5;
  UPROPERTY(BlueprintReadOnly) FGbArrivalProfile Profile;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TMap<FString, FGbLevel> Levels;

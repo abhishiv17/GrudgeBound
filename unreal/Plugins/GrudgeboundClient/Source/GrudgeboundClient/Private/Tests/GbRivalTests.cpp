@@ -3,6 +3,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 #include "GbJson.h"
+#include "GbTalk.h"
 #include "GbTypes.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbRivalJsonTest, "Grudgebound.Satchel.LevelsAndRival", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -45,6 +46,23 @@ bool FGbRivalJsonTest::RunTest(const FString&)
 	TestEqual(TEXT("Missing level is 1"), T.View.Player.Level, 1);
 	TestTrue(TEXT("Rival start body"), GbJson::StartBody(TEXT("lantern"), TEXT("weepwick"), TEXT("Ari"), FString(), TEXT("starter"), 2).Contains(TEXT("\"rival\":2")));
 	TestFalse(TEXT("Wild start body has no rival"), GbJson::StartBody(TEXT("lantern"), TEXT("weepwick"), TEXT("Ari")).Contains(TEXT("rival")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbGossipTest, "Grudgebound.Talk.Gossip", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FGbGossipTest::RunTest(const FString&)
+{
+	TSharedPtr<FJsonObject> O;
+	TestTrue(TEXT("Satchel parses"), GbJson::ParseObject(TEXT(R"({"carried":[],"case":[],"supplies":{},"ink":{},
+		"exploration":{"version":1,"flags":[],"equipped":"","tracked":"rival","gear":[],"journal":[],"notes":[],"gossip":["Mira opened the storehouse.","Mira beat Dace."]}})"), O));
+	const FGbSatchel S = GbJson::Satchel(O);
+	TestEqual(TEXT("Gossip read"), S.Gossip.Num(), 2);
+	// Without gossip the old three-line rotation is unchanged; with it every fourth line is about the player.
+	TestEqual(TEXT("No gossip: same rotation"), GbTalk::Line(TEXT("lantern"), 2, GbTalk::EMood::Calm, 1, 3), GbTalk::Line(TEXT("lantern"), 2, GbTalk::EMood::Calm, 1, 3, TArray<FString>()));
+	TestEqual(TEXT("Fourth line is gossip"), GbTalk::Line(TEXT("lantern"), 0, GbTalk::EMood::Calm, 1, 3, S.Gossip), S.Gossip[0]);
+	TestEqual(TEXT("Next round, next deed"), GbTalk::Line(TEXT("lantern"), 0, GbTalk::EMood::Calm, 1, 7, S.Gossip), S.Gossip[1]);
+	TestEqual(TEXT("Another walker starts elsewhere"), GbTalk::Line(TEXT("lantern"), 1, GbTalk::EMood::Calm, 1, 3, S.Gossip), S.Gossip[1]);
+	TestNotEqual(TEXT("Other turns are not gossip"), GbTalk::Line(TEXT("lantern"), 0, GbTalk::EMood::Calm, 1, 0, S.Gossip), S.Gossip[0]);
 	return true;
 }
 #endif

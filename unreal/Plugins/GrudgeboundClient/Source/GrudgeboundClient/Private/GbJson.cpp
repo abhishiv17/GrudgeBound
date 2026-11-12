@@ -503,6 +503,7 @@ namespace GbJson
                 R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Status=Str(G,TEXT("status")); R.Objective=Str(G,TEXT("objective")); R.Hint=Str(G,TEXT("hint")); S.Journal.Add(R); }
             for (const auto& V : Arr(E, TEXT("notes"))) { const auto G=AsObj(V); if (!G) continue; FGbKeepsake R;
                 R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Text=Str(G,TEXT("text")); S.Notes.Add(R); }
+            S.Gossip = Strings(E, TEXT("gossip"));
         }
 		S.Blank = FMath::Max(0, Int(Supplies, TEXT("blank")));
 		S.Gilded = FMath::Max(0, Int(Supplies, TEXT("gilded")));

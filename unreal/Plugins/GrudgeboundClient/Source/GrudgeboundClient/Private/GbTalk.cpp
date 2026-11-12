@@ -4,6 +4,7 @@
 #include "GbAudio.h"
 #include "GbBuildings.h"
 #include "GbGreyboxMaterials.h"
+#include "GbPlayerSubsystem.h"
 #include "GbStorySubsystem.h"
 #include "GbTownsfolk.h"
 #include "GbUiDirector.h"
@@ -103,12 +104,14 @@ GbTalk::EMood GbTalk::Mood(const FGbWardSummary& Ward)
 
 FString GbTalk::Role(const FString& WardId, int32 Index) { return Voice(WardId, Index).Role; }
 
-FString GbTalk::Line(const FString& WardId, int32 Index, EMood Mood, int32 Chapter, int32 Turn)
+FString GbTalk::Line(const FString& WardId, int32 Index, EMood Mood, int32 Chapter, int32 Turn, const TArray<FString>& Gossip)
 {
 	const int32 Safe = FMath::Max(0, Turn);
-	const int32 Round = Safe / 3;
-	switch (Safe % 3)
+	const int32 Kinds = Gossip.Num() > 0 ? 4 : 3;
+	const int32 Round = Safe / Kinds;
+	switch (Safe % Kinds)
 	{
+	case 3: return Gossip[(FMath::Abs(Index) + Round) % Gossip.Num()];
 	case 0: return Voice(WardId, Index).Lines[Round % 2];
 	case 1: return MoodLines[static_cast<int32>(Mood)][(FMath::Abs(Index) + Round) % 3];
 	default: return ChapterLines[FMath::Clamp(Chapter, 1, 3) - 1][(FMath::Abs(Index) + Round) % 3];
@@ -227,7 +230,9 @@ void UGbTalkSubsystem::Tick(float DeltaTime)
 			for (const FGbWardSummary& Ward : Api->GetWorldState().Wards) if (Ward.Id == Nearest->GetWardId()) { Mood = GbTalk::Mood(Ward); break; }
 		if (const UGbStorySubsystem* Story = Game->GetSubsystem<UGbStorySubsystem>()) Chapter = Story->GetChapter();
 	}
-	FString Line = GbTalk::Line(Nearest->GetWardId(), Nearest->GetVoice(), Mood, Chapter, Nearest->NextTurn());
+	TArray<FString> Gossip;
+	if (const UGbPlayerSubsystem* Player = World->GetGameInstance() ? World->GetGameInstance()->GetSubsystem<UGbPlayerSubsystem>() : nullptr) Gossip = Player->GetSatchel().Gossip;
+	FString Line = GbTalk::Line(Nearest->GetWardId(), Nearest->GetVoice(), Mood, Chapter, Nearest->NextTurn(), Gossip);
  FString Quest;
  if (Nearest->GetWardId()==TEXT("lantern") && Nearest->GetVoice()==0) Quest=TEXT("lamplighter");
  if (Nearest->GetWardId()==TEXT("lantern") && Nearest->GetVoice()==3) Quest=TEXT("receipt-clerk");

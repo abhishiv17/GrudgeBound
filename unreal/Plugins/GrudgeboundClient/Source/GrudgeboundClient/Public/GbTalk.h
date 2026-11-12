@@ -20,7 +20,8 @@ namespace GbTalk
 	/** Who the Index-th walker of a Ward is: "Lamplighter". */
 	GRUDGEBOUNDCLIENT_API FString Role(const FString& WardId, int32 Index);
 	/** What they say the Turn-th time you ask: their trade, then the mood, then the chapter, and round again. */
-	GRUDGEBOUNDCLIENT_API FString Line(const FString& WardId, int32 Index, EMood Mood, int32 Chapter, int32 Turn);
+	/** With gossip about the player, every fourth line is one of those (different townsfolk start on different deeds). */
+	GRUDGEBOUNDCLIENT_API FString Line(const FString& WardId, int32 Index, EMood Mood, int32 Chapter, int32 Turn, const TArray<FString>& Gossip = TArray<FString>());
 	/** How long a line of this length stays up, in seconds. */
 	GRUDGEBOUNDCLIENT_API float ReadingTime(const FString& Line);
 }
