@@ -337,3 +337,10 @@ keeps exploration available; it cannot save the new choices. Use a matching loca
 name retention and native panel previews at 1920x1080 and 1280x720 (`Saved/ArrivalPreview`).
 The development screenshot harness accepts `-GbShot=<folder> -GbShotCams="arrival;arrival-name;arrival-partner"`
 to capture Kessa and the player on the actual pier with fixture choices, without an account or live mint.
+
+The rival, Dace Marrow, stands where the server's Satchel puts him: the pier, the ferry, the Tide quay or the
+plaza. Walk up and press **E** to fight him, or to hear why he won't fight yet. The ferry to Tide stays shut
+until his second fight is won. Partner levels show in the Satchel, in the encounter title and on the battle
+screen. `Grudgebound.Satchel.LevelsAndRival` checks the JSON parsing. The shot harness accepts
+`rival-pier`, `rival-ferry`, `rival-quay` and `rival-plaza` to pin him at a spot. Combine these with fixed
+cameras.

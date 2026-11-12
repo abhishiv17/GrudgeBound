@@ -108,8 +108,42 @@ deployed**. `STARTER_MINT=off` keeps the chosen partner virtual on current deplo
 requires the owner-approved contract upgrade and server configuration; pending replies retry the same
 choice. A previously selected virtual partner can then settle without healing or a second welcome kit.
 
-Rival encounters, partner growth, wider NPC pronoun/deed reactions and guidance are subsequent polish
-items, not delivered by this opening change. All text still needs owner review and an interactive play-through.
+Wider NPC pronoun/deed reactions and guidance are later polish items. All text still needs owner review and
+an interactive play-through.
+
+## Draft: the rival and partner levels (12 Nov)
+
+Implementation draft for owner review. The name, lines and numbers are not final.
+
+**Dace Marrow** arrived on the same boat and got his first partner from Kessa too. He wants to know who in
+Hollowmere kept the original of the debt notices, and he thinks he will get there first. He fights three
+times. Each fight is a **mirror match**: his partner is the same species as yours, so the result depends on
+level, Charms and play rather than on the type triangle. An earlier counter-pick version won 83-100% of
+simulated fights and was dropped.
+
+| Stage | Where he stands | Opens when | His level | Result |
+|---|---|---|---|---|
+| 1 | Harbour pier, beside Kessa | Arrival is finished | 1 | Fought once, win or lose. A win gives 10 Rite points |
+| 2 | By the Tide ferry | Stage 1 is done | 4 | Must be won. **The ferry to Tide opens only after this.** A win gives 20 points |
+| 3 | Tide quay, where the pier meets the wharf | Stage 2 is won and the storehouse chest is opened | 7 | A win gives 30 points |
+
+After stage 3 he waits in Lantern plaza. A rival fight has no sealing and no running. His line before a
+fight depends on the stage and on whether you lost on the pier. His line after a fight depends on the
+result and on how close it was.
+
+Partners have **levels 1-10**:
+
+- Experience comes only from fights you win or binds you complete. Fleeing and losing give nothing.
+- A wild win gives 10 + 3 × the foe's level. A rival win gives 25 + 15 × the stage.
+- Each level adds ink (hp) and stats by emotion. Rage gains the most attack, Sorrow the most ink and guard, Dread the most speed.
+- Wild curses come at the partner's level or one below, inside each Ward's range: Lantern 1-4, Tide 3-7, Ash 4-8, Bone 5-9.
+- The level is fixed when a battle starts and is stored in the battle's replay record.
+
+Players who already reached Tide before the rival existed keep the ferry.
+
+On-chain, every won fight or bind with a minted talisman partner (`tal-…`) queues the deployed
+`items.record_win`, which raises that talisman's `wins` and `level` in its NEP-245 metadata. Set
+`RECORD_WINS=off` to keep this off-chain.
 
 ## Acceptance
 
