@@ -327,6 +327,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
       if (url.pathname === "/battle/start") {
         outsideBattle(player.account);
+        // Before the partner is read: reading it settles a not-yet-arrived player on the legacy starter.
+        const rivalRefusal = body.rival === undefined || body.rival === null ? null : satchels.rivalRefusal(player.account, body.rival);
+        if (rivalRefusal) return send(res, 409, { error: rivalRefusal });
         const partner = await satchels.partner(player.account, body.tokenId, body.playerCurse);
         const r = battles.start(body, vowGuard, partner);
         return send(res, r.status, r.body);
