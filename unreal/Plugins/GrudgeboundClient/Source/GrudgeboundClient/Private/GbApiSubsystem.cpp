@@ -496,6 +496,14 @@ void UGbApiSubsystem::SetCarried(const FString& TokenId, bool bCarry)
 void UGbApiSubsystem::UseSalve(const FString& TokenId) { MutateSatchel(TEXT("satchel/salve"), GbJson::TokenBody(TokenId), TEXT("Ink Salve used.")); }
 void UGbApiSubsystem::RestoreInk(const FString& TokenId) { MutateSatchel(TEXT("mender/restore"), GbJson::TokenBody(TokenId), TEXT("The Mender restored your talisman's ink.")); }
 void UGbApiSubsystem::Explore(const FString& Id) { MutateSatchel(TEXT("exploration/interact"), GbJson::NamedBody(TEXT("id"), Id), TEXT("Journal updated.")); }
+void UGbApiSubsystem::ShowTip(const FString& Id, const FString& Text)
+{
+	if (Id.IsEmpty() || TipsShown.Contains(Id) || GetPlayerAccount().IsEmpty()) return;
+	TipsShown.Add(Id);
+	SayAsKessa(TEXT("Tip: ") + Text);
+	// If this is lost the tip simply shows again next session.
+	Send(TEXT("POST"), TEXT("/exploration/tip"), GbJson::NamedBody(TEXT("id"), Id), [](int32, const FString&) {});
+}
 void UGbApiSubsystem::Equip(const FString& ItemId) { MutateSatchel(TEXT("satchel/equip"), GbJson::NamedBody(TEXT("itemId"), ItemId), TEXT("Equipment updated.")); }
 void UGbApiSubsystem::CompleteProfile(const FString& Name,const FString& Look,const FString& Pronouns,const FString& Starter)
 {

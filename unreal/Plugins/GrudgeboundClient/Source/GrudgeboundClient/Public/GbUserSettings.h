@@ -76,6 +76,8 @@ public:
 	UPROPERTY(Config) float EffectsVolume = 1.f;
 	UPROPERTY(Config) bool bMuteInBackground = true;
 	UPROPERTY(Config) bool bShowFps = false;
+	/** The gold beacon over the tracked task's next step. */
+	UPROPERTY(Config) bool bShowWaypoint = true;
 	/** Stops battle bobbing, lunges, shakes and moving numbers; keeps static outcome feedback. */
 	UPROPERTY(Config) bool bReducedBattleMotion = false;
 };

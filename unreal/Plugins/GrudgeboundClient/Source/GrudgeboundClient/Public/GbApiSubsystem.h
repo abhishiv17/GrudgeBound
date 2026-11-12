@@ -150,6 +150,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void UseSalve(const FString& TokenId);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void RestoreInk(const FString& TokenId);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void Rest();
+	/** A first-time tip: Kessa says it, and the server remembers it for this account (no lock, allowed mid-battle). */
+	void ShowTip(const FString& Id, const FString& Text);
+	bool WasTipShown(const FString& Id) const { return TipsShown.Contains(Id); }
+	TSet<FString> TipsShown;
 	bool IsSatchelBusy() const { return bSatchelMutationInFlight || bTradeRequestInFlight || !MenderJobs.IsEmpty() || !TradeJobs.IsEmpty(); }
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Satchel") FGbSatchelEvent OnSatchel;
 	UPROPERTY(BlueprintAssignable, Category = "Grudgebound|Satchel") FGbKessaLineEvent OnSatchelAction;

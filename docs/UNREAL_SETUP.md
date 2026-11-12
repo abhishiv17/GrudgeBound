@@ -344,3 +344,14 @@ until his second fight is won. Partner levels show in the Satchel, in the encoun
 screen. `Grudgebound.Satchel.LevelsAndRival` checks the JSON parsing. The shot harness accepts
 `rival-pier`, `rival-ferry`, `rival-quay` and `rival-plaza` to pin him at a spot. Combine these with fixed
 cameras.
+
+**Guidance.** A gold beacon hovers over the next step of the Journal task you track. That step can be a find,
+a door, a quest NPC or Dace. When the step is across the water or inside a building, the beacon points to
+the ferry or the door first. The HUD shows the distance under the tracked objective, for example "Beacon 42 m
+away" or "Take the ferry to Tide Ward first". You can turn the beacon off in Settings (**Waypoint beacon**).
+
+Five first-time tips are shown once per account: the beacon, the first encounter, the first find, the first
+level-up and arriving in Tide. Kessa's banner shows each tip, and the server records that it was seen through
+`POST /exploration/tip`. That route takes no player lock and is allowed mid-battle. Tips you have seen stay
+listed in Satchel > Journal. `Grudgebound.Satchel.Guide` checks the parsing and the tracked-target rules. The
+shot harness accepts `waypoint-<discovery id>`, for example `waypoint-lamp-kit`.

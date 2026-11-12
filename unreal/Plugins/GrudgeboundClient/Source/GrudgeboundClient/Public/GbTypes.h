@@ -373,6 +373,17 @@ struct FGbJournalEntry
  UPROPERTY(BlueprintReadOnly) FString Status;
  UPROPERTY(BlueprintReadOnly) FString Objective;
  UPROPERTY(BlueprintReadOnly) FString Hint;
+ /** Where the next step is, for the waypoint: "find:<id>", "npc:<role>", "rival", "ward:<id>" or "". */
+ UPROPERTY(BlueprintReadOnly) FString Target;
+};
+/** A first-time tip: shown once per account, then kept in the Journal. */
+USTRUCT(BlueprintType)
+struct FGbTip
+{
+ GENERATED_BODY()
+ UPROPERTY(BlueprintReadOnly) FString Id;
+ UPROPERTY(BlueprintReadOnly) FString Text;
+ UPROPERTY(BlueprintReadOnly) bool bSeen = false;
 };
 USTRUCT(BlueprintType)
 struct FGbKeepsake
@@ -461,6 +472,7 @@ struct FGbSatchel
  UPROPERTY(BlueprintReadOnly) TArray<FGbKeepsake> Notes;
  /** What townsfolk say about this player's own deeds, newest first (server-written, by name and pronouns). */
  UPROPERTY(BlueprintReadOnly) TArray<FString> Gossip;
+ UPROPERTY(BlueprintReadOnly) TArray<FGbTip> Tips;
 	static constexpr int32 CarryLimit = 5;
  UPROPERTY(BlueprintReadOnly) FGbArrivalProfile Profile;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TMap<FString, FGbLevel> Levels;

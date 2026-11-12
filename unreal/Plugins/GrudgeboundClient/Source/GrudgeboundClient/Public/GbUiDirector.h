@@ -77,6 +77,13 @@ private:
     /** Puts the figure at a named spot ("" hides it). PlaceRival asks the Satchel; the shot harness passes a spot. */
     void PlaceRivalAt(const FString& Spot);
     bool bRivalPinned = false;
+    /** The beacon over the tracked task's next step, and first-time tips (each once per account). */
+    void UpdateGuide(float DeltaSeconds, APawn* Pawn);
+    void UpdateTips(const FGbSatchel& Satchel, APawn* Pawn);
+    UPROPERTY() TObjectPtr<class AGbWaypoint> Waypoint;
+    float GuideClock = 0.f;
+    float NextTipAt = 0.f;
+    bool bWaypointPinned = false;
     UPROPERTY() TObjectPtr<AActor> RivalFigure;
     UPROPERTY() TObjectPtr<class AGbBuildingDoor> RivalDoor;
     FString RivalSpot;

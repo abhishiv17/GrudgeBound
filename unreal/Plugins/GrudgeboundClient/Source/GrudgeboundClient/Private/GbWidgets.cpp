@@ -1,6 +1,7 @@
 #include "GbWidgets.h"
 
 #include "GbApiSubsystem.h"
+#include "GbGuide.h"
 #include "GbAudio.h"
 #include "Sound/SoundBase.h"
 #include "GbAuthSubsystem.h"
@@ -920,8 +921,19 @@ void UGbHudWidget::Refresh()
 	const UGbStorySubsystem* Story = GetGameInstance()->GetSubsystem<UGbStorySubsystem>();
 	ChapterText->SetText(FText::FromString(Story->GetChapterTitle()));
 	FString Objective=Story->GetObjective();
- if (P) for (const FGbJournalEntry& J : P->GetSatchel().Journal)
-  if (J.Id==P->GetSatchel().Tracked && J.Status!=TEXT("complete")) {Objective+=TEXT("\n\n")+J.Title+TEXT("\n")+J.Objective; break;}
+ if (P)
+ {
+  const FGbSatchel Data=P->GetSatchel();
+  for (const FGbJournalEntry& J : Data.Journal)
+   if (J.Id==Data.Tracked && J.Status!=TEXT("complete"))
+   {
+    Objective+=TEXT("\n\n")+J.Title+TEXT("\n")+J.Objective;
+    const APawn* Pawn=GetOwningPlayerPawn();
+    const FString Guide=Pawn?GbGuide::HudLine(GetWorld(),Data,Pawn->GetActorLocation()):FString();
+    if (!Guide.IsEmpty()) Objective+=TEXT("\n")+Guide;
+    break;
+   }
+ }
  ObjectiveText->SetText(FText::FromString(Objective));
 }
 

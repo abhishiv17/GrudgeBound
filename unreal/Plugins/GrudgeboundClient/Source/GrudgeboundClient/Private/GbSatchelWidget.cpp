@@ -256,6 +256,12 @@ void UGbSatchelWidget::Redraw()
    JournalRows->AddChild(R);
    JournalRows->AddChild(MakeText(bDone?FString():TEXT("Hint: ")+J.Hint+TEXT("\n"),bDone?8:16,Ink));
   }
+  bool bTips=false;
+  for (const FGbTip& T : Data.Tips) if (T.bSeen)
+  {
+   if (!bTips) { JournalRows->AddChild(MakeText(TEXT("Tips you have seen"),18,Ink,true)); bTips=true; }
+   JournalRows->AddChild(MakeText(TEXT("- ")+T.Text,15,Ink));
+  }
  }
 	Options = Data.Carried;
 	for (const FString& Id : Data.Case) Options.AddUnique(Id);

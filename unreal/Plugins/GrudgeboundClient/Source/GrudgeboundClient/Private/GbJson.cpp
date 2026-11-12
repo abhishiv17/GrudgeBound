@@ -500,10 +500,12 @@ namespace GbJson
             for (const auto& V : Arr(E, TEXT("gear"))) { const auto G=AsObj(V); if (!G) continue; FGbGear R;
                 R.Id=Str(G,TEXT("id")); R.Name=Str(G,TEXT("name")); R.Source=Str(G,TEXT("source")); R.Attack=Int(G,TEXT("attack")); R.Guard=Int(G,TEXT("guard")); S.Gear.Add(R); }
             for (const auto& V : Arr(E, TEXT("journal"))) { const auto G=AsObj(V); if (!G) continue; FGbJournalEntry R;
-                R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Status=Str(G,TEXT("status")); R.Objective=Str(G,TEXT("objective")); R.Hint=Str(G,TEXT("hint")); S.Journal.Add(R); }
+                R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Status=Str(G,TEXT("status")); R.Objective=Str(G,TEXT("objective")); R.Hint=Str(G,TEXT("hint")); R.Target=Str(G,TEXT("target")); S.Journal.Add(R); }
             for (const auto& V : Arr(E, TEXT("notes"))) { const auto G=AsObj(V); if (!G) continue; FGbKeepsake R;
                 R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Text=Str(G,TEXT("text")); S.Notes.Add(R); }
             S.Gossip = Strings(E, TEXT("gossip"));
+            for (const auto& V : Arr(E, TEXT("tips"))) { const auto G=AsObj(V); if (!G) continue; FGbTip R;
+                R.Id=Str(G,TEXT("id")); R.Text=Str(G,TEXT("text")); G->TryGetBoolField(TEXT("seen"), R.bSeen); if (!R.Id.IsEmpty() && !R.Text.IsEmpty()) S.Tips.Add(R); }
         }
 		S.Blank = FMath::Max(0, Int(Supplies, TEXT("blank")));
 		S.Gilded = FMath::Max(0, Int(Supplies, TEXT("gilded")));

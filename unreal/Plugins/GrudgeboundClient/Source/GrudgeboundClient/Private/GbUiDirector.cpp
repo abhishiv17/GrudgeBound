@@ -13,6 +13,7 @@
 #include "GbIntroWidget.h"
 #include "GbArrivalWidget.h"
 #include "GbGreyboxMaterials.h"
+#include "GbGuide.h"
 #include "GbSatchelWidget.h"
 #include "GbObservatoryWidget.h"
 #include "GbPanelFixtures.h"
@@ -79,6 +80,7 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 	UGbUserSettings* Settings = UGbUserSettings::Get();
 	UGbExorcistLook::Ensure(Pawn); // the exorcist's body instead of the template mannequin
 	PlaceRival();
+	UpdateGuide(DeltaSeconds, Pawn);
     if (Current!=EScreen::Arrival) if (const UGbPlayerSubsystem* P=PlayerOf(GetWorld()))
         UGbExorcistLook::Ensure(Pawn)->SetPresentation(P->GetSatchel().Profile.Look);
 	if (bCrossing) TickCrossing(DeltaSeconds, PC, Pawn);
@@ -396,6 +398,43 @@ void AGbUiDirector::PlaceRival()
  // Nobody waits on the pier until Kessa has welcomed the player.
  const bool bShow=Data.bValid && Data.Rival.bValid && (Data.Profile.bComplete || Data.Profile.bLegacyStarter);
  PlaceRivalAt(bShow?Data.Rival.Where:FString());
+}
+void AGbUiDirector::UpdateGuide(float DeltaSeconds, APawn* Pawn)
+{
+ GuideClock-=DeltaSeconds; if (GuideClock>0.f || bWaypointPinned) return;
+ GuideClock=.25f;
+ if (!Waypoint) Waypoint=GetWorld()->SpawnActor<AGbWaypoint>();
+ const UGbPlayerSubsystem* P=PlayerOf(GetWorld()); if (!P || !Waypoint || !Pawn) return;
+ const FGbSatchel Data=P->GetSatchel();
+ FVector At; FString Via;
+ const FGbJournalEntry* J=GbGuide::Tracked(Data);
+ bool bShow=J && UGbUserSettings::Get()->bShowWaypoint && Current==EScreen::Ward && !bCrossing && !bBuildingTransition
+  && GbGuide::Resolve(GetWorld(),J->Target,Pawn->GetActorLocation(),At,Via);
+ // Close enough: the gold marker underfoot says the rest.
+ if (bShow && FVector::Dist2D(At,Pawn->GetActorLocation())<220.f) bShow=false;
+ Waypoint->Point(bShow,At);
+ UpdateTips(Data,Pawn);
+}
+void AGbUiDirector::UpdateTips(const FGbSatchel& S, APawn* Pawn)
+{
+ UGbApiSubsystem* A=GetGameInstance()?GetGameInstance()->GetSubsystem<UGbApiSubsystem>():nullptr;
+ if (!A || !S.bValid || !(S.Profile.bComplete || S.Profile.bLegacyStarter) || GetWorld()->GetTimeSeconds()<NextTipAt) return;
+ const bool bWard=Current==EScreen::Ward && !bCrossing && !bBuildingTransition;
+ bool bLevel=false; for (const auto& L : S.Levels) bLevel|=L.Value.Level>1;
+ const bool bFind=S.Gear.Num()>0 || S.Notes.Num()>0 || S.DiscoveryFlags.Contains(TEXT("alley-parcel")) || S.DiscoveryFlags.Contains(TEXT("dock-tin"));
+ // In order of urgency; one at a time, a few seconds apart.
+ const TPair<const TCHAR*,bool> Moments[]={
+  {TEXT("battle"),Current==EScreen::Encounter},
+  {TEXT("tide"),bWard && GbGuide::RegionOf(Pawn->GetActorLocation())==GbGuide::ERegion::Tide},
+  {TEXT("level"),bWard && bLevel},
+  {TEXT("find"),bWard && bFind},
+  {TEXT("beacon"),bWard && Waypoint && Waypoint->IsShowing()},
+ };
+ for (const auto& M : Moments)
+ {
+  if (!M.Value || A->WasTipShown(M.Key)) continue;
+  for (const FGbTip& T : S.Tips) if (T.Id==M.Key && !T.bSeen) { A->ShowTip(T.Id,T.Text); NextTipAt=GetWorld()->GetTimeSeconds()+10.f; return; }
+ }
 }
 void AGbUiDirector::PlaceRivalAt(const FString& Spot)
 {
@@ -1012,6 +1051,17 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			{
 				if ((K - 1) % 2 == 1) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/shot%d.png"), *ShotFolder, V), Shots->Cams[V].StartsWith(TEXT("arrival")), false); return; }
 				// "rival-<spot>": Dace at that spot (pier, ferry, quay, plaza); combine with fixed cameras to frame it.
+				// "waypoint-<discovery id>": the beacon over that find or door.
+				if (Shots->Cams[V].StartsWith(TEXT("waypoint-")))
+				{
+					const FString Id=Shots->Cams[V].Mid(9);
+					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director)
+					{
+						if (!Director->Waypoint) Director->Waypoint=W->SpawnActor<AGbWaypoint>();
+						for (TActorIterator<AGbBuildingDoor> Door(W); Door; ++Door) if (Door->DiscoveryId==Id && Director->Waypoint) { Director->bWaypointPinned=true; Director->Waypoint->Point(true,Door->GetActorLocation()); }
+					}
+					return;
+				}
 				if (Shots->Cams[V].StartsWith(TEXT("rival-")))
 				{
 					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director) { Director->bRivalPinned = true; Director->PlaceRivalAt(Shots->Cams[V].Mid(6)); }

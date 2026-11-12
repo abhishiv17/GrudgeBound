@@ -4,6 +4,7 @@
 #include "Misc/AutomationTest.h"
 #include "GbJson.h"
 #include "GbTalk.h"
+#include "GbGuide.h"
 #include "GbTypes.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbRivalJsonTest, "Grudgebound.Satchel.LevelsAndRival", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -63,6 +64,30 @@ bool FGbGossipTest::RunTest(const FString&)
 	TestEqual(TEXT("Next round, next deed"), GbTalk::Line(TEXT("lantern"), 0, GbTalk::EMood::Calm, 1, 7, S.Gossip), S.Gossip[1]);
 	TestEqual(TEXT("Another walker starts elsewhere"), GbTalk::Line(TEXT("lantern"), 1, GbTalk::EMood::Calm, 1, 3, S.Gossip), S.Gossip[1]);
 	TestNotEqual(TEXT("Other turns are not gossip"), GbTalk::Line(TEXT("lantern"), 0, GbTalk::EMood::Calm, 1, 0, S.Gossip), S.Gossip[0]);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbGuideTest, "Grudgebound.Satchel.Guide", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FGbGuideTest::RunTest(const FString&)
+{
+	TSharedPtr<FJsonObject> O;
+	TestTrue(TEXT("Satchel parses"), GbJson::ParseObject(TEXT(R"({"carried":[],"case":[],"supplies":{},"ink":{},"profile":{"version":1,"complete":true,"name":"Mira"},
+		"exploration":{"version":1,"flags":[],"equipped":"","tracked":"net","gear":[],"notes":[],
+		"journal":[{"id":"lamp","title":"A","status":"complete","objective":"x","hint":"y","target":""},{"id":"net","title":"B","status":"active","objective":"x","hint":"y","target":"find:reed-bundle"}],
+		"tips":[{"id":"battle","text":"Attack, then seal.","seen":true},{"id":"tide","text":"Tide Ward.","seen":false},{"id":"","text":"dropped"}]}})"), O));
+	const FGbSatchel S = GbJson::Satchel(O);
+	TestEqual(TEXT("Tips read, blank ones dropped"), S.Tips.Num(), 2);
+	TestTrue(TEXT("Seen flag read"), S.Tips[0].bSeen && !S.Tips[1].bSeen);
+	const FGbJournalEntry* J = GbGuide::Tracked(S);
+	TestTrue(TEXT("Tracked task has a target"), J && J->Target == TEXT("find:reed-bundle"));
+	FGbSatchel Done = S; Done.Tracked = TEXT("lamp");
+	TestNull(TEXT("A finished task points nowhere"), GbGuide::Tracked(Done));
+	FGbSatchel NotArrived = S; NotArrived.Profile.bComplete = false; NotArrived.Profile.bLegacyStarter = false;
+	TestNull(TEXT("No beacon before the arrival is finished"), GbGuide::Tracked(NotArrived));
+	TestTrue(TEXT("Regions"), GbGuide::RegionOf(FVector(-15000, 0, 0)) == GbGuide::ERegion::Tide && GbGuide::RegionOf(FVector(0, 0, 0)) == GbGuide::ERegion::Lantern
+		&& GbGuide::RegionOf(FVector(28000, 0, 0)) == GbGuide::ERegion::Room);
+	FVector At; FString Via;
+	TestFalse(TEXT("No world, no beacon"), GbGuide::Resolve(nullptr, TEXT("rival"), FVector::ZeroVector, At, Via));
 	return true;
 }
 #endif
