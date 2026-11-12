@@ -661,16 +661,22 @@ void UGbSignInWidget::BuildTree()
 	UBorder* Panel = MakePanel(PaperPanel(), FMargin(28.f, 24.f, 28.f, 20.f));
 	UVerticalBox* Menu = WidgetTree->ConstructWidget<UVerticalBox>(); Panel->SetContent(Sized(Menu, 460.f, 0.f));
 	UTextBlock* Label = nullptr;
-	SignInButton = MakeButton(TEXT("Enter Lantern Ward"), Label, C::Crimson);
-	FSlateFontInfo Big = Label->GetFont(); Big.Size = 21; Label->SetFont(Big);
-	SignInButton->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSignIn); AddRow(Menu, Sized(SignInButton, 0.f, 60.f), 0.f, 8.f);
+	// The panels' buttons and ink note, so the front door reads like the rooms behind it.
+	SignInButton = MakeKeyButton(TEXT("Enter Lantern Ward"), FString(), Label, C::Crimson);
+	Label->SetFont(GbUi::Font(22, true));
+	SignInButton->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSignIn); AddRow(Menu, Sized(SignInButton, 0.f, 64.f), 0.f, 10.f);
 	UHorizontalBox* Pair = WidgetTree->ConstructWidget<UHorizontalBox>();
-	UButton* Help = MakeButton(TEXT("How to play"), Label, GbUi::Paper2()); Help->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleHelp);
-	UButton* Settings = MakeButton(TEXT("Settings"), Label, GbUi::Paper2()); Settings->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSettings);
-	AddCol(Pair, Sized(Help, 0.f, 46.f), true); AddCol(Pair, Sized(Settings, 0.f, 46.f), true, 0.f);
-	AddRow(Menu, Pair, 0.f, 6.f);
-	HelpBox = WidgetTree->ConstructWidget<UVerticalBox>(); HelpBox->SetVisibility(ESlateVisibility::Collapsed); AddRow(Menu, HelpBox, 4.f, 4.f);
-	StatusText = MakeText(TEXT(""), 14, GbUi::InkSoft()); StatusText->SetJustification(ETextJustify::Center); AddRow(Menu, StatusText, 8.f, 0.f);
+	UButton* Help = MakeKeyButton(TEXT("How to play"), FString(), Label, GbUi::Paper2()); Help->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleHelp);
+	UButton* Settings = MakeKeyButton(TEXT("Settings"), FString(), Label, GbUi::Paper2()); Settings->OnClicked.AddDynamic(this, &UGbSignInWidget::HandleSettings);
+	AddCol(Pair, Sized(Help, 0.f, 52.f), true, 10.f); AddCol(Pair, Sized(Settings, 0.f, 52.f), true, 0.f);
+	AddRow(Menu, Pair, 0.f, 0.f);
+	HelpBox = WidgetTree->ConstructWidget<UVerticalBox>(); HelpBox->SetVisibility(ESlateVisibility::Collapsed); AddRow(Menu, HelpBox, 14.f, 0.f);
+	// What the sign-in says, on the shell's ink note; collapsed while there is nothing to say.
+	UBorder* Note = MakePanel(InkPanel(), FMargin(14.f, 8.f));
+	UHorizontalBox* NoteRow = WidgetTree->ConstructWidget<UHorizontalBox>(); Note->SetContent(NoteRow);
+	UImage* Seal = nullptr; AddCol(NoteRow, MakeArt(TEXT("wax_seal"), 26.f, Seal), false, 12.f);
+	StatusText = MakeText(TEXT(""), 16, GbUi::PaperHi()); AddCol(NoteRow, StatusText, true, 0.f);
+	StatusNote = Note; Note->SetVisibility(ESlateVisibility::Collapsed); AddRow(Menu, Note, 14.f, 0.f);
 	Middle(Panel, 0.f, 0.f);
 
 	UCanvasPanelSlot* ColSlot = Centre(Root, Col); ColSlot->SetPosition(FVector2D(0.f, -20.f));
@@ -705,6 +711,7 @@ void UGbSignInWidget::Refresh()
 {
 	const UGbAuthSubsystem* Auth = GetGameInstance()->GetSubsystem<UGbAuthSubsystem>();
 	if (StatusText) StatusText->SetText(FText::FromString(Auth->GetMessage()));
+	if (StatusNote) StatusNote->SetVisibility(Auth->GetMessage().IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	if (SignInButton) SignInButton->SetIsEnabled(!Auth->IsBusy());
 }
 
@@ -713,18 +720,19 @@ void UGbSignInWidget::FillHelp()
 {
 	if (!HelpBox) return;
 	HelpBox->ClearChildren();
+	AddRow(HelpBox, MakeSection(TEXT("How to play")), 0.f, 8.f);
 	const UGbUserSettings* S = UGbUserSettings::Get();
 	const auto Row = [this, S](std::initializer_list<const TCHAR*> Actions, FString Text)
 	{
 		UHorizontalBox* Line = WidgetTree->ConstructWidget<UHorizontalBox>();
 		for (const TCHAR* Action : Actions)
 		{
-			UBorder* Cap = WidgetTree->ConstructWidget<UBorder>(); Cap->SetBrush(FrameBrush(2)); Cap->SetBrushColor(GbUi::PaperHi()); Cap->SetPadding(FMargin(9.f, 3.f, 9.f, 7.f));
-			UTextBlock* Key = MakeText(S->KeyLabel(Action), 14, C::Ink, true); Key->SetAutoWrapText(false); Cap->SetContent(Key);
+			UBorder* Cap = MakePanel(GbUi::PaperHi(), FMargin(8.f, 2.f));
+			UTextBlock* Key = MakeText(S->KeyLabel(Action), 16, C::Ink, true); Key->SetAutoWrapText(false); Cap->SetContent(Key);
 			AddCol(Line, Cap, false, 4.f);
 			if (Text.IsEmpty()) for (const FGbActionDef& Def : UGbUserSettings::Actions()) if (Def.Id == Action) Text = Def.Label;
 		}
-		UTextBlock* What = MakeText(Text, 15, C::Ink); What->SetAutoWrapText(false);
+		UTextBlock* What = MakeText(Text, 17, C::Ink); What->SetAutoWrapText(false);
 		AddCol(Line, What, true, 0.f)->SetPadding(FMargin(8.f, 0.f, 0.f, 0.f));
 		AddRow(HelpBox, Line, 3.f, 3.f);
 	};

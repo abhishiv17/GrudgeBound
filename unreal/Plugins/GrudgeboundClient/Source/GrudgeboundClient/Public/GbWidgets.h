@@ -205,6 +205,7 @@ private:
 	UPROPERTY() TObjectPtr<class UVerticalBox> HelpBox;
 	UPROPERTY() TObjectPtr<UTextBlock> StatusText;
 	UPROPERTY() TObjectPtr<UButton> SignInButton;
+	UPROPERTY() TObjectPtr<UWidget> StatusNote;
 };
 
 /** Ward card (top left), Kessa's banner (bottom), key hint (top right). */
