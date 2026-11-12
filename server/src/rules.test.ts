@@ -98,7 +98,8 @@ describe("rules through the rite contract", () => {
       const { world, rite, chain, rules, advance } = setup({ [AFREEN]: 500 });
       rite.resolveFailures.push(failure);
       const r = await rules.propose({ account: AFREEN, ...PVP_BAN });
-      await settle();
+      const deadline = Date.now() + 2000;
+      while (chain.ruleReceipt((r.body as ProposeAnswer).jobId)?.status === "pending" && Date.now() < deadline) await settle();
       const receipt = chain.ruleReceipt((r.body as ProposeAnswer).jobId)!;
       assert.equal(receipt.status, "done", failure);
       assert.equal(rite.rules[0]!.status, "Active");

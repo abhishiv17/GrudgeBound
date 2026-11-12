@@ -21,6 +21,11 @@ function fakeKv() {
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function eventually(check: () => boolean) {
+  const deadline = Date.now() + 2000;
+  while (!check() && Date.now() < deadline) await wait(10);
+  assert.ok(check(), "asynchronous mirror completed before timeout");
+}
 let dirs: string[] = [];
 const tempDir = () => { const d = mkdtempSync(join(tmpdir(), "gb-remote-")); dirs.push(d); return d; };
 afterEach(() => { installMirror(null); for (const d of dirs) rmSync(d, { recursive: true, force: true }); dirs = []; });
@@ -48,12 +53,12 @@ describe("remote copies of the data files", () => {
     const m = new FileMirror(f.kv, { debounceMs: 5, retryMs: 5 });
     writeFileSync(file, "v1"); m.changed(file);
     writeFileSync(file, "v2"); m.changed(file);
-    await wait(30);
+    await eventually(() => f.data.get("gb:satchels.json") === "v2");
     assert.equal(f.calls.filter((c) => c === "set gb:satchels.json").length, 1);
     assert.equal(f.data.get("gb:satchels.json"), "v2");
     f.fail(1);
     writeFileSync(file, "v3"); m.changed(file);
-    await wait(60);
+    await eventually(() => f.data.get("gb:satchels.json") === "v3");
     assert.equal(f.data.get("gb:satchels.json"), "v3", "stored after the retry");
   });
 
