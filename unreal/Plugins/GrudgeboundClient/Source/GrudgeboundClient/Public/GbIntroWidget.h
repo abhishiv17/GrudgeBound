@@ -43,4 +43,5 @@ private:
 	UPROPERTY() TObjectPtr<UTextBlock> Title;
 	UPROPERTY() TObjectPtr<UTextBlock> Body;
 	UPROPERTY() TObjectPtr<UTextBlock> NextLabel;
+	UPROPERTY() TArray<TObjectPtr<UBorder>> Pips;
 };

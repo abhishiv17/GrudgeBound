@@ -6,6 +6,7 @@
 #include "Kismet/GameplayStatics.h"
 #if WITH_EDITOR
 #include "GbIntroWidget.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "ImageUtils.h"
@@ -111,8 +112,9 @@ bool FGbStoryIntroTest::RunTest(const FString&)
 {
 	UGbIntroWidget* Intro = NewObject<UGbIntroWidget>();
 	Intro->AddToRoot(); Intro->Initialize();
-	// Offscreen widgets have no local player; construct the same native tree explicitly.
-	Intro->BuildTree(); Intro->Open();
+	// Offscreen widgets have no local player; Initialize builds the same native tree.
+	if (!TestNotNull(TEXT("Intro tree built"), Intro->WidgetTree->RootWidget.Get())) { Intro->RemoveFromRoot(); return false; }
+	Intro->Open();
 	const TSharedRef<SWidget> SlateWidget = Intro->TakeWidget();
 	FWidgetRenderer Renderer(false);
 	const FString Folder = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("StoryPreview"));
@@ -121,16 +123,17 @@ bool FGbStoryIntroTest::RunTest(const FString&)
 	for (int32 I = 0; I < 4; ++I)
 	{
 		TestEqual(TEXT("Panel order follows the story script"), Intro->PanelIndex, I);
-		UTextureRenderTarget2D* Target = Renderer.DrawWidget(SlateWidget, FVector2D(1040, 560));
+		UTextureRenderTarget2D* Target = Renderer.DrawWidget(SlateWidget, FVector2D(1920, 1080));
 		if (!TestNotNull(TEXT("Native intro renders to a target"), Target)) { Intro->RemoveFromRoot(); return false; }
 		TArray<FColor> Pixels;
 		FReadSurfaceDataFlags ReadFlags; ReadFlags.SetLinearToGamma(false);
 		if (!TestTrue(TEXT("Rendered intro pixels are readable"), Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels, ReadFlags))) { Intro->RemoveFromRoot(); return false; }
 		TArray64<uint8> Png;
-		FImageUtils::PNGCompressImageArray(1040, 560, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
+		FImageUtils::PNGCompressImageArray(1920, 1080, TArrayView64<const FColor>(Pixels.GetData(), Pixels.Num()), Png);
 		const FString File = FPaths::Combine(Folder, FString::Printf(TEXT("Intro-%d.png"), I + 1));
 		TestTrue(TEXT("Native preview saved"), FFileHelper::SaveArrayToFile(Png, *File));
 		AddInfo(File);
+		TestEqual(TEXT("The ribbon names the page"), Intro->Title->GetText().ToString(), GbStory::IntroPanels()[I].Title);
 		if (I == 3) TestEqual(TEXT("Final page enters the Ward"), Intro->NextLabel->GetText().ToString(), FString(TEXT("Enter Lantern Ward")));
 		Intro->HandleNext();
 	}

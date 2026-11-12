@@ -1,9 +1,11 @@
 #include "GbIntroWidget.h"
 #include "GbStory.h"
 #include "GbGreyboxMaterials.h"
+#include "GbUiStyle.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanel.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ScaleBox.h"
@@ -121,28 +123,59 @@ void UGbStoryArt::ReleaseSlateResources(bool bReleaseChildren) { Super::ReleaseS
 void UGbIntroWidget::BuildTree()
 {
 	SetIsFocusable(true);
-	UBorder* Background = MakePanel(Ink, FMargin(20)); WidgetTree->RootWidget = Background;
-	UScaleBox* Fit = WidgetTree->ConstructWidget<UScaleBox>(); Fit->SetStretch(EStretch::ScaleToFit); Background->SetContent(Fit);
-	UBorder* Card = MakePanel(Paper, FMargin(32)); Fit->SetContent(Sized(Card, 1040, 560));
-	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(); Card->SetContent(Row);
-	Illustration = WidgetTree->ConstructWidget<UGbStoryArt>();
-	UHorizontalBoxSlot* ArtSlot = Row->AddChildToHorizontalBox(Sized(Illustration, 480, 330));
-	ArtSlot->SetVerticalAlignment(VAlign_Center); ArtSlot->SetPadding(FMargin(0, 0, 30, 0));
+	// The same poster as every panel: the page's title on the crimson ribbon, its picture and words on the paper card.
+	UTextBlock* TitleText = nullptr; UTextBlock* Sub = nullptr; UHorizontalBox* Footer = nullptr;
+	UVerticalBox* Shell = MakeShell(TEXT(""), TEXT("wax_seal"), 1240.f, TitleText, Sub, Footer);
+	Title = TitleText; Sub->SetVisibility(ESlateVisibility::Collapsed);
+	// A story page gets no server replies, so it has no ink note; and the Ward is blacked out, not just dimmed.
+	if (ShellNote && ShellNote->GetParent()) ShellNote->GetParent()->SetVisibility(ESlateVisibility::Collapsed);
+	ShellNote = nullptr; ShellStatus = nullptr;
+	if (UCanvasPanel* Root = Cast<UCanvasPanel>(WidgetTree->RootWidget))
+		if (UBorder* Shade = Cast<UBorder>(Root->GetChildAt(0))) Shade->SetBrushColor(FLinearColor(Ink.R, Ink.G, Ink.B, 0.94f));
+
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(); Shell->AddChildToVerticalBox(Row);
+	UBorder* Frame = MakePanel(GbUi::PaperHi(), FMargin(10.f));
+	Illustration = WidgetTree->ConstructWidget<UGbStoryArt>(); Frame->SetContent(Sized(Illustration, 600.f, 412.f));
+	UHorizontalBoxSlot* ArtSlot = Row->AddChildToHorizontalBox(Frame);
+	ArtSlot->SetVerticalAlignment(VAlign_Center); ArtSlot->SetPadding(FMargin(0.f, 0.f, 30.f, 0.f));
+
 	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>();
-	UHorizontalBoxSlot* TextSlot = Row->AddChildToHorizontalBox(Col); TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); TextSlot->SetVerticalAlignment(VAlign_Center);
-	auto Add = [Col](UWidget* W, float Margin) { Col->AddChildToVerticalBox(W)->SetPadding(FMargin(0, Margin)); };
-	Page = MakeText(TEXT(""), 12, Crimson, true); Add(Page, 4);
-	Title = MakeText(TEXT(""), 27, Ink, true); Add(Title, 10);
-	Body = MakeText(TEXT(""), 17, Ink); Add(Body, 10);
-	// Explicit wrap widths avoid AutoWrap's first-frame measurement delay overlapping the controls.
-	Title->SetAutoWrapText(false); Title->SetWrapTextAt(420.f);
-	Body->SetAutoWrapText(false); Body->SetWrapTextAt(420.f);
-	UTextBlock* NextText = nullptr;
-	UButton* Next = MakeButton(TEXT("Next"), NextText, Gold); NextLabel = NextText;
-	Next->OnClicked.AddDynamic(this, &UGbIntroWidget::HandleNext); Add(Sized(Next, 0, 42), 8);
+	UHorizontalBoxSlot* TextSlot = Row->AddChildToHorizontalBox(Col); TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	// Page marker: where you are in the town's story, and a pip for each page.
+	UHorizontalBox* Marker = WidgetTree->ConstructWidget<UHorizontalBox>();
+	Page = MakeText(TEXT(""), 18, Crimson, true); Page->SetAutoWrapText(false);
+	UHorizontalBoxSlot* PageSlot = Marker->AddChildToHorizontalBox(Page); PageSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill)); PageSlot->SetVerticalAlignment(VAlign_Center);
+	Pips.Reset();
+	for (int32 I = 0; I < GbStory::IntroPanels().Num(); ++I)
+	{
+		UBorder* Pip = WidgetTree->ConstructWidget<UBorder>(); Pips.Add(Pip);
+		UHorizontalBoxSlot* PipSlot = Marker->AddChildToHorizontalBox(Sized(Pip, 16.f, 16.f)); PipSlot->SetPadding(FMargin(8.f, 0.f, 0.f, 0.f)); PipSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	Col->AddChildToVerticalBox(Marker)->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+	UBorder* Rule = WidgetTree->ConstructWidget<UBorder>(); Rule->SetBrushColor(FLinearColor(Ink.R, Ink.G, Ink.B, 0.35f));
+	Col->AddChildToVerticalBox(Sized(Rule, 0.f, 3.f))->SetPadding(FMargin(0.f, 10.f, 0.f, 16.f));
+	Body = MakeText(TEXT(""), 21, Ink);
+	// An explicit wrap width avoids AutoWrap's first-frame measurement delay.
+	Body->SetAutoWrapText(false); Body->SetWrapTextAt(520.f);
+	UVerticalBoxSlot* BodySlot = Col->AddChildToVerticalBox(Body); BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	// The replay key as it is bound now, on a keycap.
+	UHorizontalBox* HintRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+	UBorder* Cap = MakePanel(GbUi::PaperHi(), FMargin(8.f, 2.f));
+	UTextBlock* CapText = MakeText(KeyName(TEXT("Story")), 16, Ink, true); CapText->SetAutoWrapText(false); Cap->SetContent(CapText);
+	UHorizontalBoxSlot* CapSlot = HintRow->AddChildToHorizontalBox(Cap); CapSlot->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f)); CapSlot->SetVerticalAlignment(VAlign_Center);
+	UTextBlock* Hint = MakeText(TEXT("replays this story from the Ward."), 15, GbUi::InkSoft()); Hint->SetAutoWrapText(false);
+	HintRow->AddChildToHorizontalBox(Hint)->SetVerticalAlignment(VAlign_Center);
+	Col->AddChildToVerticalBox(HintRow)->SetPadding(FMargin(0.f, 12.f, 0.f, 2.f));
+
+	const auto Foot = [Footer](UWidget* W, float Right)
+	{
+		UHorizontalBoxSlot* S = Footer->AddChildToHorizontalBox(W); S->SetPadding(FMargin(0.f, 0.f, Right, 0.f)); S->SetVerticalAlignment(VAlign_Center);
+	};
 	UTextBlock* Label = nullptr;
-	UButton* Skip = MakeButton(TEXT("Skip intro  /  Escape"), Label, Paper); Skip->OnClicked.AddDynamic(this, &UGbIntroWidget::HandleSkip); Add(Sized(Skip, 0, 34), 2);
-	Add(MakeText(TEXT("Enter or Space to continue. I replays this story from the Ward."), 11, Ink.CopyWithNewOpacity(0.65f)), 4);
+	UButton* Skip = MakeKeyButton(TEXT("Skip intro"), TEXT("Esc"), Label, GbUi::Paper2());
+	Skip->OnClicked.AddDynamic(this, &UGbIntroWidget::HandleSkip); Foot(Sized(Skip, 250.f, 56.f), 14.f);
+	UButton* Next = MakeKeyButton(TEXT("Turn the page"), TEXT("Enter"), NextLabel, Crimson);
+	Next->OnClicked.AddDynamic(this, &UGbIntroWidget::HandleNext); Foot(Sized(Next, 470.f, 56.f), 0.f);
 }
 
 void UGbIntroWidget::Open() { PanelIndex = 0; Redraw(); }
@@ -152,6 +185,7 @@ void UGbIntroWidget::Redraw()
 	Page->SetText(FText::FromString(FString::Printf(TEXT("HOLLOWMERE  /  %d OF %d"), PanelIndex + 1, Panels.Num())));
 	Title->SetText(FText::FromString(Panel.Title)); Body->SetText(FText::FromString(Panel.Text)); Illustration->SetPanel(PanelIndex);
 	NextLabel->SetText(FText::FromString(PanelIndex + 1 == Panels.Num() ? TEXT("Enter Lantern Ward") : TEXT("Turn the page")));
+	for (int32 I = 0; I < Pips.Num(); ++I) if (Pips[I]) Pips[I]->SetBrushColor(I <= PanelIndex ? Crimson : GbUi::Paper3());
 }
 void UGbIntroWidget::HandleNext() { if (++PanelIndex >= GbStory::IntroPanels().Num()) OnFinished.Broadcast(); else Redraw(); }
 void UGbIntroWidget::HandleSkip() { OnFinished.Broadcast(); }
