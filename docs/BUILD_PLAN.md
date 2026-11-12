@@ -4,7 +4,7 @@ The living plan for the 14-day build. **Update it in the same pull request as th
 
 - Hackathon: NEAR HACKATHON, 1-14 November 2026. Deadline **14 Nov 23:59 UTC**. We submit at **14 Nov 12:00 UTC** (12 h buffer).
 - Track: Games With Real Economies. "Judged on the game loop, not the token; bonus if players never notice the chain."
-- Rules: [`HACKATHON.md`](HACKATHON.md). Art direction: [`ART_PROMPTS.md`](ART_PROMPTS.md).
+- Rules: [HACKATHON.md](https://nearhackathon.com/HACKATHON.md) (live). Art direction: [`ART_PROMPTS.md`](ART_PROMPTS.md).
 
 ## How to keep this file up to date
 

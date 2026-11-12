@@ -2,13 +2,13 @@
 
 Two Rust contracts for NEAR (testnet during the hackathon).
 
-| Contract | Account (planned) | What it holds |
+| Contract | Account (testnet) | What it holds |
 |---|---|---|
-| `items/` | `items.grudgebound.testnet` | Ember coin + every talisman in one multi-token contract (NEP-245 shape; compliance is WIP) |
+| `items/` | `items.grudgebound.testnet` | Ember coin + every talisman in one multi-token contract (NEP-245 shape: balances and transfers between accounts; NEP-245's `mt_transfer_call`, batch transfers and approvals are not implemented) |
 | `rite/` | `rite.grudgebound.testnet` | Points, rules (propose / resolve / repeal), vows (stake / settle), battle results |
 
-**Status (1 Nov):** both contracts **compile to wasm** (`items` 324 KB, `rite` 374 KB, Rust 1.99, near-sdk 5.30).
-Unit tests are written for both (7 for `items`, 10 for `rite`) using near-sdk's mocked blockchain.
+**Status (13 Nov):** both contracts are deployed on testnet and compile to wasm (Rust 1.99, near-sdk 5.30).
+25 unit tests (15 for `items`, 10 for `rite`) run on near-sdk's mocked blockchain.
 
 ## Build (any OS)
 
@@ -29,7 +29,7 @@ cd contracts
 cargo test
 ```
 
-- **Linux, macOS, WSL2 or Windows with the MSVC toolchain:** runs as is. All 17 pass (3 Nov, Windows 11, Rust 1.99.1 MSVC,
+- **Linux, macOS, WSL2 or Windows with the MSVC toolchain:** runs as is. All 25 pass (13 Nov, Windows 11, Rust 1.99.1 MSVC,
   Visual Studio 2026 C++ tools). `.cargo/config.toml` sets `AWS_LC_SYS_PREBUILT_NASM=1`, so no NASM install is needed.
   MSVC install: `rustup-init -y --default-host x86_64-pc-windows-msvc -t wasm32-unknown-unknown` (needs the VS C++ workload).
 - **Windows with the GNU toolchain:** the tests' dependencies need GNU `dlltool` + `as`, which that toolchain does not ship,
