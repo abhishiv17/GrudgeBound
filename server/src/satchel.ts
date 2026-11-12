@@ -11,6 +11,7 @@ import { AuthError } from "./auth";
 import type { ChainReceipt, ChainWriter } from "./chain";
 import { displayName } from "./rules";
 import { explorationView, interact, newExploration, validExploration, type Exploration } from "./exploration";
+import { newProfile, validProfile, profileChoice, profileView, type ArrivalProfile } from "./profile";
 
 export const CARRY_LIMIT = 5;
 /** Existing built-in partner, not a minted or tradable asset. Scoped to the signed-in account's store. */
@@ -24,14 +25,16 @@ export interface SatchelView {
   carried: string[]; case: string[]; supplies: Record<Supply, number>; keepsakes: string[];
   ink: Record<string, Ink>; ember: number | null; points: number | null;
   exploration: ReturnType<typeof explorationView>;
+  profile: ReturnType<typeof profileView>;
 }
 interface Pocket {
   initialized: boolean; carried: string[]; supplies: Record<Supply, number>; keepsakes: string[];
   ink: Record<string, Ink>; personalTick: number; pendingBindings: Record<string, Supply>;
   exploration: Exploration; pendingTideBindings: string[];
+  profile: ArrivalProfile;
 }
 const empty = (): Pocket => ({ initialized: false, carried: [], supplies: { blank: 0, gilded: 0, salve: 0 },
-  keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {}, exploration: newExploration(), pendingTideBindings: [] });
+  keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {}, exploration: newExploration(), pendingTideBindings: [], profile: newProfile() });
 
 export function supplyForItem(itemId: string): Supply | null {
   // Keep the existing merchant item id as a purchase alias for plain blanks.
@@ -49,16 +52,17 @@ export class Satchels {
   private readonly healing = new Set<string>();
   private readonly binding = new Set<string>();
   constructor(private readonly world: World, private readonly chain: ChainWriter | null,
-    private readonly options: { file?: string; gameAccount?: string; canSignFor?: (account: string) => boolean; starterKit?: Readonly<Record<Supply, number>> } = {}) {
+    private readonly options: { file?: string; gameAccount?: string; canSignFor?: (account: string) => boolean; starterKit?: Readonly<Record<Supply, number>>; mintStarters?: boolean } = {}) {
     if (options.file && existsSync(options.file)) {
       const saved = JSON.parse(readFileSync(options.file, "utf8")) as { version: number; players: [string, Pocket][] };
-      if (![1, 2].includes(saved.version) || !Array.isArray(saved.players)) throw new Error("Unsupported Satchel store");
+      if (![1, 2, 3].includes(saved.version) || !Array.isArray(saved.players)) throw new Error("Unsupported Satchel store");
       for (const [account, p] of saved.players) {
         if (saved.version === 1) { p.exploration = newExploration(); p.pendingTideBindings = []; }
+        if (saved.version < 3) p.profile = newProfile(p.initialized);
         if (typeof account !== "string" || !Array.isArray(p.carried) || p.carried.length > CARRY_LIMIT ||
             ![p.supplies.blank, p.supplies.gilded, p.supplies.salve, p.personalTick].every((n) => Number.isSafeInteger(n) && n >= 0) ||
             !p.ink || !p.pendingBindings || !Array.isArray(p.keepsakes) || !validExploration(p.exploration)
-            || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
+            || !validProfile(p.profile) || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
         this.pockets.set(account, p);
       }
     }
@@ -71,7 +75,7 @@ export class Satchels {
     if (this.options.file) {
       mkdirSync(dirname(this.options.file), { recursive: true });
       const tmp = `${this.options.file}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ version: 2, players: [...next] }), { mode: 0o600 });
+      writeFileSync(tmp, JSON.stringify({ version: 3, players: [...next] }), { mode: 0o600 });
       renameSync(tmp, this.options.file);
       fileChanged(this.options.file);
     }
@@ -79,6 +83,36 @@ export class Satchels {
   }
 
   supplies(account: string) { return this.read(account).supplies; }
+  profile(account: string) { return profileView(this.read(account).profile); }
+  async completeProfile(account: string, body: Record<string, unknown>) {
+    this.update(account, p => {
+      const choice = profileChoice(body, p.profile);
+      if (p.profile.complete) {
+        if (["name", "look", "pronouns", "starter"].some(k => choice[k as keyof typeof choice] !== p.profile[k as keyof ArrivalProfile]))
+          throw new AuthError(409, "Your arrival is already recorded. Your first partner cannot be chosen again.");
+        // An owner-approved contract upgrade can settle the previously chosen virtual partner.
+        // Preserve its ink and species; this is not another welcome grant.
+        if (p.profile.mint === "virtual" && !p.profile.legacyStarter && this.chain && this.options.mintStarters)
+          p.profile.mint = "pending";
+        return;
+      }
+      p.profile = { ...p.profile, ...choice, complete: true,
+        mint: this.chain && this.options.mintStarters && !p.profile.legacyStarter ? "pending" : "virtual" };
+      // Choosing a species cannot heal a partner already used by an older client.
+      if (!p.profile.legacyStarter) delete p.ink[STARTER_TOKEN_ID];
+    });
+    const chosen = this.read(account).profile;
+    if (chosen.mint === "pending" && this.chain && this.options.mintStarters) {
+      const minted = await this.chain.mintStarter(account, chosen.starter);
+      this.update(account, p => {
+        p.profile.tokenId = minted.tokenId; p.profile.mint = "done"; p.profile.proofUrl = minted.url;
+        p.carried = p.carried.map(id => id === STARTER_TOKEN_ID ? minted.tokenId : id);
+        if (p.ink[STARTER_TOKEN_ID]) p.ink[minted.tokenId] = p.ink[STARTER_TOKEN_ID]!;
+        delete p.ink[STARTER_TOKEN_ID];
+      });
+    }
+    return { ...await this.view(account), message: `Welcome to Hollowmere, ${chosen.name}. Your partner is ready.` };
+  }
   equipment(account: string) { return equipmentSnapshot(this.read(account).exploration.equipped); }
   async explore(account: string, id: unknown) {
     let message = "";
@@ -148,7 +182,8 @@ export class Satchels {
 
   private async owned(account: string): Promise<{ tokenId: string; speciesId: string }[]> {
     const tokens = this.chain ? (await this.chain.talismansOf(account)).map((t) => ({ tokenId: t.token_id, speciesId: t.meta.species })) : [];
-    return [{ tokenId: STARTER_TOKEN_ID, speciesId: DEFAULT_PLAYER_CURSE }, ...tokens];
+    const p = this.read(account).profile;
+    return p.mint === "done" ? tokens : [{ tokenId: STARTER_TOKEN_ID, speciesId: p.starter }, ...tokens];
   }
   private sync(account: string, owned: { tokenId: string }[]) {
     const p = this.read(account); const ids = new Set(owned.map((t) => t.tokenId));
@@ -169,6 +204,7 @@ export class Satchels {
     this.sync(account, owned); const p = this.read(account);
     return { carried: p.carried, case: owned.filter((t) => !p.carried.includes(t.tokenId)).map((t) => t.tokenId),
       supplies: p.supplies, keepsakes: p.keepsakes, exploration: explorationView(p.exploration, p.keepsakes),
+      profile: profileView(p.profile),
       ink: Object.fromEntries(owned.map((t) => [t.tokenId, this.inkFor(account, t)])), ember, points };
   }
   async carry(account: string, tokenId: unknown, carry: unknown): Promise<SatchelView> {
@@ -184,14 +220,17 @@ export class Satchels {
     return this.view(account);
   }
   async partner(account: string, tokenId?: unknown, speciesId?: unknown): Promise<Partner> {
+    const profile = this.read(account).profile;
+    if (profile.mint === "pending") throw new AuthError(409, "Your partner is still being recorded. Return to Kessa and retry your saved choice.");
     if (tokenId !== undefined && typeof tokenId !== "string") throw new AuthError(400, "tokenId must be a talisman id.");
     const owned = await this.owned(account); this.sync(account, owned);
     const p = this.read(account);
     const token = owned.find((t) => tokenId !== undefined ? t.tokenId === tokenId
-      : p.carried.includes(t.tokenId) && t.speciesId === (speciesId ?? DEFAULT_PLAYER_CURSE));
+      : p.carried.includes(t.tokenId) && t.speciesId === (speciesId ?? profile.starter));
     if (!token || !p.carried.includes(token.tokenId)) throw new AuthError(403, "Choose a partner carried in your Satchel.");
     const ink = this.inkFor(account, token);
     if (!ink.hp) throw new AuthError(409, "Visit the Mender or rest");
+    if (!profile.complete && !profile.legacyStarter) this.update(account, p => { p.profile.legacyStarter = true; });
     return { ...token, ...ink };
   }
 

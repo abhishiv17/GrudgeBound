@@ -156,7 +156,7 @@ chain?.onEvents((events) => {
 const canSignFor = (a: string) => !!chainCfg && (chainCfg.playerKey?.(a) ?? custodialKey(chainCfg, a)) !== undefined;
 const satchels = new Satchels(world, chain, {
   file: process.env.SATCHEL_STORE_PATH || join(dirname(resolve(process.env.AUTH_STORE_PATH || "data/auth.enc")), "satchels.json"),
-  gameAccount: chainCfg?.gameAccount, canSignFor, starterKit: STARTER_KIT,
+  gameAccount: chainCfg?.gameAccount, canSignFor, starterKit: STARTER_KIT, mintStarters: process.env.STARTER_MINT === "on",
 });
 const battles = new BattleSessions(world, { satchels });
 const chainRules = chain && chainCfg ? new ChainRules(world, chain, canSignFor) : null;
@@ -285,7 +285,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "POST" && (url.pathname === "/vows/swear" || url.pathname === "/vows/release")) {
     const player = auth.authenticate(sessionToken(req));
     return playerAction(player.account, async () => {
-      const body = playerBody(await readJson(req), player);
+      const body = playerBody(await readJson(req), { ...player, name: satchels.profile(player.account).name || player.name });
       const result = url.pathname === "/vows/swear" ? await vows.swear(player.account, body) : await vows.release(player.account, body.vowId);
       // The Shrine is outside encounters. Old encounters cannot resume under changed vows.
       battles.abandonAccount(player.account);
@@ -297,12 +297,13 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.searchParams.has("account") && url.searchParams.get("account") !== player.account) throw new AuthError(403, "You can only load your signed-in Satchel.");
     return send(res, 200, await satchels.view(player.account));
   }
-  if (req.method === "POST" && ["/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"].includes(url.pathname)) {
+  if (req.method === "POST" && ["/profile/complete", "/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"].includes(url.pathname)) {
     const player = auth.authenticate(sessionToken(req));
     return playerAction(player.account, async () => {
-      const body = playerBody(await readJson(req), player);
+      const body = playerBody(await readJson(req), { ...player, name: satchels.profile(player.account).name || player.name });
       outsideBattle(player.account);
-      const result = url.pathname === "/satchel/carry" ? await satchels.carry(player.account, body.tokenId, body.carry)
+      const result = url.pathname === "/profile/complete" ? await satchels.completeProfile(player.account, body)
+        : url.pathname === "/satchel/carry" ? await satchels.carry(player.account, body.tokenId, body.carry)
         : url.pathname === "/satchel/equip" ? await satchels.equip(player.account, body.itemId)
         : url.pathname === "/exploration/interact" ? await satchels.explore(player.account, body.id)
         : url.pathname === "/satchel/salve" ? await satchels.useSalve(player.account, body.tokenId)
@@ -314,7 +315,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "POST" && (url.pathname === "/battle/start" || url.pathname === "/battle/turn")) {
     const player = auth.authenticate(sessionToken(req));
     return playerAction(player.account, async () => {
-      const body = playerBody(await readJson(req), player);
+      const body = playerBody(await readJson(req), { ...player, name: satchels.profile(player.account).name || player.name });
       const activeVows = await vows.snapshot(player.account);
       const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
       if (url.pathname === "/battle/start") {
@@ -347,7 +348,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return playerAction(player.account, async () => {
       outsideBattle(player.account);
       if (!playerShop) return send(res, 503, { error: "trades are settled on chain, and this server runs off-chain" });
-      const body = playerBody(await readJson(req), player);
+      const body = playerBody(await readJson(req), { ...player, name: satchels.profile(player.account).name || player.name });
       const merchant = world.merchants.find((m) => m.id === body.merchant);
       if (merchant) vows.assertTrade(await vows.snapshot(player.account), merchant.ward, url.pathname === "/shop/sell" ? body.tokenId : undefined);
       const r = await (url.pathname === "/shop/buy" ? playerShop.buy(body) : playerShop.sell(body));
@@ -362,7 +363,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!chainRules) return send(res, 503, { error: "rules go through the rite contract, and this server runs off-chain" });
     return playerAction(player.account, async () => {
       outsideBattle(player.account);
-      const body = playerBody(await readJson(req), player);
+      const body = playerBody(await readJson(req), { ...player, name: satchels.profile(player.account).name || player.name });
       const r = await (url.pathname === "/rules/propose" ? chainRules.propose(body) : chainRules.repeal(body));
       return send(res, r.status, r.body);
     });

@@ -85,11 +85,12 @@ describe("rules through the rite contract", () => {
 
   test("concurrent contradictory proposals reserve accepted rules before resolution", async () => {
     const bob = "bob.gb.testnet";
-    const { world, rules, rite } = setup({ [AFREEN]: 500, [bob]: 500 });
+    const { world, rules, rite, chain } = setup({ [AFREEN]: 500, [bob]: 500 });
     const results = await Promise.all([rules.propose({ account: AFREEN, ...PVP_BAN }), rules.propose({ account: bob, ...PVP_BONUS })]);
     assert.deepEqual(results.map((r) => (r.body as ProposeAnswer).accepted), [true, false]);
     assert.equal(world.rules.length, 0);
-    await settle();
+    const deadline = Date.now() + 3000;
+    while (results.some(r => chain.ruleReceipt((r.body as ProposeAnswer).jobId)?.status === "pending") && Date.now() < deadline) await settle();
     assert.equal(world.rules.length, 1);
     assert.deepEqual(rite.rules.map((r) => r.status), ["Active", "Rejected"]);
   });

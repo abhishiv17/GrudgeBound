@@ -582,6 +582,18 @@ export class ChainWriter {
     return next;
   }
 
+  /** Opt-in after the items code upgrade. The contract locks one first partner per recipient, including retries. */
+  async mintStarter(account: string, species: string): Promise<{ tokenId: string; url: string }> {
+    if (this.cfg.network !== "testnet") throw new Error("Starter grants are testnet-only");
+    let minted: { tokenId: string; url: string } | undefined;
+    await this.enqueue(async () => {
+      const { result, hash } = await this.call(this.cfg.itemsContract, "mint_starter", { to: account, species });
+      if (typeof result !== "string" || !result.startsWith("tal-")) throw new Error("Starter receipt could not be read");
+      minted = { tokenId: result, url: explorerTxUrl(this.cfg.network, hash) };
+    });
+    return minted!;
+  }
+
   /** An AI agent's account: function-call keys only, created on the game master's write queue. Testnet only. */
   provisionLimitedAccount(account: string, keys: LimitedKey[]): Promise<void> {
     if (this.cfg.network !== "testnet" || !this.cfg.gameAccount || !account.endsWith(`.${this.cfg.gameAccount}`) || !isAccountId(account)) {

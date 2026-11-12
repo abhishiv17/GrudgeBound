@@ -26,6 +26,58 @@ test("fifty rests leave the shared event feed unchanged", async () => {
   assert.deepEqual(s.world.events, before);
 });
 
+test("arrival choices persist, validate names, isolate accounts and cannot reroll", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gb-arrival-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "satchels.json"), world = createWorld(2);
+  const s = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  const choice = { name: "  Mira  Vale ", look: "feminine", pronouns: "they", starter: "weepwick", attack: 999, level: 99 };
+  await s.view(ACCOUNT);
+  assert.equal(s.profile(ACCOUNT).legacyStarter, false, "viewing pockets does not lock the new choice");
+  for (const name of ["x", "x".repeat(25), "<script>", "Mira\nVale", "\u200bMira", "123"])
+    await assert.rejects(s.completeProfile(ACCOUNT, { ...choice, name }), /name|letters/);
+  await assert.rejects(s.completeProfile(ACCOUNT, { ...choice, starter: "riot-bell" }), /three partners/);
+  const answers = await Promise.all(Array.from({ length: 8 }, () => s.completeProfile(ACCOUNT, choice)));
+  assert.ok(answers.every(a => a.profile.starter === "weepwick"));
+  assert.equal(answers[0]!.profile.name, "Mira Vale");
+  assert.equal(answers[0]!.supplies.blank, 3);
+  assert.equal((await s.partner(ACCOUNT, "starter")).maxHp, 44);
+  assert.equal(s.profile(OTHER).complete, false);
+  await assert.rejects(s.completeProfile(ACCOUNT, { ...choice, starter: "hushmoth" }), /cannot be chosen again/);
+  const restored = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  assert.equal(restored.profile(ACCOUNT).name, "Mira Vale");
+  assert.equal(restored.profile(ACCOUNT).look, "feminine");
+  assert.equal((await restored.partner(ACCOUNT, "starter")).speciesId, "weepwick");
+  await restored.partner(OTHER, "starter");
+  await assert.rejects(restored.completeProfile(OTHER, choice), /existing partner/);
+  assert.equal((await restored.completeProfile(OTHER, { ...choice, starter: DEFAULT_PLAYER_CURSE })).profile.legacyStarter, true);
+});
+
+test("starter mint lost response resumes the same choice after restart without another grant", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gb-starter-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "satchels.json"), world = createWorld(2);
+  const tokens: ChainTalisman[] = []; let loseReply = true, calls = 0;
+  const chain = new ChainWriter(cfg, {
+    view: async (_c, method) => method === "talismans_of" ? { talismans: tokens, next_index: null } : 0,
+    call: async (_c: string, method: string, args: Record<string, unknown>) => {
+      assert.equal(method, "mint_starter"); calls++;
+      if (!tokens.length) tokens.push({ token_id: "tal-1", owner: ACCOUNT, meta: { species: args.species as string, emotion: "dread", omen: "whisper", level: 1, wins: 0 }, purse: "0" });
+      if (loseReply) { loseReply = false; throw new Error("response lost after execution"); }
+      return { hash: "starter-proof", result: "tal-1" };
+    },
+  });
+  const choice = { name: "Ari", look: "masculine", pronouns: "he", starter: "hushmoth" };
+  const s = new Satchels(world, chain, { file, mintStarters: true }); await s.view(ACCOUNT);
+  await assert.rejects(s.completeProfile(ACCOUNT, choice), /response lost/);
+  await assert.rejects(s.partner(ACCOUNT, "starter"), /still being recorded/);
+  const resumed = new Satchels(world, chain, { file, mintStarters: true });
+  await assert.rejects(resumed.completeProfile(ACCOUNT, { ...choice, starter: "weepwick" }), /cannot be chosen again/);
+  const done = await resumed.completeProfile(ACCOUNT, choice);
+  assert.equal(done.profile.mint, "done"); assert.equal(done.profile.tokenId, "tal-1");
+  assert.deepEqual(done.carried, ["tal-1"]); assert.equal(tokens.length, 1);
+  await resumed.completeProfile(ACCOUNT, choice); assert.equal(calls, 2, "completed profile never asks to mint again");
+  assert.equal((await resumed.partner(ACCOUNT, "tal-1")).speciesId, "hushmoth");
+});
+
 test("exploration rewards are once per account, ordered, and survive restart", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "gb-discovery-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -64,6 +116,28 @@ test("exploration rewards are once per account, ordered, and survive restart", a
   assert.deepEqual(reloaded.supplies(OTHER), STARTER_KIT);
 });
 
+test("enabling starter settlement preserves the virtual partner's ink and welcome supplies", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gb-starter-upgrade-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "satchels.json"), world = createWorld(2);
+  const choice = { name: "Ari", look: "feminine", pronouns: "they", starter: "hushmoth" };
+  const before = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  await before.completeProfile(ACCOUNT, choice);
+  const hurt = createBattle({ wild: "cinder-grin", playerCurse: "hushmoth" }); hurt.player.hp = 9;
+  before.applyTurn(ACCOUNT, "starter", "injury", { kind: "ward" }, hurt);
+  let calls = 0;
+  const chain = new ChainWriter(cfg, {
+    view: async (_c, method) => method === "talismans_of" ? { talismans: calls ? [{ token_id: "tal-1", owner: ACCOUNT, meta: { species: "hushmoth", emotion: "dread", omen: "whisper", level: 1, wins: 0 }, purse: "0" }] : [], next_index: null } : 0,
+    call: async () => { calls++; return { hash: "starter-proof", result: "tal-1" }; },
+  });
+  const after = new Satchels(world, chain, { file, mintStarters: true, starterKit: STARTER_KIT });
+  const settled = await after.completeProfile(ACCOUNT, choice);
+  assert.equal(settled.ink["tal-1"]!.hp, 9);
+  assert.deepEqual(settled.supplies, STARTER_KIT);
+  assert.deepEqual(settled.carried, ["tal-1"]);
+  assert.equal(settled.profile.mint, "done");
+  await after.completeProfile(ACCOUNT, choice); assert.equal(calls, 1);
+});
+
 test("legacy Satchel migration preserves supplies and starter-kit history", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "gb-discovery-migration-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -75,8 +149,10 @@ test("legacy Satchel migration preserves supplies and starter-kit history", asyn
   writeFileSync(file, JSON.stringify(saved));
   const old = new Satchels(world, null, { file, starterKit: STARTER_KIT });
   assert.deepEqual((await old.view(ACCOUNT)).supplies, STARTER_KIT);
+  assert.equal(old.profile(ACCOUNT).legacyStarter, true);
+  assert.equal(old.profile(ACCOUNT).complete, false, "legacy users still choose name, look and pronouns");
   await old.explore(ACCOUNT, "dock-tin");
-  assert.equal(JSON.parse(readFileSync(file, "utf8")).version, 2);
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).version, 3);
   assert.equal(old.supplies(ACCOUNT).salve, 2);
 });
 
@@ -414,7 +490,7 @@ test("HTTP Satchel routes enforce sessions, reject account injection and keep re
   for (let i = 0; i < 150 && !output.includes("Grudgebound server on"); i++) { assert.equal(child.exitCode, null, errors); await delay(50); }
   assert.ok(output.includes("Grudgebound server on"), errors);
   assert.equal((await fetch(base + "/satchel")).status, 401);
-  for (const path of ["/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"]) assert.equal((await post(path, {})).status, 401);
+  for (const path of ["/profile/complete", "/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"]) assert.equal((await post(path, {})).status, 401);
   const start = await post("/auth/email/start", { email: "satchel@example.com" });
   const { challengeId } = await start.json() as { challengeId: string };
   for (let i = 0; i < 50 && !output.includes("[local sign-in]"); i++) await delay(20);
@@ -426,6 +502,11 @@ test("HTTP Satchel routes enforce sessions, reject account injection and keep re
   assert.deepEqual((await satchel.json() as { supplies: object }).supplies, { blank: 3, gilded: 0, salve: 1 });
   assert.equal((await fetch(base + "/satchel?account=victim.testnet", { headers })).status, 403);
   assert.equal((await post("/rest", { account: "victim.testnet" }, headers)).status, 403);
+  const arrival = { name: "Ari", look: "feminine", pronouns: "she", starter: "hushmoth" };
+  assert.equal((await post("/profile/complete", { ...arrival, account: "victim.testnet" }, headers)).status, 403);
+  assert.equal((await post("/profile/complete", { ...arrival, name: "<bad>" }, headers)).status, 400);
+  assert.equal((await post("/profile/complete", arrival, headers)).status, 200);
+  assert.equal((await post("/profile/complete", { ...arrival, starter: "weepwick" }, headers)).status, 409);
   assert.equal((await post("/satchel/carry", { tokenId: "foreign", carry: true }, headers)).status, 403);
   assert.equal((await post("/exploration/interact", { id: "alley-parcel", account: "victim.testnet" }, headers)).status, 403);
   assert.equal((await post("/exploration/interact", { id: "storehouse-chest" }, headers)).status, 403);
@@ -441,6 +522,7 @@ test("HTTP Satchel routes enforce sessions, reject account injection and keep re
   const battle = await post("/battle/start", { ward: "lantern" }, headers); assert.equal(battle.status, 200);
   const { battleId } = await battle.json() as StartAnswer;
   assert.equal((await post("/rest", {}, headers)).status, 409);
+  assert.equal((await post("/profile/complete", arrival, headers)).status, 409);
   assert.equal((await post("/satchel/equip", { itemId: "" }, headers)).status, 409);
   assert.equal((await post("/exploration/interact", { id: "lamp-kit" }, headers)).status, 409);
   // With the starter kit a brand-new player can attempt a seal straight away (no Ember needed).
