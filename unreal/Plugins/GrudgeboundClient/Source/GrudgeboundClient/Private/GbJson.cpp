@@ -467,6 +467,18 @@ namespace GbJson
 		if (!S.bValid) return S;
 		S.Carried = Strings(O, TEXT("carried")); S.Case = Strings(O, TEXT("case"));
 		S.Keepsakes = Strings(O, TEXT("keepsakes"));
+        const auto E = Obj(O, TEXT("exploration"));
+        S.bExplorationAvailable = E.IsValid() && Int(E, TEXT("version")) == 1;
+        if (S.bExplorationAvailable)
+        {
+            S.DiscoveryFlags = Strings(E, TEXT("flags")); S.Equipped = Str(E, TEXT("equipped")); S.Tracked = Str(E, TEXT("tracked"));
+            for (const auto& V : Arr(E, TEXT("gear"))) { const auto G=AsObj(V); if (!G) continue; FGbGear R;
+                R.Id=Str(G,TEXT("id")); R.Name=Str(G,TEXT("name")); R.Source=Str(G,TEXT("source")); R.Attack=Int(G,TEXT("attack")); R.Guard=Int(G,TEXT("guard")); S.Gear.Add(R); }
+            for (const auto& V : Arr(E, TEXT("journal"))) { const auto G=AsObj(V); if (!G) continue; FGbJournalEntry R;
+                R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Status=Str(G,TEXT("status")); R.Objective=Str(G,TEXT("objective")); R.Hint=Str(G,TEXT("hint")); S.Journal.Add(R); }
+            for (const auto& V : Arr(E, TEXT("notes"))) { const auto G=AsObj(V); if (!G) continue; FGbKeepsake R;
+                R.Id=Str(G,TEXT("id")); R.Title=Str(G,TEXT("title")); R.Text=Str(G,TEXT("text")); S.Notes.Add(R); }
+        }
 		S.Blank = FMath::Max(0, Int(Supplies, TEXT("blank")));
 		S.Gilded = FMath::Max(0, Int(Supplies, TEXT("gilded")));
 		S.Salves = FMath::Max(0, Int(Supplies, TEXT("salve")));
@@ -482,6 +494,10 @@ namespace GbJson
 		return S;
 	}
 
+    FString NamedBody(const FString& Key, const FString& Value)
+    {
+        const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>(); O->SetStringField(Key, Value); return Write(O);
+    }
 	FString TokenBody(const FString& TokenId)
 	{
 		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>(); O->SetStringField(TEXT("tokenId"), TokenId); return Write(O);

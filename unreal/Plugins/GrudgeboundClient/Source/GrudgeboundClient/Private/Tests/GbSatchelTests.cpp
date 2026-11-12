@@ -26,6 +26,10 @@ namespace
 		S.Case = { TEXT("tal-5") }; S.Blank = 3; S.Salves = 1; S.Ember = 60; S.Points = 5;
 		for (const FString& Id : S.Carried) { FGbInk I; I.Hp = I.MaxHp = 44; S.Ink.Add(Id, I); }
 		FGbInk I; I.Hp = 12; I.MaxHp = 44; S.Ink.Add(TEXT("tal-5"), I);
+        S.bExplorationAvailable=true; S.Equipped=TEXT("worn-focus"); S.Tracked=TEXT("net");
+        FGbGear Focus; Focus.Id=TEXT("worn-focus"); Focus.Name=TEXT("Worn Focus"); Focus.Attack=1; Focus.Source=TEXT("Returned the Lamplighter's kit."); S.Gear.Add(Focus);
+        FGbGear Clasp; Clasp.Id=TEXT("ward-clasp"); Clasp.Name=TEXT("Ward Clasp"); Clasp.Guard=2; Clasp.Source=TEXT("Recovered the Net mender's bundle."); S.Gear.Add(Clasp);
+        FGbJournalEntry J; J.Id=TEXT("net"); J.Title=TEXT("Among the reeds"); J.Status=TEXT("active"); J.Objective=TEXT("Recover the bundle by Tide's eastern reeds."); J.Hint=TEXT("Take the ferry from Lantern Ward's southern pier."); S.Journal.Add(J);
 		return S;
 	}
 	FGbTalisman Token(const FString& Local, const FString& Server)
@@ -50,6 +54,19 @@ bool FGbSatchelJsonTest::RunTest(const FString&)
 	TestFalse(TEXT("Zero ink cannot fight"), S.CanFight(TEXT("starter")));
 	TestFalse(TEXT("A Case talisman cannot fight"), S.CanFight(TEXT("tal-2")));
 	TestTrue(TEXT("No keepsakes yet"), S.Keepsakes.IsEmpty());
+    TestFalse(TEXT("Older servers do not promise exploration support"),S.bExplorationAvailable);
+    const FString Exploration=TEXT(R"({"version":1,"flags":["lamp-done"],"equipped":"worn-focus","tracked":"net","gear":[{"id":"worn-focus","name":"Worn Focus","source":"Lamplighter","attack":1,"guard":0}],"journal":[{"id":"net","title":"Among the reeds","status":"active","objective":"Recover the bundle","hint":"Eastern reeds"}],"notes":[{"id":"delivery-slip","title":"Marked delivery slip","text":"A storehouse stamp."}]})");
+    TSharedPtr<FJsonObject> E; TestTrue(TEXT("Exploration body parses"),GbJson::ParseObject(Exploration,E)); O->SetObjectField(TEXT("exploration"),E);
+    const FGbSatchel Progress=GbJson::Satchel(O);
+    TestTrue(TEXT("Versioned exploration available"),Progress.bExplorationAvailable);
+    TestTrue(TEXT("Claim state received"),Progress.DiscoveryFlags.Contains(TEXT("lamp-done")));
+    TestEqual(TEXT("Equipped identifier preserved"),Progress.Equipped,FString(TEXT("worn-focus")));
+    if (TestEqual(TEXT("Owned gear parsed"),Progress.Gear.Num(),1)) TestEqual(TEXT("Actual gear modifier displayed"),Progress.Gear[0].Attack,1);
+    if (TestEqual(TEXT("Journal parsed"),Progress.Journal.Num(),1)) TestEqual(TEXT("Journal objective preserved"),Progress.Journal[0].Objective,FString(TEXT("Recover the bundle")));
+    if (TestEqual(TEXT("Keepsake prose parsed"),Progress.Notes.Num(),1)) TestEqual(TEXT("Readable record"),Progress.Notes[0].Text,FString(TEXT("A storehouse stamp.")));
+    TSharedPtr<FJsonObject> Request; GbJson::ParseObject(GbJson::NamedBody(TEXT("id"),TEXT("quote\"\\line")),Request);
+    TestEqual(TEXT("Interaction JSON escapes ids"),Request->GetStringField(TEXT("id")),FString(TEXT("quote\"\\line")));
+    TestFalse(TEXT("Interaction cannot impersonate an account"),Request->HasField(TEXT("account")));
 	GbJson::ParseObject(TEXT("{}"), O); TestFalse(TEXT("Malformed pockets cannot enable actions"), GbJson::Satchel(O).bValid);
 	TestEqual(TEXT("No client-side kit while waiting"), FGbSatchel().Blank, 0);
 	GbJson::ParseObject(GbJson::CarryBody(TEXT("tal-2"), false), O);
@@ -136,7 +153,7 @@ bool FGbSatchelSupplyTradeTest::RunTest(const FString&)
 }
 
 #if WITH_EDITOR
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbSatchelVisualTest, "Grudgebound.Satchel.FourPocketsRender", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGbSatchelVisualTest, "Grudgebound.Satchel.SixPocketsRender", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FGbSatchelVisualTest::RunTest(const FString&)
 {
 	UGbSatchelWidget* W = NewObject<UGbSatchelWidget>(); W->AddToRoot(); W->Initialize(); W->BuildTree();
@@ -145,7 +162,8 @@ bool FGbSatchelVisualTest::RunTest(const FString&)
 	W->Redraw();
 	const TSharedRef<SWidget> Slate = W->TakeWidget(); FWidgetRenderer Renderer(false);
 	const FString Folder = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SatchelPreview")); IFileManager::Get().MakeDirectory(*Folder, true);
-	for (int32 I = 0; I < 4; ++I)
+	TestEqual(TEXT("Six native pockets"),W->Pockets->GetNumWidgets(),6);
+	for (int32 I = 0; I < 6; ++I)
 	{
 		W->Pockets->SetActiveWidgetIndex(I);
 		W->Redraw();

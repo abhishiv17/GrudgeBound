@@ -54,6 +54,9 @@ public:
 protected:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 private:
+ UFUNCTION() void QuestReply(const FString& Message);
+ UFUNCTION() void QuestError(const FString& What, int32 Code, const FString& Message);
+ bool bAwaitingQuest = false;
 	void Close();
 	UPROPERTY() TObjectPtr<UGbTalkWidget> Panel;
 	TWeakObjectPtr<AGbUiDirector> Director;

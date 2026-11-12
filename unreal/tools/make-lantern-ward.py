@@ -133,6 +133,40 @@ for label, at, target, ward_id in ferries:
     ferry.set_editor_property("travel_ward", ward_id)
     ferry.set_editor_property("target_feet", target)
 
+# Personal discoveries share the existing proximity/click interaction. Their contents are server-owned.
+finds = [
+    ("alley-parcel", "Inspect parcel", tile(12, 14.8)),
+    ("lamp-kit", "Inspect lamp kit", tile(7, 12)),
+    ("delivery-slip", "Read delivery slip", tile(8.8, 12)),
+    ("reed-bundle", "Recover netting", TIDE + tile(33, 17.2)),
+    ("dock-tin", "Inspect supply tin", TIDE + tile(18.5, 23)),
+]
+for find_id, label, at in finds:
+    find = named_actor("Discovery " + find_id, unreal.GbBuildingDoor, at)
+    find.set_actor_location(at, False, False)
+    find.set_editor_property("building", unreal.GbBuilding.OUTSIDE)
+    find.set_editor_property("use", unreal.GbBuildingUse.DISCOVER)
+    find.set_editor_property("discovery_id", find_id)
+    find.set_editor_property("label", label)
+
+store_origin = unreal.Vector(28000, 0, 0)
+store_outside = TIDE + tile(12.75, 13.7)
+store = named_actor("Interior Sealed Storehouse", unreal.GbBuildingRoom, store_origin)
+store.set_editor_property("building", unreal.GbBuilding.STOREHOUSE)
+for label, at, use, target in [
+    ("Sealed Storehouse", store_outside, unreal.GbBuildingUse.ENTER, store_origin + unreal.Vector(-50, 0, 0)),
+    ("Storehouse exit", store_origin + unreal.Vector(-300, 0, 0), unreal.GbBuildingUse.EXIT, store_outside),
+    ("Storehouse chest", store_origin + unreal.Vector(65, 0, 0), unreal.GbBuildingUse.DISCOVER, unreal.Vector()),
+]:
+    door = named_actor(label, unreal.GbBuildingDoor, at)
+    door.set_editor_property("building", unreal.GbBuilding.STOREHOUSE)
+    door.set_editor_property("use", use)
+    door.set_editor_property("target_feet", target)
+    door.set_editor_property("label", label)
+    door.set_editor_property("discovery_id", "storehouse-chest" if use == unreal.GbBuildingUse.DISCOVER else "storehouse-door" if use == unreal.GbBuildingUse.ENTER else "")
+store_nav = named_actor("Nav Sealed Storehouse", unreal.NavMeshBoundsVolume, store_origin + unreal.Vector(0, 0, 100))
+store_nav.set_actor_scale3d(unreal.Vector(4.5, 4, 3))
+
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 if not unreal.EditorLoadingAndSavingUtils.save_map(world, LEVEL):
     raise RuntimeError("Could not save " + LEVEL)

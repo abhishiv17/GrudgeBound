@@ -186,7 +186,7 @@ void AGbWardGreybox::OnConstruction(const FTransform& Transform)
 	Solid(0, 0, Cols, 1, 300.f);
 	Solid(0, 0, 1, 24, 300.f);
 	Solid(Cols - 1, 0, 1, 24, 300.f);
-	Solid(17, 15, 2, 2, 70.f); // fountain
+	Solid(14.8f, 16.2f, 2, 2, 70.f); // fountain, beside the room's approach
 	Solid(20.6f, 10.3f, 1.8f, 0.25f, 210.f); // Rite board
 	Solid(19.8f, 25, 0.2f, 4, 60.f); Solid(23.0f, 25, 0.2f, 4, 60.f); Solid(20, 28.8f, 3, 0.2f, 60.f); // pier rails
 	for (const int32 X : StallCols)
@@ -490,18 +490,18 @@ void AGbWardGreybox::BuildPlazaAndStreets(FRandomStream& Rand)
 	}
 
 	// --- plaza: fountain with benches, the Rite board between its posts, banners, trees and planters in the corners
-	Put(TEXT("FantasyTown/fountain_round_detail"), 18.f, 16.f, 0.f, 0.f, 1.05f);
-	Put(TEXT("FantasyTown/stall_bench"), 16.6f, 16.f, 0.f, 0.f, 1.8f);
-	Put(TEXT("FantasyTown/stall_bench"), 18.f, 17.45f, 0.f, 90.f, 1.8f);
+	Put(TEXT("FantasyTown/fountain_round_detail"), 15.8f, 17.2f, 0.f, 0.f, 1.05f);
+	Put(TEXT("FantasyTown/stall_bench"), 14.4f, 17.2f, 0.f, 0.f, 1.8f);
+	Put(TEXT("FantasyTown/stall_bench"), 15.8f, 18.65f, 0.f, 90.f, 1.8f);
 	for (const float Col : { 20.5f, 22.5f }) Put(TEXT("FantasyTown/pillar_wood"), Col, 10.42f, 0.f, 0.f, 2.3f);
-	for (const float Col : { 18.2f, 24.8f })
+	for (const float Col : { 14.4f, 30.7f })
 	{
 		Put(TEXT("FantasyTown/pillar_wood"), Col - 0.75f, 9.5f, 0.f, 0.f, 3.4f);
 		Put(TEXT("FantasyTown/pillar_wood"), Col + 0.75f, 9.5f, 0.f, 0.f, 3.4f);
 		Edge(TEXT("FantasyTown/banner_red"), Col, 9.5f, 2, 2.8f, 60.f);
 		Solid(Col - 0.9f, 9.4f, 1.8f, 0.2f, 300.f);
 	}
-	const FVector2D Corners[] = { FVector2D(16.5f, 9.5f), FVector2D(26.5f, 9.5f), FVector2D(16.5f, 17.5f), FVector2D(26.5f, 17.5f) };
+	const FVector2D Corners[] = { FVector2D(12.5f, 9.f), FVector2D(32.5f, 9.f), FVector2D(13.2f, 18.f), FVector2D(32.5f, 18.f) };
 	for (int32 I = 0; I < 4; ++I)
 	{
 		const FVector2D& At = Corners[I];
@@ -512,8 +512,7 @@ void AGbWardGreybox::BuildPlazaAndStreets(FRandomStream& Rand)
 		Put(TEXT("FantasyTown/lantern"), At.X + Inward * 1.1f, At.Y, 0.f, 0.f, 1.9f);
 		Lamp(At.X + Inward * 1.1f, At.Y, 270.f, Color::Lantern, 2800.f, 560.f);
 	}
-	const FVector2D Pots[] = { FVector2D(19.3f, 9.6f), FVector2D(23.7f, 9.6f), FVector2D(16.5f, 11.4f), FVector2D(26.5f, 11.4f), FVector2D(16.5f, 15.2f),
-		FVector2D(26.5f, 15.6f), FVector2D(24.6f, 17.5f), FVector2D(19.4f, 17.6f), FVector2D(25.6f, 16.2f) };
+	const FVector2D Pots[] = { FVector2D(12.6f, 9.8f), FVector2D(32.f, 9.8f), FVector2D(14.f, 18.6f), FVector2D(32.f, 18.8f), FVector2D(24.6f, 17.5f) };
 	for (const FVector2D& At : Pots)
 	{
 		Put(TEXT("Nature/pot_large"), At.X, At.Y, 14.f, Rand.FRandRange(0.f, 360.f), 20.f);
@@ -529,7 +528,7 @@ void AGbWardGreybox::BuildPlazaAndStreets(FRandomStream& Rand)
 	}
 	// --- carts by the Ash gate and the south-west lot
 	Put(TEXT("FantasyTown/cart_high"), 41.3f, 16.9f, 0.f, 100.f, 1.5f); Solid(40.4f, 16.2f, 1.9f, 1.4f, 130.f);
-	Put(TEXT("FantasyTown/cart"), 14.9f, 17.f, 0.f, 20.f, 1.5f); Solid(14.1f, 16.2f, 1.5f, 1.8f, 100.f);
+	Put(TEXT("FantasyTown/cart"), 11.8f, 18.5f, 0.f, 20.f, 1.5f); Solid(11.f, 17.7f, 1.5f, 1.8f, 100.f);
 }
 
 void AGbWardGreybox::BuildGreenery(FRandomStream& Rand)
@@ -646,8 +645,12 @@ void AGbWardGreybox::Dress()
 		{ 24.f, 19.f, 3, 2.f, 1, 0, 1, false, true },   // Counting House
 	};
 	for (const FHouse& House : Houses) BuildHouse(House);
-	Edge(TEXT("FantasyTown/banner_red"), 24.75f, 7.f, 2, 2.5f, 260.f);
-	Edge(TEXT("FantasyTown/banner_red"), 29.75f, 7.f, 2, 2.5f, 260.f);
+ Occupied.Add(TileRect(14.4f,7.2f,5.7f,5.8f)); // Mender: keep both sightline and approach open
+ Occupied.Add(TileRect(24.4f,6.7f,5.7f,6.3f)); // Rite Hall
+ Occupied.Add(TileRect(15.2f,15.f,5.6f,4.2f)); // room
+ Occupied.Add(TileRect(24.2f,15.f,5.6f,4.2f)); // Counting House
+	Edge(TEXT("FantasyTown/banner_red"), 23.6f, 6.5f, 2, 2.5f, 260.f);
+	Edge(TEXT("FantasyTown/banner_red"), 31.f, 6.5f, 2, 2.5f, 260.f);
 	Edge(TEXT("FantasyTown/overhang"), 27.25f, 7.f, 2, 2.5f);
 	Edge(TEXT("FantasyTown/overhang"), 17.25f, 7.5f, 2, 2.5f);
 

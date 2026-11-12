@@ -10,9 +10,9 @@ class UInstancedStaticMeshComponent;
 class UTextRenderComponent;
 
 UENUM()
-enum class EGbBuilding : uint8 { Outside, CountingHouse, Mender, RiteHall, Room };
+enum class EGbBuilding : uint8 { Outside, CountingHouse, Mender, RiteHall, Room, Storehouse };
 UENUM()
-enum class EGbBuildingUse : uint8 { Enter, Exit, Broker, Mender, Rules, Vows, Room, Case, Travel };
+enum class EGbBuildingUse : uint8 { Enter, Exit, Broker, Mender, Rules, Vows, Room, Case, Travel, Discover };
 
 namespace GbBuildings
 {
@@ -35,6 +35,8 @@ public:
  UPROPERTY(EditAnywhere, Category="Building") FString Label = TEXT("Counting House");
  /** Use == Travel: the Ward at the other end ("tide", "lantern"). The door stands outside; TargetFeet is the landing. */
  UPROPERTY(EditAnywhere, Category="Building") FString TravelWard;
+ UPROPERTY(EditAnywhere, Category="Building") FString DiscoveryId;
+ bool IsClaimed() const;
  virtual void OnConstruction(const FTransform&) override;
 protected:
  virtual void BeginPlay() override;
@@ -49,6 +51,7 @@ private:
  UPROPERTY() TObjectPtr<UBoxComponent> Trigger;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Marker;
  UPROPERTY() TObjectPtr<UTextRenderComponent> Prompt;
+ UPROPERTY() TObjectPtr<class UStaticMeshComponent> DiscoveryProp;
 };
 
 /** Small offsite room; clamps its camera focus to the room, never streams a level. */
@@ -79,6 +82,7 @@ private:
  UPROPERTY(Transient) TMap<FName, TObjectPtr<UInstancedStaticMeshComponent>> PropParts;
  UPROPERTY(Transient) TMap<FColor, TObjectPtr<UInstancedStaticMeshComponent>> SlabParts;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Structure;
+ UPROPERTY(Transient) TArray<TObjectPtr<UInstancedStaticMeshComponent>> Walls;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Furniture;
  UPROPERTY() TObjectPtr<UInstancedStaticMeshComponent> Visitor;
  UPROPERTY() TObjectPtr<UTextRenderComponent> VisitorName;

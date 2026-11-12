@@ -481,7 +481,7 @@ void UGbApiSubsystem::FetchSatchel()
 		}
 		const FString Message = PendingSatchelMessage; PendingSatchelMessage.Reset(); bSatchelMutationInFlight = false;
 		OnSatchel.Broadcast(S);
-		if (!Message.IsEmpty()) OnSatchelAction.Broadcast(Message);
+		if (!Message.IsEmpty()) { OnSatchelAction.Broadcast(Message); SayAsKessa(Message); }
 	});
 }
 
@@ -491,6 +491,8 @@ void UGbApiSubsystem::SetCarried(const FString& TokenId, bool bCarry)
 }
 void UGbApiSubsystem::UseSalve(const FString& TokenId) { MutateSatchel(TEXT("satchel/salve"), GbJson::TokenBody(TokenId), TEXT("Ink Salve used.")); }
 void UGbApiSubsystem::RestoreInk(const FString& TokenId) { MutateSatchel(TEXT("mender/restore"), GbJson::TokenBody(TokenId), TEXT("The Mender restored your talisman's ink.")); }
+void UGbApiSubsystem::Explore(const FString& Id) { MutateSatchel(TEXT("exploration/interact"), GbJson::NamedBody(TEXT("id"), Id), TEXT("Journal updated.")); }
+void UGbApiSubsystem::Equip(const FString& ItemId) { MutateSatchel(TEXT("satchel/equip"), GbJson::NamedBody(TEXT("itemId"), ItemId), TEXT("Equipment updated.")); }
 void UGbApiSubsystem::Rest() { MutateSatchel(TEXT("rest"), TEXT("{}"), TEXT("You rested until morning. Your talismans' ink is restored.")); }
 
 void UGbApiSubsystem::MutateSatchel(const FString& Path, const FString& Body, const FString& Message)
@@ -507,6 +509,7 @@ void UGbApiSubsystem::MutateSatchel(const FString& Path, const FString& Body, co
 		{
 			bSatchelMutationInFlight = false;
 			OnError.Broadcast(Path, Status, Status == 0 ? TEXT("Hollowmere is unreachable. Refresh your Satchel to check the result before trying again.") : GbJson::ErrorMessage(Text));
+            if (Path == TEXT("exploration/interact")) SayAsKessa(Status == 0 ? TEXT("Could not reach Hollowmere. Check your Satchel before trying again.") : GbJson::ErrorMessage(Text));
 			FetchSatchel(); return;
 		}
 		if (Path == TEXT("mender/restore"))
@@ -526,7 +529,9 @@ void UGbApiSubsystem::MutateSatchel(const FString& Path, const FString& Body, co
 			else FinishMender(Id, R);
 			return;
 		}
-		PendingSatchelMessage = Message; FetchSatchel();
+		PendingSatchelMessage = Message;
+        FString Reply; if (O->TryGetStringField(TEXT("message"), Reply) && !Reply.IsEmpty()) PendingSatchelMessage = Reply;
+        FetchSatchel();
 	});
 }
 

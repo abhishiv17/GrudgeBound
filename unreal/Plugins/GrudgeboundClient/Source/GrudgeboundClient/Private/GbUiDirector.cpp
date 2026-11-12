@@ -35,6 +35,7 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "Misc/CommandLine.h"
@@ -72,6 +73,7 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 	if (bCrossing && (Pawn != CrossingPawn.Get() || PC != CrossingController.Get())) FinishCrossing(false);
 	if (!Pawn || !PC->IsLocalController()) return;
+    UpdateSightlines(DeltaSeconds,PC,Pawn);
 	UGbUserSettings* Settings = UGbUserSettings::Get();
 	UGbExorcistLook::Ensure(Pawn); // the exorcist's body instead of the template mannequin
 	if (bCrossing) TickCrossing(DeltaSeconds, PC, Pawn);
@@ -411,6 +413,7 @@ void AGbUiDirector::ShowScreen(EScreen Screen)
 	// The HUD stays in the street and at an encounter; a panel carries its own status line and key hints, and the
 	// HUD's corner boxes would sit half under the wider panels.
 	Hud->SetVisibility(Screen == EScreen::Ward || Screen == EScreen::Encounter ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    Hud->SetIndoor(CurrentBuilding!=EGbBuilding::Outside);
 
 	// On Play the template's own input setup stays as it is; input only changes when a dialog opens or closes.
 	if (!bInputTouched && Screen == EScreen::Ward) return;
@@ -612,11 +615,56 @@ void AGbUiDirector::FinishCrossing(bool bArrived)
 	MoorFerry();
 }
 
+void AGbUiDirector::UpdateSightlines(float DeltaSeconds,const APlayerController* PC,const APawn* Pawn)
+{
+ SightlineClock+=DeltaSeconds; if (SightlineClock<.1f || !PC->PlayerCameraManager) return; SightlineClock=0.f;
+ if (!bSightlinesCached)
+ {
+  bSightlinesCached=true;
+  for (TActorIterator<AGbWardGreybox> Ward(GetWorld());Ward;++Ward)
+  {
+   TArray<UInstancedStaticMeshComponent*> Parts; Ward->GetComponents(Parts);
+   for (auto* Part:Parts)
+   {
+    const UStaticMesh* Mesh=Part->GetStaticMesh(); if (!Mesh) continue;
+    const FString Name=Mesh->GetName(); if (!Name.Contains(TEXT("tree")) && !Name.Contains(TEXT("pine"))) continue;
+    for (int32 I=0;I<Part->GetInstanceCount();++I)
+    {
+     FTreeSightline T; T.Part=Part; T.Instance=I; Part->GetInstanceTransform(I,T.Local,false);
+     FTransform WorldTransform; Part->GetInstanceTransform(I,WorldTransform,true);
+     T.Bounds=Mesh->GetBoundingBox().TransformBy(WorldTransform).ExpandBy(35.f); TreeSightlines.Add(T);
+    }
+   }
+  }
+ }
+ const FVector Start=PC->PlayerCameraManager->GetCameraLocation(), End=Pawn->GetActorLocation()+FVector(0,0,35);
+ for (FTreeSightline& T:TreeSightlines) if (UInstancedStaticMeshComponent* Part=T.Part.Get())
+ {
+  const bool Hide=CurrentBuilding==EGbBuilding::Outside && Current!=EScreen::SignIn && Current!=EScreen::Intro
+   && FVector::DistSquared2D(T.Bounds.GetCenter(),End)<FMath::Square(800.f) && FMath::LineBoxIntersection(T.Bounds,Start,End,End-Start);
+  if (Hide==T.bHidden) continue;
+  FTransform Render=T.Local; if (Hide) Render.SetScale3D(FVector(.001f));
+  Part->UpdateInstanceTransform(T.Instance,Render,false,true,true); T.bHidden=Hide;
+ }
+}
+
+bool AGbUiDirector::IsWalking() const
+{
+ const APlayerController* PC=GetWorld()?GetWorld()->GetFirstPlayerController():nullptr;
+ const AGbSettingsHost* Menu=AGbSettingsHost::Find(GetWorld());
+ return Current==EScreen::Ward && !bBuildingTransition && !bCrossing && !(Menu && Menu->IsOpen()) && PC && !PC->IsMoveInputIgnored();
+}
 void AGbUiDirector::UseBuilding(AGbBuildingDoor* Door)
 {
- if (!Door || Current!=EScreen::Ward || bBuildingTransition) return;
+ if (!Door || !IsWalking()) return;
  APlayerController* PC=GetWorld()->GetFirstPlayerController(); APawn* Pawn=PC?PC->GetPawn():nullptr;
  if (!Pawn || FVector::DistSquared(Pawn->GetActorLocation(),Door->GetActorLocation())>FMath::Square(230.f)) return;
+ if (Door->Use==EGbBuildingUse::Discover || (Door->Use==EGbBuildingUse::Enter && !Door->DiscoveryId.IsEmpty()))
+ {
+  UGbApiSubsystem* A=ApiOf(GetWorld()); const UGbPlayerSubsystem* P=PlayerOf(GetWorld()); if (!A || !P) return;
+  if (!P->GetSatchel().bExplorationAvailable) {A->SayAsKessa(TEXT("Exploration is unavailable. Refresh your Satchel after reconnecting.")); return;}
+  if (Door->Use==EGbBuildingUse::Discover || !P->GetSatchel().DiscoveryFlags.Contains(TEXT("storehouse-open"))) {A->Explore(Door->DiscoveryId); return;}
+ }
  if (Door->Use==EGbBuildingUse::Travel)
  {
   // Carry the player across; change the HUD's Ward only after landing.

@@ -344,6 +344,36 @@ struct FGbInk
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 MaxHp = 0;
 };
 
+/** Server-owned exploration inventory; optional on older servers. */
+USTRUCT(BlueprintType)
+struct FGbGear
+{
+ GENERATED_BODY()
+ UPROPERTY(BlueprintReadOnly) FString Id;
+ UPROPERTY(BlueprintReadOnly) FString Name;
+ UPROPERTY(BlueprintReadOnly) FString Source;
+ UPROPERTY(BlueprintReadOnly) int32 Attack = 0;
+ UPROPERTY(BlueprintReadOnly) int32 Guard = 0;
+};
+USTRUCT(BlueprintType)
+struct FGbJournalEntry
+{
+ GENERATED_BODY()
+ UPROPERTY(BlueprintReadOnly) FString Id;
+ UPROPERTY(BlueprintReadOnly) FString Title;
+ UPROPERTY(BlueprintReadOnly) FString Status;
+ UPROPERTY(BlueprintReadOnly) FString Objective;
+ UPROPERTY(BlueprintReadOnly) FString Hint;
+};
+USTRUCT(BlueprintType)
+struct FGbKeepsake
+{
+ GENERATED_BODY()
+ UPROPERTY(BlueprintReadOnly) FString Id;
+ UPROPERTY(BlueprintReadOnly) FString Title;
+ UPROPERTY(BlueprintReadOnly) FString Text;
+};
+
 /** Authoritative pockets from GET /satchel. Unknown balances remain -1; no client starter-kit grants. */
 USTRUCT(BlueprintType)
 struct FGbSatchel
@@ -360,6 +390,13 @@ struct FGbSatchel
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Ember = -1;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Points = -1;
 
+ UPROPERTY(BlueprintReadOnly) bool bExplorationAvailable = false;
+ UPROPERTY(BlueprintReadOnly) TArray<FString> DiscoveryFlags;
+ UPROPERTY(BlueprintReadOnly) FString Equipped;
+ UPROPERTY(BlueprintReadOnly) FString Tracked;
+ UPROPERTY(BlueprintReadOnly) TArray<FGbGear> Gear;
+ UPROPERTY(BlueprintReadOnly) TArray<FGbJournalEntry> Journal;
+ UPROPERTY(BlueprintReadOnly) TArray<FGbKeepsake> Notes;
 	static constexpr int32 CarryLimit = 5;
 	bool HasToken(const FString& Id) const { return Carried.Contains(Id) || Case.Contains(Id); }
 	bool CanCarry(const FString& Id) const { return bValid && Case.Contains(Id) && Carried.Num() < CarryLimit; }

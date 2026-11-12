@@ -40,7 +40,7 @@ public:
 	/** What the sound follows: title, street, a room, a panel or a battle. */
 	EGbAudioScene GetAudioScene() const;
 	/** Walking the Ward with nothing open (townsfolk only talk then). */
-	bool IsWalking() const { return Current == EScreen::Ward && !bBuildingTransition && !bCrossing; }
+	bool IsWalking() const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -54,6 +54,18 @@ private:
 	friend class FGbFerryRoundTripTest;
 	friend class FGbExplorationCameraTest;
 	bool CanControlCamera(const APlayerController* PC, bool bMenuOpen) const;
+    struct FTreeSightline
+    {
+        TWeakObjectPtr<class UInstancedStaticMeshComponent> Part;
+        int32 Instance=0;
+        FTransform Local;
+        FBox Bounds;
+        bool bHidden=false;
+    };
+    TArray<FTreeSightline> TreeSightlines;
+    float SightlineClock=0.f;
+    bool bSightlinesCached=false;
+    void UpdateSightlines(float DeltaSeconds, const APlayerController* PC, const APawn* Pawn);
 	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel, Mender, Room, Observatory };
 	void ToggleObservatory();
 	void CloseBuildingPanel();

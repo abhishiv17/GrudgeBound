@@ -41,6 +41,10 @@ private:
 	UFUNCTION() void ShowSupplies();
 	UFUNCTION() void ShowKeepsakes();
 	UFUNCTION() void ShowLedger();
+ UFUNCTION() void ShowGear();
+ UFUNCTION() void ShowJournal();
+ UPROPERTY() TObjectPtr<UScrollBox> GearRows;
+ UPROPERTY() TObjectPtr<UScrollBox> JournalRows;
 	UFUNCTION() void CarrySelected();
 	UFUNCTION() void ChoosePartner();
 	UFUNCTION() void UseSalve();

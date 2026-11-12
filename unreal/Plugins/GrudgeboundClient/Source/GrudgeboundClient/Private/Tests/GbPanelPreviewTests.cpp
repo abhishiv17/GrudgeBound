@@ -91,7 +91,7 @@ bool FGbPanelPreviewTest::RunTest(const FString&)
 	// ---- Satchel: four carried, two in the Case, one drained; every pocket.
 	{
 		UGbSatchelWidget* W = Cast<UGbSatchelWidget>(Make(UGbSatchelWidget::StaticClass()));
-		for (const TCHAR* Name : { TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"), TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger") })
+		for (const TCHAR* Name : { TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"), TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger"), TEXT("Satchel-Gear"), TEXT("Satchel-Journal") })
 		{
 			FGbPanelFixtures::Fill(W, Name); Capture(W, Name);
 		}

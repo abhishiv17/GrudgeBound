@@ -38,7 +38,7 @@ namespace GbPanelFixture
 const TArray<FString>& FGbPanelFixtures::Shots()
 {
 	static const TArray<FString> All = { TEXT("TalismanCase"), TEXT("Mender"), TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"),
-		TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger"), TEXT("Broker"), TEXT("Rite"), TEXT("Vows"), TEXT("Observatory-Grudge"),
+		TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger"), TEXT("Satchel-Gear"), TEXT("Satchel-Journal"), TEXT("Broker"), TEXT("Rite"), TEXT("Vows"), TEXT("Observatory-Grudge"),
 		TEXT("Observatory-Prices"), TEXT("Observatory-Rules"), TEXT("Room") };
 	return All;
 }
@@ -83,9 +83,18 @@ void FGbPanelFixtures::Fill(UGbWidgetBase* Widget, const FString& Shot)
 			FGbInk Ink; Ink.Hp = Hp[I]; Ink.MaxHp = 44; S.Ink.Add(Ids[I], Ink); W->Names.Add(Ids[I], Nm[I]);
 			W->Talismans.Add(Talisman(I == 0 ? TEXT("tal-starter") : Ids[I], Sp[I], TEXT("whisper"), I, 0, I == 0 ? TEXT("") : Ids[I]));
 		}
+        S.bExplorationAvailable=true; S.Equipped=TEXT("worn-focus"); S.Tracked=TEXT("net");
+        const TCHAR* GearIds[]={TEXT("worn-focus"),TEXT("ward-clasp"),TEXT("etched-focus")};
+        const TCHAR* GearNames[]={TEXT("Worn Focus"),TEXT("Ward Clasp"),TEXT("Etched Focus")};
+        const TCHAR* Sources[]={TEXT("Returned the Lamplighter's kit."),TEXT("Helped the Net mender on Tide's docks."),TEXT("Found in the sealed storehouse.")};
+        for (int32 I=0;I<3;++I) {FGbGear G; G.Id=GearIds[I]; G.Name=GearNames[I]; G.Source=Sources[I]; G.Attack=I==0?1:I==2?2:0; G.Guard=I==1?2:0; S.Gear.Add(G);}
+        FGbJournalEntry J; J.Id=TEXT("lamp"); J.Title=TEXT("A light returned"); J.Status=TEXT("complete"); J.Objective=TEXT("The Lamplighter's kit is back. Your Worn Focus is in Gear."); J.Hint=TEXT("Speak with the Lamplighter along the market lane."); S.Journal.Add(J);
+        J.Id=TEXT("net"); J.Title=TEXT("Among the reeds"); J.Status=TEXT("active"); J.Objective=TEXT("Recover the bundle by Tide's eastern reeds."); J.Hint=TEXT("Take the ferry from Lantern Ward's southern pier."); S.Journal.Add(J);
+        J.Id=TEXT("storehouse"); J.Title=TEXT("The sealed storehouse"); J.Status=TEXT("available"); J.Objective=TEXT("Bring the marked slip and brass key to the Receipt clerk."); J.Hint=TEXT("The marked door stands on Tide's northern quay."); S.Journal.Add(J);
+        FGbKeepsake Note; Note.Id=TEXT("delivery-slip"); Note.Title=TEXT("Marked delivery slip"); Note.Text=TEXT("A dockside storehouse stamp marks this delivery. Ask the Receipt clerk after finding its key."); S.Notes.Add(Note); S.Keepsakes={Note.Id};
 		W->Data = S; W->PartnerToken = TEXT("starter"); W->SelectedToken = TEXT("tal-15"); W->bBusy = false;
-		const TCHAR* Pockets[] = { TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"), TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger") };
-		for (int32 I = 0; I < 4; ++I) if (Shot == Pockets[I]) W->Pockets->SetActiveWidgetIndex(I);
+		const TCHAR* Pockets[] = { TEXT("Satchel-Talismans"), TEXT("Satchel-Supplies"), TEXT("Satchel-Keepsakes"), TEXT("Satchel-Ledger"), TEXT("Satchel-Gear"), TEXT("Satchel-Journal") };
+		for (int32 I = 0; I < 6; ++I) if (Shot == Pockets[I]) W->Pockets->SetActiveWidgetIndex(I);
 		W->Redraw();
 		return;
 	}

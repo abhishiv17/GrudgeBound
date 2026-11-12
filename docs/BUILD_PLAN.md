@@ -236,6 +236,7 @@ U5-U6 by 6 Nov. If the Unreal loop isn't working by **6 Nov**, the web client is
 | P4-U11 | Should | Tide Ward in Unreal (docks, warehouses, smugglers), a smaller second level loaded from the Lantern canal gate; only after G3, and only if P4-U4 and P4-U10 are done | G | | ⬜ |
 | P4-U12 | Should | Townsfolk you can talk to: a few CC0 characters with lines that change with the Ward's Grudge and the chapter. Built 12 Nov: the 13 street walkers stop and speak on Interact (trade, mood, chapter). Lines are a draft for the lead's review | G | | 🟡 |
 | P4-U13 | Must | **The Ninth Bell**, a 2-4 player co-op story level in Bone Ward's sealed Bell Quarter: shared clues, a two-anchor ritual, The Unwritten boss fight with revives, and a party vote between two endings. LAN/direct-IP, host-authoritative, no wallet rewards and no link to the live economy. Proxy art first. Script: [`THE_NINTH_BELL.md`](THE_NINTH_BELL.md) | G | | 🟡 |
+| P4-U14 | Should | First side adventure, **The Sealed Storehouse** ([proposal](EXPLORATION_REWARDS_PROPOSAL.md)): five finds, three NPC tasks, three charms that change battle stats, a locked door and a room in Tide, Gear and Journal pockets. Built 12 Nov on the server and in Unreal; native and server checks pass. Writing and reward numbers are drafts for the lead's review; the hosted server runs it only after a deploy | G | | 🟡 |
 
 ---
 

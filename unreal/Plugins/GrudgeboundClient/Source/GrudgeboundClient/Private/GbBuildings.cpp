@@ -1,5 +1,7 @@
 #include "GbBuildings.h"
 #include "GbApiSubsystem.h"
+#include "GbPlayerSubsystem.h"
+#include "Components/StaticMeshComponent.h"
 #include "GbUiDirector.h"
 #include "GbGreyboxMaterials.h"
 #include "GbUserSettings.h"
@@ -50,13 +52,25 @@ AGbBuildingDoor::AGbBuildingDoor()
  Marker->OnClicked.AddDynamic(this,&AGbBuildingDoor::Clicked);
  Prompt=CreateDefaultSubobject<UTextRenderComponent>(TEXT("Prompt")); Prompt->SetupAttachment(Trigger);
  Prompt->SetRelativeLocation(FVector(0,0,220)); Prompt->SetRelativeRotation(FRotator(55,180,0));
- Prompt->SetWorldSize(27); Prompt->SetHorizontalAlignment(EHTA_Center);
+ Prompt->SetWorldSize(25); Prompt->SetHorizontalAlignment(EHTA_Center);
+ DiscoveryProp=CreateDefaultSubobject<UStaticMeshComponent>(TEXT("DiscoveryProp")); DiscoveryProp->SetupAttachment(Trigger);
+ ConstructorHelpers::FObjectFinder<UStaticMesh> FindChest(TEXT("/Game/Grudgebound/Env/Pirate/chest.chest"));
+ if (FindChest.Succeeded()) DiscoveryProp->SetStaticMesh(FindChest.Object);
+ DiscoveryProp->SetCollisionEnabled(ECollisionEnabled::QueryOnly); DiscoveryProp->SetCollisionResponseToAllChannels(ECR_Ignore);
+ DiscoveryProp->SetCollisionResponseToChannel(ECC_Visibility,ECR_Block); DiscoveryProp->SetCanEverAffectNavigation(false);
+ DiscoveryProp->OnClicked.AddDynamic(this,&AGbBuildingDoor::Clicked);
 }
 void AGbBuildingDoor::OnConstruction(const FTransform& T)
 {
  Super::OnConstruction(T); Marker->ClearInstances(); Marker->AddInstance(FTransform(FRotator::ZeroRotator,FVector(0,0,4),FVector(1.1f,1.1f,.06f)));
  GbGreybox::Paint(Marker,GbGreybox::Color::Gold,this); Prompt->SetText(FText::FromString(Label));
  Prompt->SetTextRenderColor(GbGreybox::Color::Paper.ToFColor(true));
+ DiscoveryProp->SetVisibility(Use==EGbBuildingUse::Discover);
+ if (UStaticMesh* Mesh=DiscoveryProp->GetStaticMesh())
+ {
+  const FBox B=Mesh->GetBoundingBox(); const float S=58.f/FMath::Max(1.,FMath::Max(B.GetSize().X,B.GetSize().Y));
+  DiscoveryProp->SetRelativeScale3D(FVector(S)); DiscoveryProp->SetRelativeLocation(-FVector(B.GetCenter().X,B.GetCenter().Y,B.Min.Z)*S+FVector(0,0,7));
+ }
 }
 void AGbBuildingDoor::BeginPlay()
 {
@@ -65,6 +79,16 @@ void AGbBuildingDoor::BeginPlay()
 }
 void AGbBuildingDoor::FaceCamera()
 {
+ // Show one nearby prompt. Collected finds disappear only after the server confirms them.
+ const bool Claimed=IsClaimed();
+ DiscoveryProp->SetVisibility(Use==EGbBuildingUse::Discover && !Claimed);
+ DiscoveryProp->SetCollisionEnabled(Claimed?ECollisionEnabled::NoCollision:ECollisionEnabled::QueryOnly);
+ Marker->SetVisibility(!Claimed); Marker->SetCollisionEnabled(Claimed?ECollisionEnabled::NoCollision:ECollisionEnabled::QueryOnly);
+ bool Show=Nearby.IsValid() && !Claimed;
+ if (Show) for (TActorIterator<AGbUiDirector> It(GetWorld());It;++It) { Show=It->IsWalking(); break; }
+ if (Show) for (TActorIterator<AGbBuildingDoor> It(GetWorld());It;++It)
+  if (*It!=this && It->Nearby.IsValid() && !It->IsClaimed() && FVector::DistSquared(It->GetActorLocation(),Nearby->GetActorLocation())<FVector::DistSquared(GetActorLocation(),Nearby->GetActorLocation())) { Show=false; break; }
+ Prompt->SetVisibility(Show);
  // The camera turns now, so the sign turns with it.
  const APlayerController* PC=GetWorld()->GetFirstPlayerController(); if (!PC || !PC->PlayerCameraManager) return;
  const FRotator Camera=PC->PlayerCameraManager->GetCameraRotation();
@@ -84,9 +108,16 @@ void AGbBuildingDoor::LeaveRange(UPrimitiveComponent*,AActor* Other,UPrimitiveCo
  if (const APawn* Pawn=Nearby.Get()) DisableInput(Cast<APlayerController>(Pawn->GetController()));
  Nearby.Reset(); Prompt->SetText(FText::FromString(Label));
 }
+bool AGbBuildingDoor::IsClaimed() const
+{
+ if (Use!=EGbBuildingUse::Discover || DiscoveryId.IsEmpty() || !GetGameInstance()) return false;
+ const UGbPlayerSubsystem* P=GetGameInstance()->GetSubsystem<UGbPlayerSubsystem>();
+ return P && P->GetSatchel().DiscoveryFlags.Contains(DiscoveryId);
+}
 void AGbBuildingDoor::Clicked(UPrimitiveComponent*,FKey) { Interact(); }
 void AGbBuildingDoor::Interact()
 {
+ if (IsClaimed()) return;
  const APawn* Pawn=Nearby.Get(); if (!Pawn || FVector::DistSquared(Pawn->GetActorLocation(),GetActorLocation())>FMath::Square(230.f)) return;
  for (TActorIterator<AGbUiDirector> It(GetWorld());It;++It) { It->UseBuilding(this); break; }
 }
@@ -142,14 +173,17 @@ void AGbBuildingRoom::CalcCamera(float,FMinimalViewInfo& Out)
 {
  const APawn* Pawn=GetWorld()->GetFirstPlayerController()?GetWorld()->GetFirstPlayerController()->GetPawn():nullptr;
  FVector Focus=Pawn?Pawn->GetActorLocation()-GetActorLocation():FVector::ZeroVector;
- Focus.X=FMath::Clamp(Focus.X,-30.,30.); Focus.Y=FMath::Clamp(Focus.Y,-30.,30.); Focus.Z=0;
+ Focus.X=FMath::Clamp(Focus.X,-65.,65.); Focus.Y=FMath::Clamp(Focus.Y,-65.,65.); Focus.Z=60;
  // Use the same smoothed orbit as outdoors, with a higher angle and bounded distance for the small room.
  const USpringArmComponent* Boom=Pawn?Pawn->FindComponentByClass<USpringArmComponent>():nullptr;
  const FRotator Orbit=Boom?Boom->GetComponentRotation():FRotator(-UGbUserSettings::DefaultPitch,UGbUserSettings::DefaultYaw,0);
- const float Distance=FMath::Clamp((Boom?Boom->TargetArmLength:UGbUserSettings::DefaultDistance)*.62f,900.f,1900.f);
- Out.Rotation=FRotator(-FMath::Clamp(-Orbit.Pitch+18.f,48.f,78.f),Orbit.Yaw-UGbUserSettings::DefaultYaw,0);
+ const float Distance=FMath::Clamp((Boom?Boom->TargetArmLength:UGbUserSettings::DefaultDistance)*.50f,1000.f,1500.f);
+ Out.Rotation=FRotator(-FMath::Clamp(-Orbit.Pitch+10.f,48.f,68.f),Orbit.Yaw-UGbUserSettings::DefaultYaw,0);
  Out.Location=GetActorLocation()+Focus-Out.Rotation.Vector()*Distance;
  Out.FOV=55; Out.AspectRatio=16.f/9.f;
+ const FVector ToCamera=(Out.Location-GetActorLocation()).GetSafeNormal2D();
+ const FVector Normals[]={FVector(1,0,0),FVector(-1,0,0),FVector(0,1,0),FVector(0,-1,0)};
+ for (int32 I=0;I<Walls.Num();++I) Walls[I]->SetVisibility(FVector::DotProduct(ToCamera,Normals[I])<.12f);
 }
 void AGbBuildingRoom::BeginPlay()
 {
@@ -230,6 +264,15 @@ void AGbBuildingRoom::Dress()
  using namespace GbGreybox::Color;
  if (!Structure || !PropParts.IsEmpty() || !SlabParts.IsEmpty()) return;
  Furniture->SetVisibility(false); // collision and the saved nav stay as they were
+ Structure->SetVisibility(false,false);
+ const FVector WallCentres[]={FVector(400,0,150),FVector(-400,0,150),FVector(0,350,150),FVector(0,-350,150)};
+ const FVector WallSizes[]={FVector(20,700,300),FVector(20,700,300),FVector(800,20,300),FVector(800,20,300)};
+ for (int32 I=0;I<4;++I)
+ {
+  auto* W=NewObject<UInstancedStaticMeshComponent>(this); GbGreybox::SetupMesh(W,GbGreybox::EShape::Cube); W->SetupAttachment(Structure);
+  W->SetCollisionEnabled(ECollisionEnabled::NoCollision); W->SetCanEverAffectNavigation(false); AddInstanceComponent(W); W->RegisterComponent();
+  GbGreybox::Paint(W,Hex(TEXT("E9D6B5")),this); W->AddInstance(FTransform(FRotator::ZeroRotator,WallCentres[I],WallSizes[I]/100.f)); Walls.Add(W);
+ }
  const FLinearColor Floor=Hex(TEXT("C9965F")), Seam=Hex(TEXT("A87A4A")), Linen=Hex(TEXT("FFF6E4"));
  const auto Candle=[this](const FVector& On) { Slab(On+FVector(0,0,9),FVector(8,8,18),GbGreybox::Color::Paper); Slab(On+FVector(0,0,21),FVector(4,4,6),GbGreybox::Color::Lantern); };
  // Floorboards, wainscot and trim on the walls, a rug by the door, a warm lamp.
@@ -242,8 +285,30 @@ void AGbBuildingRoom::Dress()
  Lamp->SetLightColor(Lantern); Lamp->SetIntensity(3000); Lamp->SetAttenuationRadius(900); Lamp->SetCastShadows(false);
  AddInstanceComponent(Lamp); Lamp->RegisterComponent();
 
+ // Timber posts, a visible entrance frame, tall window recesses and shelves establish a building scale.
+ for (float Y : {-325.f,325.f}) Slab(FVector(375,Y,155),FVector(24,24,310),WoodDark);
+ for (float Y : {-105.f,105.f}) Slab(FVector(-375,Y,115),FVector(26,22,230),WoodDark);
+ Slab(FVector(-375,0,230),FVector(26,232,25),WoodDark);
+ Slab(FVector(-360,0,3),FVector(65,190,6),Stone);
+ for (float Y : {-210.f,210.f})
+ {
+  Slab(FVector(385,Y,200),FVector(14,110,128),WoodDark);
+  Slab(FVector(375,Y,202),FVector(5,90,108),Hex(TEXT("8DBABE")));
+  Slab(FVector(370,Y,202),FVector(6,6,108),Linen);
+  Slab(FVector(370,Y,202),FVector(6,90,6),Linen);
+  Slab(FVector(365,Y,143),FVector(34,128,9),Wood);
+ }
+ for (float Z : {125.f,175.f})
+ {
+  Slab(FVector(360,0,Z),FVector(45,170,8),WoodDark);
+  for (float Y : {-55.f,0.f,55.f}) Prop(TEXT("bottle"),FVector(355,Y,Z+4),0,26,true);
+ }
  switch (Building)
  {
+ case EGbBuilding::Storehouse:
+  for (float Y : {-260.f,240.f}) {Prop(TEXT("crate"),FVector(290,Y,0),0,110); Prop(TEXT("crate"),FVector(290,Y,110),10,70); Prop(TEXT("barrel"),FVector(180,Y,0),0,70);}
+  Slab(FVector(170,0,1.8f),FVector(170,180,2),WoodDark);
+  break;
  case EGbBuilding::Room:
  {
   // The bed fills the grey bed box (180,0); the bookshelf stands where the headboard box is (240,0).

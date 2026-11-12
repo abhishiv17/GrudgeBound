@@ -216,6 +216,8 @@ class GRUDGEBOUNDCLIENT_API UGbHudWidget : public UGbWidgetBase
 
 public:
 	void Refresh();
+	/** Inside a building the Ward's Grudge and server lines are hidden; the objective stays. */
+	void SetIndoor(bool bIndoor);
 
 protected:
 	virtual void BuildTree() override;

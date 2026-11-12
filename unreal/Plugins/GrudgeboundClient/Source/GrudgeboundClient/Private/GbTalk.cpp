@@ -163,11 +163,21 @@ bool UGbTalkSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) co
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
 }
 
+void UGbTalkSubsystem::QuestReply(const FString& Message)
+{
+ if (!bAwaitingQuest) return;
+ bAwaitingQuest=false;
+ if (Panel && Speaking.IsValid()) {Panel->Say(GbTalk::Role(Speaking->GetWardId(),Speaking->GetVoice()),Message); Remaining=GbTalk::ReadingTime(Message); APlayerController* PC=GetWorld()?GetWorld()->GetFirstPlayerController():nullptr; Speaking->Hold(Remaining+.5f,PC?PC->GetPawn():nullptr);}
+}
+void UGbTalkSubsystem::QuestError(const FString& What,int32,const FString& Message)
+{
+ if (What==TEXT("exploration/interact") || What==TEXT("satchel")) QuestReply(Message);
+}
 void UGbTalkSubsystem::Close()
 {
 	if (AGbTownsfolk* Walker = Speaking.Get()) Walker->Release();
 	Speaking.Reset();
-	Remaining = 0.f;
+	Remaining = 0.f; bAwaitingQuest=false;
 	if (Panel) Panel->SetVisibility(ESlateVisibility::Collapsed);
 }
 
@@ -207,7 +217,7 @@ void UGbTalkSubsystem::Tick(float DeltaTime)
 	if (!Nearest || !UGbUserSettings::Get()->WasPressed(PC, TEXT("Interact"))) return;
 	// A door underfoot takes the key first.
 	for (TActorIterator<AGbBuildingDoor> It(World); It; ++It)
-		if (FVector::DistSquared(It->GetActorLocation(), Pawn->GetActorLocation()) < FMath::Square(230.f)) return;
+		if (!It->IsClaimed() && FVector::DistSquared(It->GetActorLocation(), Pawn->GetActorLocation()) < FMath::Square(150.f)) return;
 
 	GbTalk::EMood Mood = GbTalk::EMood::Calm;
 	int32 Chapter = 1;
@@ -217,7 +227,13 @@ void UGbTalkSubsystem::Tick(float DeltaTime)
 			for (const FGbWardSummary& Ward : Api->GetWorldState().Wards) if (Ward.Id == Nearest->GetWardId()) { Mood = GbTalk::Mood(Ward); break; }
 		if (const UGbStorySubsystem* Story = Game->GetSubsystem<UGbStorySubsystem>()) Chapter = Story->GetChapter();
 	}
-	const FString Line = GbTalk::Line(Nearest->GetWardId(), Nearest->GetVoice(), Mood, Chapter, Nearest->NextTurn());
+	FString Line = GbTalk::Line(Nearest->GetWardId(), Nearest->GetVoice(), Mood, Chapter, Nearest->NextTurn());
+ FString Quest;
+ if (Nearest->GetWardId()==TEXT("lantern") && Nearest->GetVoice()==0) Quest=TEXT("lamplighter");
+ if (Nearest->GetWardId()==TEXT("lantern") && Nearest->GetVoice()==3) Quest=TEXT("receipt-clerk");
+ if (Nearest->GetWardId()==TEXT("tide") && Nearest->GetVoice()==1) Quest=TEXT("net-mender");
+ UGbApiSubsystem* QuestApi=World->GetGameInstance()->GetSubsystem<UGbApiSubsystem>();
+ if (QuestApi && !Quest.IsEmpty()) { if (QuestApi->IsSatchelBusy()) return; Line=TEXT("Let me check... "); }
 	if (!Panel)
 	{
 		Panel = CreateWidget<UGbTalkWidget>(PC, UGbTalkWidget::StaticClass());
@@ -230,5 +246,12 @@ void UGbTalkSubsystem::Tick(float DeltaTime)
 	Speaking = Nearest;
 	Remaining = GbTalk::ReadingTime(Line);
 	Nearest->Hold(Remaining + 0.5f, Pawn);
+ if (QuestApi && !Quest.IsEmpty())
+ {
+  bAwaitingQuest=true; Remaining=30.f; Nearest->Hold(30.f,Pawn);
+  QuestApi->OnSatchelAction.AddUniqueDynamic(this,&UGbTalkSubsystem::QuestReply);
+  QuestApi->OnError.AddUniqueDynamic(this,&UGbTalkSubsystem::QuestError);
+  QuestApi->Explore(Quest);
+ }
 	UGbAudio::Play(World, TEXT("talk"), 0.7f, 0.9f + 0.05f * (Nearest->GetVoice() % 5));
 }

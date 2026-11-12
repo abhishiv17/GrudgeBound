@@ -912,16 +912,26 @@ void UGbHudWidget::Refresh()
 	}
 
 	ServerText->SetText(FText::FromString(A->IsServerOnline()
-		? FString::Printf(TEXT("Server online  -  tick %d"), S.Tick)
+		? FString(TEXT("Connected to Hollowmere"))
 		: FString(TEXT("Hollowmere is unreachable. Retrying..."))));
 	ServerText->SetColorAndOpacity(FSlateColor(A->IsServerOnline() ? C::Leaf : C::Crimson));
 
 	KessaText->SetText(FText::FromString(A->GetKessaLine()));
 	const UGbStorySubsystem* Story = GetGameInstance()->GetSubsystem<UGbStorySubsystem>();
 	ChapterText->SetText(FText::FromString(Story->GetChapterTitle()));
-	ObjectiveText->SetText(FText::FromString(Story->GetObjective()));
+	FString Objective=Story->GetObjective();
+ if (P) for (const FGbJournalEntry& J : P->GetSatchel().Journal)
+  if (J.Id==P->GetSatchel().Tracked && J.Status!=TEXT("complete")) {Objective+=TEXT("\n\n")+J.Title+TEXT("\n")+J.Objective; break;}
+ ObjectiveText->SetText(FText::FromString(Objective));
 }
 
+void UGbHudWidget::SetIndoor(bool bIndoor)
+{
+ const ESlateVisibility V=bIndoor?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible;
+ if (!GrudgeTotal) return;
+ GrudgeTotal->SetVisibility(V); Stats->SetVisibility(V); ServerText->SetVisibility(V);
+ RageText->GetParent()->SetVisibility(V); SorrowText->GetParent()->SetVisibility(V); DreadText->GetParent()->SetVisibility(V);
+}
 void UGbHudWidget::HandleWorldState(const FGbWorldState&) { Refresh(); }
 void UGbHudWidget::HandleServerStatus(bool, int32) { Refresh(); }
 void UGbHudWidget::HandleKessaLine(const FString&) { Refresh(); }

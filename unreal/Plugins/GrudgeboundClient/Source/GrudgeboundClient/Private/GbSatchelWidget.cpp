@@ -36,29 +36,31 @@ void UGbSatchelWidget::BuildTree()
 {
 	UTextBlock* TitleText = nullptr; UTextBlock* Sub = nullptr; UHorizontalBox* Footer = nullptr;
 	UVerticalBox* Body = MakeShell(TEXT("Your Satchel"), TEXT("talisman"), 1240.f, TitleText, Sub, Footer);
-	Sub->SetText(FText::FromString(TEXT("Five talismans at hand. The rest wait in the Case.")));
+	Sub->SetText(FText::FromString(TEXT("Your talismans, equipment and discoveries. One piece of gear can be equipped.")));
 	Status = ShellStatus;
 
 	// The four pockets as tabs, each with its picture; the open one is crimson.
 	UHorizontalBox* Tabs = WidgetTree->ConstructWidget<UHorizontalBox>();
 	PocketTabs.Reset(); PocketLabels.Reset();
-	const TCHAR* TabNames[] = { TEXT("Talismans"), TEXT("Supplies"), TEXT("Keepsakes"), TEXT("Ledger") };
-	const TCHAR* TabIcons[] = { TEXT("talisman"), TEXT("icon_salve"), TEXT("wax_seal"), TEXT("stamp_tool") };
-	for (int32 I = 0; I < 4; ++I)
+	const TCHAR* TabNames[] = { TEXT("Talismans"), TEXT("Supplies"), TEXT("Keepsakes"), TEXT("Ledger"), TEXT("Gear"), TEXT("Journal") };
+	const TCHAR* TabIcons[] = { TEXT("talisman"), TEXT("icon_salve"), TEXT("wax_seal"), TEXT("stamp_tool"), TEXT("talisman_gilded"), TEXT("stamp_tool") };
+	for (int32 I = 0; I < 6; ++I)
 	{
 		UTextBlock* Label = nullptr; UButton* B = MakeButton(TabNames[I], Label, GbUi::Paper2());
-		Label->SetFont(GbUi::Font(20, true));
+		Label->SetFont(GbUi::Font(17, true));
 		UHorizontalBox* Face = WidgetTree->ConstructWidget<UHorizontalBox>(); B->SetContent(Face);
 		UImage* Icon = nullptr; SatchelCol(Face, MakeArt(TabIcons[I], 32.f, Icon), false, 10.f);
 		SatchelCol(Face, Label, false, 0.f);
-		SatchelCol(Tabs, Sized(B, 0.f, 56.f), true, I < 3 ? 10.f : 0.f);
+		SatchelCol(Tabs, Sized(B, 0.f, 56.f), true, I < 5 ? 6.f : 0.f);
 		PocketTabs.Add(B); PocketLabels.Add(Label);
 	}
 	PocketTabs[0]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowTalismans);
 	PocketTabs[1]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowSupplies);
 	PocketTabs[2]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowKeepsakes);
 	PocketTabs[3]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowLedger);
-	SatchelRow(Body, Tabs, 0.f, 12.f);
+	PocketTabs[4]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowGear);
+ PocketTabs[5]->OnClicked.AddDynamic(this, &UGbSatchelWidget::ShowJournal);
+ SatchelRow(Body, Tabs, 0.f, 12.f);
 
 	// What is where, at a glance; a plain sentence instead while the Satchel cannot be read.
 	UHorizontalBox* Chips = WidgetTree->ConstructWidget<UHorizontalBox>();
@@ -131,6 +133,8 @@ void UGbSatchelWidget::BuildTree()
 	SatchelRow(SlipCol, MakeText(TEXT("You arrived with a debt notice folded inside your coat."), 18, Ink), 0.f, 0.f);
 	SatchelRow(LedgerPocket, Slip, 0.f, 0.f);
 
+ GearRows = WidgetTree->ConstructWidget<UScrollBox>(); Pockets->AddChild(GearRows);
+ JournalRows = WidgetTree->ConstructWidget<UScrollBox>(); Pockets->AddChild(JournalRows);
 	UButton* B = MakeKeyButton(TEXT("Refresh"), FString(), Label, GbUi::Paper2()); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Refresh);
 	SatchelCol(Footer, Sized(B, 220.f, 56.f), false, 12.f);
 	B = MakeKeyButton(TEXT("Return"), KeyName(TEXT("Satchel")), Label, GbUi::Paper2()); B->OnClicked.AddDynamic(this, &UGbSatchelWidget::Close);
@@ -222,6 +226,37 @@ void UGbSatchelWidget::Redraw()
 		PocketTabs[I]->SetBackgroundColor(bOpen ? Red : GbUi::Paper2());
 		PocketLabels[I]->SetColorAndOpacity(FSlateColor(bOpen ? GbUi::PaperHi() : Ink));
 	}
+ GearRows->ClearChildren(); JournalRows->ClearChildren();
+ if (!Data.bExplorationAvailable)
+ {
+  GearRows->AddChild(MakeText(TEXT("Equipment is unavailable on this server. Refresh after connecting to the updated server."),18,Ink));
+  JournalRows->AddChild(MakeText(TEXT("The exploration journal is unavailable on this server."),18,Ink));
+ }
+ else
+ {
+  GearRows->AddChild(MakeText(TEXT("Your equipment strengthens your partner in the next battle. Select a piece to equip it; select it again to remove it."),18,Ink));
+  if (Data.Gear.IsEmpty()) GearRows->AddChild(MakeText(TEXT("No equipment yet. Speak with the Lamplighter in Lantern Ward."),20,Ink,true));
+  for (const FGbGear& G : Data.Gear)
+  {
+   UGbPickRowWidget* R=CreateWidget<UGbPickRowWidget>(this); if (!R) continue;
+   R->Setup(TEXT("talisman_gilded"),G.Name,FString::Printf(TEXT("+%d attack  +%d guard\n%s"),G.Attack,G.Guard,*G.Source),-1.f,FString(),Data.Equipped==G.Id?TEXT("Equipped"):TEXT("Equip"),Gold,Data.Equipped==G.Id);
+   R->SetIsEnabled(!bBusy);
+   const FString Id=Data.Equipped==G.Id?FString():G.Id;
+   R->OnClick=[this,Id](){if (!bBusy) if (UGbApiSubsystem* A=Api()) {Submit(TEXT("Changing equipment...")); A->Equip(Id);}};
+   GearRows->AddChild(R);
+  }
+  JournalRows->AddChild(MakeText(TEXT("Select a task to track it on the town HUD. Hints appear beneath each objective."),17,Ink));
+  for (const FGbJournalEntry& J : Data.Journal)
+  {
+   UGbPickRowWidget* R=CreateWidget<UGbPickRowWidget>(this); if (!R) continue;
+   const bool bDone=J.Status==TEXT("complete");
+   R->Setup(TEXT("stamp_tool"),J.Title,J.Status+TEXT("\n")+J.Objective,-1.f,FString(),bDone?TEXT("Done"):Data.Tracked==J.Id?TEXT("Tracking"):TEXT("Track"),Gold,!bDone&&Data.Tracked==J.Id);
+   R->SetIsEnabled(!bBusy);
+   const FString Id=J.Id; if (!bDone) R->OnClick=[this,Id](){if (!bBusy) if (UGbApiSubsystem* A=Api()) {Submit(TEXT("Tracking task...")); A->Explore(TEXT("track:")+Id);}};
+   JournalRows->AddChild(R);
+   JournalRows->AddChild(MakeText(bDone?FString():TEXT("Hint: ")+J.Hint+TEXT("\n"),bDone?8:16,Ink));
+  }
+ }
 	Options = Data.Carried;
 	for (const FString& Id : Data.Case) Options.AddUnique(Id);
 	if (!Options.Contains(SelectedToken)) SelectedToken = Options.Contains(PartnerToken) ? PartnerToken : Options.Num() ? Options[0] : FString();
@@ -276,7 +311,8 @@ void UGbSatchelWidget::Redraw()
 		UBorder* Slip = MakePanel(GbUi::PaperHi(), FMargin(16.f, 10.f));
 		UHorizontalBox* In = WidgetTree->ConstructWidget<UHorizontalBox>(); Slip->SetContent(In);
 		UImage* Icon = nullptr; SatchelCol(In, MakeArt(TEXT("wax_seal"), 32.f, Icon), false, 14.f);
-		SatchelCol(In, MakeText(Item, 18, Ink), true, 0.f);
+		const FGbKeepsake* Note = Data.Notes.FindByPredicate([&Item](const FGbKeepsake& N){return N.Id==Item;});
+        SatchelCol(In, MakeText(Note ? Note->Title + TEXT("\n\n") + Note->Text : Item, 18, Ink), true, 0.f);
 		if (UScrollBoxSlot* SlipSlot = Cast<UScrollBoxSlot>(Keepsakes->AddChild(Slip))) SlipSlot->SetPadding(FMargin(0.f, 0.f, 8.f, 8.f));
 	}
 	EmberCount->SetText(FText::FromString(Data.bValid && Data.Ember >= 0 ? FString::FromInt(Data.Ember) : FString(TEXT("Unavailable"))));
@@ -287,6 +323,8 @@ void UGbSatchelWidget::ShowPocket(int32 Index) { Pockets->SetActiveWidgetIndex(I
 void UGbSatchelWidget::ShowTalismans() { ShowPocket(0); }
 void UGbSatchelWidget::ShowSupplies() { ShowPocket(1); }
 void UGbSatchelWidget::ShowKeepsakes() { ShowPocket(2); }
+void UGbSatchelWidget::ShowGear() { ShowPocket(4); }
+void UGbSatchelWidget::ShowJournal() { ShowPocket(5); }
 void UGbSatchelWidget::ShowLedger() { ShowPocket(3); }
 void UGbSatchelWidget::HandlePlayerChanged() { PullPlayer(); }
 // The world polls every 2 s; only the Mender's price depends on it, so redraw (and rebuild the talisman list) only when it changes.
@@ -294,7 +332,7 @@ void UGbSatchelWidget::HandleWorld(const FGbWorldState& World) { if (IsVisible()
 void UGbSatchelWidget::HandleAction(const FString& Message) { Status->SetText(FText::FromString(Message)); PullPlayer(); }
 void UGbSatchelWidget::HandleError(const FString& What, int32 Code, const FString& Message)
 {
-	if (What != TEXT("satchel") && What != TEXT("satchel/carry") && What != TEXT("satchel/salve") && What != TEXT("mender/restore") && What != TEXT("rest") && What != TEXT("shop/buy") && What != TEXT("shop/sell")) return;
+	if (What != TEXT("satchel/equip") && What != TEXT("exploration/interact") && What != TEXT("satchel") && What != TEXT("satchel/carry") && What != TEXT("satchel/salve") && What != TEXT("mender/restore") && What != TEXT("rest") && What != TEXT("shop/buy") && What != TEXT("shop/sell")) return;
 	Status->SetText(FText::FromString(Code == 0 ? FString(TEXT("Hollowmere is unreachable. Refresh your Satchel to check the result."))
 		: Message.Contains(TEXT("chain")) || Message.Contains(TEXT("NEAR")) ? FString(TEXT("The town's ledger is unavailable. Refresh before trying again.")) : Message));
 	PullPlayer();

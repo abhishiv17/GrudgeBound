@@ -30,6 +30,7 @@ namespace GbJson
 	FGbShop Shop(const TSharedPtr<FJsonObject>& O);
 	FGbPlayerView Player(const TSharedPtr<FJsonObject>& O);
 	FGbSatchel Satchel(const TSharedPtr<FJsonObject>& O);
+	FString NamedBody(const FString& Key, const FString& Value);
 	FString TokenBody(const FString& TokenId);
 	FString CarryBody(const FString& TokenId, bool bCarry);
 	FGbTrade Trade(const TSharedPtr<FJsonObject>& O, bool bBuy);

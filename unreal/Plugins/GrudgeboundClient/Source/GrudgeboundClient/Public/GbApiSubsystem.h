@@ -143,6 +143,8 @@ public:
 	FGbPlayerViewEvent OnPlayerView;
 
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void FetchSatchel();
+ void Explore(const FString& Id);
+ void Equip(const FString& ItemId);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void SetCarried(const FString& TokenId, bool bCarry);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void UseSalve(const FString& TokenId);
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Satchel") void RestoreInk(const FString& TokenId);
