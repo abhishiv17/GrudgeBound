@@ -1,5 +1,27 @@
 # Unreal client: setup and first steps
 
+## Exploration camera and townsfolk (12 Nov polish)
+
+Hold **Middle Mouse** and drag sideways to orbit or vertically to tilt; **Q/C** rotate,
+the **mouse wheel** zooms, and **Home** restores the default view. All bindings remain configurable.
+The same controls work on the ferry while walking is locked. Opening a panel or the settings menu
+blocks camera input. Rooms use the same orbit and zoom, with a higher tilt and bounded distance to see
+over the walls. Camera > Invert mouse orbit / tilt reverses both drag axes.
+
+There are eight ambient walkers in Lantern Ward and five on Tide's docks. They follow the existing
+street routes, ease into stops, pause at either end, and yield when the player stands ahead of them.
+They have no dialogue or economic decisions. The named economic agents run on the server; a confirmed
+agent purchase can show its visitor marker at the Counting House. Ambient movement is not proof of an
+agent trade or a story event.
+
+Validated for this camera/movement pass: Development Editor build succeeded; native automation
+**34/34 passed**, zero test warnings/failures/skips (`Saved/Automation/ExplorationPolish/index.json`).
+Actual game captures at 1920x1080 are in `Saved/GbShots/ExplorationPolish`: shot0 market, shot1-3 crossing,
+shot4 arrival, shot5 Tide quay, shot6-9 interiors, shot10 character. These use the development capture
+harness, not a signed-in end-to-end story or economy run. The game log confirms ferry arrival at Tide.
+For a recording, zoom in during the crossing; the default pullback shows mostly open water mid-trip.
+Manual mouse feel, Tide click-to-walk and two-player character review remain play-test checks.
+
 ## Local CC0 district assets (T-11)
 
 Use only the owner-supplied Kenney packs in `%USERPROFILE%/GrudgeboundCC0`; inventory/licences:

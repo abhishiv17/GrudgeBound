@@ -53,6 +53,8 @@ public:
 
 	static constexpr float DefaultDistance = 2100.f;
 	static constexpr float DefaultPitch = 40.f;
+	static constexpr float MinPitch = 28.f;
+	static constexpr float MaxPitch = 78.f;
 	static constexpr float DefaultRotateSpeed = 110.f;
 	/** Heading the camera starts at and returns to: a quarter view, so houses show two walls. */
 	static constexpr float DefaultYaw = 40.f;

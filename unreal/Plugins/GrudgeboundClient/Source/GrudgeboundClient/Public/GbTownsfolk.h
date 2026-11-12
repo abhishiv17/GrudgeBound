@@ -27,10 +27,12 @@ public:
 	static float Length(const TArray<FVector>& Path);
 
 private:
+	friend class FGbTownsfolkMovementTest;
 	UPROPERTY() TObjectPtr<UGbExorcistLook> Look;
 	TArray<FVector> Path;
 	float Travelled = 0.f;
 	float Speed = 120.f;
+	float CurrentSpeed = 0.f;
 	float Pause = 0.f;
 	float PathLength = 0.f;
 	FRandomStream Rand;

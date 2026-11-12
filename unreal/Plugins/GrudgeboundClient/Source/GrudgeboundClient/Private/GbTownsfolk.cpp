@@ -29,6 +29,7 @@ void AGbTownsfolk::Setup(const TArray<FVector>& WorldPath, int32 Seed)
 {
 	Path = WorldPath;
 	PathLength = Length(Path);
+	Pause = CurrentSpeed = 0.f;
 	Rand.Initialize(Seed);
 
 	UGbExorcistLook::FOutfit Outfit;
@@ -94,10 +95,13 @@ FVector AGbTownsfolk::Along(const TArray<FVector>& Path, float Distance, FVector
 void AGbTownsfolk::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	if (Path.Num() < 2 || PathLength <= 0.f) return;
+	if (Path.Num() < 2 || PathLength <= 0.f || DeltaSeconds <= 0.f) return;
 
-	float Step = Speed;
-	if (Pause > 0.f) { Pause -= DeltaSeconds; Step = 0.f; }
+	const float End = Travelled < PathLength ? PathLength : 2.f * PathLength;
+	// Ease into a stop and back into the walk, instead of snapping to full speed at each turnaround.
+	const float ArrivalSpeed = FMath::Min(Speed, FMath::Max(20.f, FMath::Sqrt(2.f * 160.f * (End - Travelled))));
+	CurrentSpeed = FMath::FInterpConstantTo(CurrentSpeed, ArrivalSpeed, DeltaSeconds, 160.f);
+	if (Pause > 0.f) { Pause = FMath::Max(0.f, Pause - DeltaSeconds); CurrentSpeed = 0.f; }
 	FVector Direction;
 	Along(Path, Travelled, Direction);
 	// Wait rather than walk through the player.
@@ -105,23 +109,24 @@ void AGbTownsfolk::Tick(float DeltaSeconds)
 	if (const APawn* Player = PC ? PC->GetPawn() : nullptr)
 	{
 		const FVector To = Player->GetActorLocation() - GetActorLocation();
-		if (FMath::Abs(To.Z) < 220.f && To.SizeSquared2D() < FMath::Square(150.f) && FVector::DotProduct(To.GetSafeNormal2D(), Direction) > 0.2f) Step = 0.f;
+		if (FMath::Abs(To.Z) < 220.f && To.SizeSquared2D() < FMath::Square(150.f) && FVector::DotProduct(To.GetSafeNormal2D(), Direction) > 0.2f) CurrentSpeed = 0.f;
 	}
 
-	const float End = Travelled < PathLength ? PathLength : 2.f * PathLength;
-	Travelled = FMath::Min(Travelled + Step * DeltaSeconds, End);
+	const float PreviousDistance = Travelled;
+	Travelled = FMath::Min(Travelled + CurrentSpeed * DeltaSeconds, End);
+	const float ActualSpeed = (Travelled - PreviousDistance) / DeltaSeconds;
 	// Stop at the endpoint even on a slow frame, then face back along the route.
 	if (Travelled >= End)
 	{
 		Pause = Rand.FRandRange(1.2f, 4.5f);
-		Step = 0.f;
+		CurrentSpeed = 0.f;
 		if (Travelled >= 2.f * PathLength) Travelled = 0.f;
 	}
 
 	const FVector At = Along(Path, Travelled, Direction);
 	SetActorLocation(At);
 	SetActorRotation(FMath::RInterpTo(GetActorRotation(), Direction.Rotation(), DeltaSeconds, 7.f));
-	Look->SetWalkSpeed(Step);
+	Look->SetWalkSpeed(ActualSpeed);
 }
 
 #if WITH_DEV_AUTOMATION_TESTS

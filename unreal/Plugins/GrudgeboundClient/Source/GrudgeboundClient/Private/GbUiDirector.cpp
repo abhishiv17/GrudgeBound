@@ -89,7 +89,13 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 			const float Yaw = PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraRotation().Yaw : SmoothedYaw;
 			Pawn->AddMovementInput(FRotator(0.f, Yaw, 0.f).RotateVector(FVector(Forward, Right, 0.f)).GetSafeNormal(), 1.f);
 		}
+	}
+	else bKeyWalking = false;
 
+	// The ferry owns walking, but the passenger can still frame the crossing. Menus and panels own both.
+	const AGbSettingsHost* Menu = AGbSettingsHost::Find(GetWorld());
+	if (CanControlCamera(PC, Menu && Menu->IsOpen()))
+	{
 		const float Turn = (Settings->IsDown(PC, TEXT("RotateRight")) ? 1.f : 0.f) - (Settings->IsDown(PC, TEXT("RotateLeft")) ? 1.f : 0.f);
 		CameraYaw += Turn * Settings->CameraRotateSpeed * DeltaSeconds;
 		if (Settings->IsDown(PC, TEXT("RotateHold")))
@@ -97,6 +103,12 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 			float MouseX = 0.f, MouseY = 0.f;
 			PC->GetInputMouseDelta(MouseX, MouseY);
 			CameraYaw += MouseX * 2.2f * Settings->MouseRotateSensitivity * (Settings->bInvertMouseRotate ? -1.f : 1.f);
+			if (MouseY != 0.f)
+			{
+				Settings->CameraPitch = FMath::Clamp(Settings->CameraPitch + MouseY * 1.4f * Settings->MouseRotateSensitivity
+					* (Settings->bInvertMouseRotate ? -1.f : 1.f), UGbUserSettings::MinPitch, UGbUserSettings::MaxPitch);
+				bCameraDirty = true;
+			}
 		}
 		const auto Zoom = [&](FName Action) -> float
 		{
@@ -120,7 +132,6 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 			bCameraDirty = true;
 		}
 	}
-	else bKeyWalking = false;
 
 	// A long lens from further back at a quarter turn: the Ward reads as a small town, not a floor from above.
 	USpringArmComponent* Boom = Pawn->FindComponentByClass<USpringArmComponent>();
@@ -128,7 +139,7 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 	if (!Boom || !Camera) return;
 	const float Ease = Settings->bSmoothCamera ? 9.f : 0.f; // 0 = snap
 	SmoothedYaw = FMath::FInterpTo(SmoothedYaw, CameraYaw, DeltaSeconds, Ease);
-	SmoothedPitch = FMath::FInterpTo(SmoothedPitch, FMath::Clamp(Settings->CameraPitch, 28.f, 78.f), DeltaSeconds, Ease);
+	SmoothedPitch = FMath::FInterpTo(SmoothedPitch, FMath::Clamp(Settings->CameraPitch, UGbUserSettings::MinPitch, UGbUserSettings::MaxPitch), DeltaSeconds, Ease);
 	Boom->SetUsingAbsoluteRotation(true);
 	Boom->bUsePawnControlRotation = false;
 	Boom->bDoCollisionTest = false;
@@ -140,6 +151,12 @@ void AGbUiDirector::Tick(float DeltaSeconds)
 	Camera->bUsePawnControlRotation = false;
 	Camera->SetRelativeRotation(FRotator::ZeroRotator);
 	Camera->SetFieldOfView(50.f);
+}
+
+bool AGbUiDirector::CanControlCamera(const APlayerController* PC, bool bMenuOpen) const
+{
+	return PC && Current == EScreen::Ward && !bMenuOpen && !PC->IsLookInputIgnored()
+		&& (bCrossing || (!bBuildingTransition && !PC->IsMoveInputIgnored()));
 }
 
 void AGbUiDirector::BeginPlay()

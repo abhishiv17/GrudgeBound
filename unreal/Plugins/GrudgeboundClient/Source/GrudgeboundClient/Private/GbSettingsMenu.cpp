@@ -415,13 +415,13 @@ private:
 		TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Distance"), Slider(700.f, UGbUserSettings::MaxDistance, [S]() { return S->CameraDistance; }, [S](float V) { S->CameraDistance = V; },
 			[](float V) { return FString::Printf(TEXT("%.0f m"), V / 100.f); }, Commit), TEXT("Also on the mouse wheel.")) ];
-		Rows->AddSlot().AutoHeight()[ Row(TEXT("Angle"), Slider(28.f, 78.f, [S]() { return S->CameraPitch; }, [S](float V) { S->CameraPitch = V; },
-			[](float V) { return FString::Printf(TEXT("%.0f deg"), V); }, Commit), TEXT("Low looks across the streets; high looks straight down.")) ];
+		Rows->AddSlot().AutoHeight()[ Row(TEXT("Angle"), Slider(UGbUserSettings::MinPitch, UGbUserSettings::MaxPitch, [S]() { return S->CameraPitch; }, [S](float V) { S->CameraPitch = V; },
+			[](float V) { return FString::Printf(TEXT("%.0f deg"), V); }, Commit), TEXT("Drag vertically with the orbit key held. Rooms keep a higher angle to see over walls.")) ];
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Rotate speed"), Slider(40.f, 240.f, [S]() { return S->CameraRotateSpeed; }, [S](float V) { S->CameraRotateSpeed = V; },
 			[](float V) { return FString::Printf(TEXT("%.0f"), V); }, Commit)) ];
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Mouse rotate sensitivity"), Slider(0.2f, 3.f, [S]() { return S->MouseRotateSensitivity; }, [S](float V) { S->MouseRotateSensitivity = V; },
 			[](float V) { return FString::Printf(TEXT("%.1fx"), V); }, Commit)) ];
-		Rows->AddSlot().AutoHeight()[ Row(TEXT("Invert mouse rotate"), Toggle([S]() { return S->bInvertMouseRotate; }, [S](bool B) { S->bInvertMouseRotate = B; S->Save(); })) ];
+		Rows->AddSlot().AutoHeight()[ Row(TEXT("Invert mouse orbit / tilt"), Toggle([S]() { return S->bInvertMouseRotate; }, [S](bool B) { S->bInvertMouseRotate = B; S->Save(); })) ];
 		Rows->AddSlot().AutoHeight()[ Row(TEXT("Smooth follow"), Toggle([S]() { return S->bSmoothCamera; }, [S](bool B) { S->bSmoothCamera = B; S->Save(); }),
 			TEXT("The camera eases after you instead of locking to you.")) ];
 		return Scroll(Rows);

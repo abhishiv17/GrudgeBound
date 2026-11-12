@@ -47,6 +47,8 @@ protected:
 private:
 	friend class UGbGameFlowSubsystem;
 	friend class FGbFerryRoundTripTest;
+	friend class FGbExplorationCameraTest;
+	bool CanControlCamera(const APlayerController* PC, bool bMenuOpen) const;
 	enum class EScreen : uint8 { Ward, Encounter, Battle, TalismanCase, Rules, Shop, SignIn, Vows, Intro, Satchel, Mender, Room, Observatory };
 	void ToggleObservatory();
 	void CloseBuildingPanel();

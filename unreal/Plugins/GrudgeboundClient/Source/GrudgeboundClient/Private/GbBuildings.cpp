@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
@@ -142,7 +143,13 @@ void AGbBuildingRoom::CalcCamera(float,FMinimalViewInfo& Out)
  const APawn* Pawn=GetWorld()->GetFirstPlayerController()?GetWorld()->GetFirstPlayerController()->GetPawn():nullptr;
  FVector Focus=Pawn?Pawn->GetActorLocation()-GetActorLocation():FVector::ZeroVector;
  Focus.X=FMath::Clamp(Focus.X,-30.,30.); Focus.Y=FMath::Clamp(Focus.Y,-30.,30.); Focus.Z=0;
- Out.Location=GetActorLocation()+Focus+FVector(-700,0,1100); Out.Rotation=FRotator(-58,0,0); Out.FOV=55; Out.AspectRatio=16.f/9.f;
+ // Use the same smoothed orbit as outdoors, with a higher angle and bounded distance for the small room.
+ const USpringArmComponent* Boom=Pawn?Pawn->FindComponentByClass<USpringArmComponent>():nullptr;
+ const FRotator Orbit=Boom?Boom->GetComponentRotation():FRotator(-UGbUserSettings::DefaultPitch,UGbUserSettings::DefaultYaw,0);
+ const float Distance=FMath::Clamp((Boom?Boom->TargetArmLength:UGbUserSettings::DefaultDistance)*.62f,900.f,1900.f);
+ Out.Rotation=FRotator(-FMath::Clamp(-Orbit.Pitch+18.f,48.f,78.f),Orbit.Yaw-UGbUserSettings::DefaultYaw,0);
+ Out.Location=GetActorLocation()+Focus-Out.Rotation.Vector()*Distance;
+ Out.FOV=55; Out.AspectRatio=16.f/9.f;
 }
 void AGbBuildingRoom::BeginPlay()
 {

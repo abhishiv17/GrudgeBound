@@ -21,7 +21,7 @@ const TArray<FGbActionDef>& UGbUserSettings::Actions()
 
 		{ TEXT("RotateLeft"), TEXT("Rotate camera left"), TEXT("Camera"), EKeys::Q },
 		{ TEXT("RotateRight"), TEXT("Rotate camera right"), TEXT("Camera"), EKeys::C },
-		{ TEXT("RotateHold"), TEXT("Hold and drag to rotate"), TEXT("Camera"), EKeys::MiddleMouseButton },
+		{ TEXT("RotateHold"), TEXT("Hold and drag to orbit / tilt"), TEXT("Camera"), EKeys::MiddleMouseButton },
 		{ TEXT("ZoomIn"), TEXT("Zoom in"), TEXT("Camera"), EKeys::MouseScrollUp },
 		{ TEXT("ZoomOut"), TEXT("Zoom out"), TEXT("Camera"), EKeys::MouseScrollDown },
 		{ TEXT("ResetCamera"), TEXT("Reset camera"), TEXT("Camera"), EKeys::Home },
