@@ -47,7 +47,7 @@ namespace GbJson
 	EGbOutcome Outcome(const FString& Text);
 
 	/** {"ward":..,"playerCurse":..,"by":..,"account":..} (empty fields left out) */
-	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account = FString(), const FString& TokenId = FString());
+	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account = FString(), const FString& TokenId = FString(), int32 Rival = 0);
 	/** {"battleId":..,"action":{"kind":..}} */
 	FString TurnBody(const FString& BattleId, EGbAction Action);
 }

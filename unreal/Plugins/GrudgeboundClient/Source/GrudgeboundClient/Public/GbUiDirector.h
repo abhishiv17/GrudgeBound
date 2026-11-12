@@ -71,6 +71,15 @@ private:
     void OpenArrival();
     void CloseArrival();
     void SpawnMentor();
+    /** Dace Marrow (draft): a figure with a talk marker, moved to where the server says the rival waits. */
+    void SpawnRival();
+    void PlaceRival();
+    /** Puts the figure at a named spot ("" hides it). PlaceRival asks the Satchel; the shot harness passes a spot. */
+    void PlaceRivalAt(const FString& Spot);
+    bool bRivalPinned = false;
+    UPROPERTY() TObjectPtr<AActor> RivalFigure;
+    UPROPERTY() TObjectPtr<class AGbBuildingDoor> RivalDoor;
+    FString RivalSpot;
     UPROPERTY() TObjectPtr<UGbArrivalWidget> Arrival;
     UPROPERTY() TObjectPtr<AActor> PierMentor;
     UPROPERTY() TObjectPtr<class ACameraActor> ArrivalCamera;

@@ -285,6 +285,7 @@ private:
 	UPROPERTY() TObjectPtr<UBorder> MatchChip;
 	UPROPERTY() TObjectPtr<UTextBlock> MatchChipText;
 	UPROPERTY() TObjectPtr<UButton> FightButton;
+	UPROPERTY() TObjectPtr<UButton> SlipButton;
 	float Clock = 0.f;
 };
 
@@ -369,6 +370,10 @@ private:
 	float WardTime[2] = { 0.f, 0.f };
 	float FeedbackRemaining = 0.f;
 	bool bBattleEnded = false;
+	/** The fight as it began (rival or curse), the end card's experience line, and whether a rival ended it. */
+	FGbBattleStart LastStart;
+	FString EndExtra;
+	bool bRivalEnd = false;
 	bool bWaitingForReply = false;
 	int32 FocusedAction = 0;
 	TArray<FCue> Cues;

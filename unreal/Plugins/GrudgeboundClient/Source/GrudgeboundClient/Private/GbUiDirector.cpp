@@ -78,6 +78,7 @@ void AGbUiDirector::Tick(float DeltaSeconds)
     UpdateSightlines(DeltaSeconds,PC,Pawn);
 	UGbUserSettings* Settings = UGbUserSettings::Get();
 	UGbExorcistLook::Ensure(Pawn); // the exorcist's body instead of the template mannequin
+	PlaceRival();
     if (Current!=EScreen::Arrival) if (const UGbPlayerSubsystem* P=PlayerOf(GetWorld()))
         UGbExorcistLook::Ensure(Pawn)->SetPresentation(P->GetSatchel().Profile.Look);
 	if (bCrossing) TickCrossing(DeltaSeconds, PC, Pawn);
@@ -204,7 +205,7 @@ void AGbUiDirector::BeginPlay()
 	Satchel->AddToViewport(30);
 	Mender->AddToViewport(30); Room->AddToViewport(30);
 	Observatory->AddToViewport(30);
-    Arrival->AddToViewport(80); SpawnMentor();
+    Arrival->AddToViewport(80); SpawnMentor(); SpawnRival();
 
 	Encounter->OnFight.AddUObject(this, &AGbUiDirector::Fight);
 	Encounter->OnSlipAway.AddUObject(this, &AGbUiDirector::SlipAway);
@@ -372,6 +373,44 @@ void AGbUiDirector::SpawnMentor()
  Doll->SetOutfit(Outfit); Doll->SetupAttachment(Root); Doll->SetRelativeRotation(FRotator(0,134,0)); Doll->RegisterComponent();
  AGbBuildingDoor* Door=GetWorld()->SpawnActor<AGbBuildingDoor>(Feet+FVector(-55,80,0),FRotator::ZeroRotator);
  Door->Building=EGbBuilding::Outside; Door->Use=EGbBuildingUse::Arrival; Door->Label=TEXT("Kessa"); Door->OnConstruction(Door->GetActorTransform());
+}
+void AGbUiDirector::SpawnRival()
+{
+ RivalFigure=GetWorld()->SpawnActor<AActor>();
+ USceneComponent* Root=NewObject<USceneComponent>(RivalFigure); RivalFigure->SetRootComponent(Root); Root->RegisterComponent();
+ UGbExorcistLook* Doll=NewObject<UGbExorcistLook>(RivalFigure); UGbExorcistLook::FOutfit Outfit;
+ // A darker mirror of the player's coat: soot grey with a rust scarf, so the rival reads at a distance.
+ Outfit.Top=GbGreybox::Color::Hex(TEXT("3B3A40")); Outfit.TopSh=Outfit.Top*.8f; Outfit.Hair=GbGreybox::Color::Hex(TEXT("2A1E1A")); Outfit.HairHi=Outfit.Hair*1.2f;
+ Outfit.Scarf=GbGreybox::Color::Hex(TEXT("A4472A"));
+ Doll->SetOutfit(Outfit); Doll->SetupAttachment(Root); Doll->RegisterComponent();
+ RivalDoor=GetWorld()->SpawnActor<AGbBuildingDoor>(FVector::ZeroVector,FRotator::ZeroRotator);
+ RivalDoor->Building=EGbBuilding::Outside; RivalDoor->Use=EGbBuildingUse::Rival; RivalDoor->Label=TEXT("Dace Marrow");
+ RivalDoor->OnConstruction(RivalDoor->GetActorTransform());
+ RivalFigure->SetActorHiddenInGame(true); RivalDoor->SetActorHiddenInGame(true); RivalDoor->SetActorEnableCollision(false);
+}
+void AGbUiDirector::PlaceRival()
+{
+ if (!RivalFigure || !RivalDoor || bRivalPinned) return;
+ const UGbPlayerSubsystem* P=PlayerOf(GetWorld()); if (!P) return;
+ const FGbSatchel& Data=P->GetSatchel(); // a copy, kept alive for this call
+ // Nobody waits on the pier until Kessa has welcomed the player.
+ const bool bShow=Data.bValid && Data.Rival.bValid && (Data.Profile.bComplete || Data.Profile.bLegacyStarter);
+ PlaceRivalAt(bShow?Data.Rival.Where:FString());
+}
+void AGbUiDirector::PlaceRivalAt(const FString& Spot)
+{
+ if (!RivalFigure || !RivalDoor || Spot==RivalSpot) return;
+ RivalSpot=Spot; const bool bShow=!Spot.IsEmpty();
+ RivalFigure->SetActorHiddenInGame(!bShow); RivalDoor->SetActorHiddenInGame(!bShow); RivalDoor->SetActorEnableCollision(bShow);
+ if (!bShow) return;
+ // Feet and facing: beside Kessa on the harbour pier; by the Tide ferry (same pier, nearer the boat); on Tide's quay
+ // by the marked storehouse; and, after the last round, in Lantern's plaza.
+ FVector Feet=Spot==TEXT("pier")?FVector(-930,150,5):Spot==TEXT("ferry")?FVector(-1150,170,5):FVector(420,260,5);
+ if (Spot==TEXT("quay")) // where Tide's north pier meets the wharf, a step off the walk from the ferry, facing it
+  for (TActorIterator<AGbTideWard> Tide(GetWorld()); Tide; ++Tide) { Feet=Tide->GetLandingLocation()+FVector(-330,160,5); break; }
+ const float Yaw=Spot==TEXT("quay")?0.f:Spot==TEXT("plaza")?200.f:-140.f;
+ RivalFigure->SetActorLocationAndRotation(Feet,FRotator(0,Yaw,0));
+ RivalDoor->SetActorLocation(Feet+FRotator(0,Yaw,0).RotateVector(FVector(70,0,0)));
 }
 void AGbUiDirector::OpenArrival()
 {
@@ -703,6 +742,14 @@ void AGbUiDirector::UseBuilding(AGbBuildingDoor* Door)
  APlayerController* PC=GetWorld()->GetFirstPlayerController(); APawn* Pawn=PC?PC->GetPawn():nullptr;
  if (!Pawn || FVector::DistSquared(Pawn->GetActorLocation(),Door->GetActorLocation())>FMath::Square(230.f)) return;
  if (Door->Use==EGbBuildingUse::Arrival) {OpenArrival();return;}
+ if (Door->Use==EGbBuildingUse::Rival)
+ {
+  UGbApiSubsystem* A=ApiOf(GetWorld()); const UGbPlayerSubsystem* P=PlayerOf(GetWorld()); if (!A || !P) return;
+  const FGbRival& R=P->GetSatchel().Rival;
+  if (!R.bReady) {A->SayAsKessa(R.Name+TEXT(": ")+R.Line); return;}
+  A->StartBattle(R.Where==TEXT("quay")?TEXT("tide"):TEXT("lantern"),P->GetPartner().SpeciesId,R.Stage);
+  return;
+ }
  if (Door->Use==EGbBuildingUse::Discover || (Door->Use==EGbBuildingUse::Enter && !Door->DiscoveryId.IsEmpty()))
  {
   UGbApiSubsystem* A=ApiOf(GetWorld()); const UGbPlayerSubsystem* P=PlayerOf(GetWorld()); if (!A || !P) return;
@@ -713,6 +760,13 @@ void AGbUiDirector::UseBuilding(AGbBuildingDoor* Door)
  {
   // Carry the player across; change the HUD's Ward only after landing.
   if (CurrentBuilding!=EGbBuilding::Outside || Door->TravelWard.IsEmpty()) return;
+  // The ferryman takes nobody green: Tide opens when the rival is beaten at this pier (server-decided).
+  if (const UGbPlayerSubsystem* P=PlayerOf(GetWorld()))
+   if (Door->TravelWard==TEXT("tide") && P->GetSatchel().bValid && !P->GetSatchel().bTideOpen)
+   {
+    if (UGbApiSubsystem* A=ApiOf(GetWorld())) A->SayAsKessa(TEXT("Kessa: The ferryman won't take you yet. ")+P->GetSatchel().Rival.Name+TEXT(" is waiting by the boat: beat them and the crossing is yours."));
+    return;
+   }
   // No cut: the boat carries the player across the water to the other pier (TickCrossing).
   const AGbBuildingDoor* Far=nullptr;
   const UGbPlayerSubsystem* Player=PlayerOf(GetWorld());
@@ -803,6 +857,8 @@ void AGbUiDirector::Fight()
 
 void AGbUiDirector::SlipAway()
 {
+	// Nobody slips away from a rival: Escape on that screen just goes to the fight.
+	if (PendingBattle.RivalStage > 0) { Fight(); return; }
 	// The server owns supplies/ink and one open battle per player. Resolve the existing flee move rather
 	// than forgetting an encounter locally and stranding all pocket/healing actions until it expires.
 	Battle->ShowStart(PendingBattle); ShowScreen(EScreen::Battle);
@@ -955,6 +1011,12 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			if (V < Views)
 			{
 				if ((K - 1) % 2 == 1) { FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/shot%d.png"), *ShotFolder, V), Shots->Cams[V].StartsWith(TEXT("arrival")), false); return; }
+				// "rival-<spot>": Dace at that spot (pier, ferry, quay, plaza); combine with fixed cameras to frame it.
+				if (Shots->Cams[V].StartsWith(TEXT("rival-")))
+				{
+					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director) { Director->bRivalPinned = true; Director->PlaceRivalAt(Shots->Cams[V].Mid(6)); }
+					return;
+				}
 				if (Shots->Cams[V].StartsWith(TEXT("arrival")))
 				{
 					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director)

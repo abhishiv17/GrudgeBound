@@ -1008,7 +1008,7 @@ void UGbEncounterWidget::BuildTree()
 	FightButton->OnClicked.AddDynamic(this, &UGbEncounterWidget::HandleFight);
 	AddCol(Buttons, Sized(FightButton, 0.f, 72.f), true, 16.f);
 	UTextBlock* SlipLabel = nullptr;
-	UButton* Slip = MakeButton(TEXT("Slip away"), SlipLabel, GbUi::Paper2());
+	UButton* Slip = MakeButton(TEXT("Slip away"), SlipLabel, GbUi::Paper2()); SlipButton = Slip;
 	SlipLabel->SetFont(GbUi::Font(24, true));
 	Slip->OnClicked.AddDynamic(this, &UGbEncounterWidget::HandleSlipAway);
 	AddCol(Buttons, Sized(Slip, 300.f, 72.f), false, 0.f);
@@ -1040,6 +1040,11 @@ void UGbEncounterWidget::Show(const FGbBattleStart& Battle)
 	// Every start line: the intro, then any curfew warning from Kessa.
 	Intro->SetText(FText::FromString(Battle.Lines.Num() > 0 ? FString::Join(Battle.Lines, TEXT("\n")) : FString::Printf(TEXT("Wild %s!"), *Battle.Wild.Name)));
 
+	// A rival steps up instead of a curse stirring: no slipping away from them.
+	if (Title) Title->SetText(FText::FromString(Battle.RivalStage > 0 ? FString::Printf(TEXT("%s wants a rematch!"), *Battle.RivalName)
+		: FString(TEXT("A curse stirs in the tall grass!"))));
+	if (Battle.RivalStage == 1 && Title) Title->SetText(FText::FromString(FString::Printf(TEXT("%s blocks the pier!"), *Battle.RivalName)));
+	if (SlipButton) SlipButton->SetVisibility(Battle.RivalStage > 0 ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	const FString& M = Battle.Matchup;
 	const FString Partner = Battle.View.Player.Name;
 	FString MatchText = FString::Printf(TEXT("%s vs %s: even match."), *Partner, *Battle.Wild.Name);
@@ -1059,7 +1064,7 @@ void UGbEncounterWidget::Show(const FGbBattleStart& Battle)
 	const float Scale = FMath::Max(1.f, FMath::FloorToFloat(312.f / FMath::Max(Art.ImageSize.X, Art.ImageSize.Y)));
 	WildImage->SetBrush(ArtBrush(CurseArt(Species), Scale));
 	PartnerImage->SetBrush(ArtBrush(CurseArt(Battle.View.Player.SpeciesId), 1.f));
-	WildName->SetText(FText::FromString(Battle.Wild.Name));
+	WildName->SetText(FText::FromString(FString::Printf(TEXT("%s  Lv %d"), *Battle.Wild.Name, Battle.View.Wild.Level)));
 	EmotionImage->SetBrush(ArtBrush(TEXT("emo_") + (Battle.Wild.Emotion.IsEmpty() ? FString(TEXT("rage")) : Battle.Wild.Emotion), 3.f));
 	Tags->SetText(FText::FromString(FString::Printf(TEXT("%s  -  %s"), *Capitalised(Battle.Wild.Emotion), *Capitalised(Battle.Wild.Omen))));
 
@@ -1204,6 +1209,7 @@ void UGbBattleWidget::BuildTree()
 void UGbBattleWidget::ShowStart(const FGbBattleStart& Battle)
 {
 	if (!Log) return;
+	LastStart = Battle; bRivalEnd = false; EndExtra.Reset();
 	LogLines.Reset();
 	Log->ClearChildren();
 	EndPanel->SetVisibility(ESlateVisibility::Collapsed);
@@ -1284,6 +1290,9 @@ void UGbBattleWidget::ApplyTurn(const FGbBattleTurn& Turn)
 	SetButtonsEnabled(false);
 	if (Turn.bEnded)
 	{
+		EndExtra = Turn.XpGained > 0 ? FString::Printf(TEXT("\n%s gained %d experience%s"), *Turn.View.Player.Name, Turn.XpGained,
+			Turn.Level > Turn.LevelBefore ? *FString::Printf(TEXT(" and grew to level %d!"), Turn.Level) : TEXT(".")) : FString();
+		bRivalEnd = LastStart.RivalStage > 0;
 		ShowEnd(Turn.Outcome, Turn.Points, Turn.View.Wild.Name);
 	}
 }
@@ -1466,7 +1475,7 @@ void UGbBattleWidget::ShowView(const FGbBattleView& View)
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
 		const FGbSide& S = *Sides[Side];
-		Names[Side]->SetText(FText::FromString(S.Name));
+		Names[Side]->SetText(FText::FromString(FString::Printf(TEXT("%s  Lv %d"), *S.Name, S.Level)));
 		Tags[Side]->SetText(FText::FromString(FString::Printf(TEXT("%s\n%s"), *Capitalised(S.Emotion), *Capitalised(S.Omen))));
 		Tags[Side]->SetColorAndOpacity(FSlateColor(C::Ink));
 		EmotionIcons[Side]->SetBrush(ArtBrush(TEXT("emo_") + (S.Emotion.IsEmpty() ? FString(TEXT("rage")) : S.Emotion), 3.f));
@@ -1525,11 +1534,14 @@ void UGbBattleWidget::ShowEnd(EGbOutcome Outcome, int32 Points, const FString& W
 	switch (Outcome)
 	{
 	case EGbOutcome::Bound: Text = FString::Printf(TEXT("Bound! %s is sealed into a talisman.\n+%d points"), *Wild, Points); break;
-	case EGbOutcome::Won: Text = FString::Printf(TEXT("Exorcised! %s fades into ash.\n+%d points"), *Wild, Points); break;
+	case EGbOutcome::Won: Text = bRivalEnd ? FString::Printf(TEXT("You beat %s!\n+%d points"), *LastStart.RivalName, Points)
+		: FString::Printf(TEXT("Exorcised! %s fades into ash.\n+%d points"), *Wild, Points); break;
 	case EGbOutcome::Fled: Text = TEXT("You got away. The curse still haunts the tall grass."); break;
-	case EGbOutcome::Lost: Text = TEXT("Your partner is spent. You stagger back to the Ward."); break;
+	case EGbOutcome::Lost: Text = bRivalEnd ? FString::Printf(TEXT("%s wins this round. Rest your partner and try again."), *LastStart.RivalName)
+		: FString(TEXT("Your partner is spent. You stagger back to the Ward.")); break;
 	default: Text = TEXT("The battle is over."); break;
 	}
+	Text += EndExtra; EndExtra.Reset();
 	EndText->SetText(FText::FromString(Text));
 	if(FeedbackRemaining<=0) EndPanel->SetVisibility(ESlateVisibility::Visible);
 }

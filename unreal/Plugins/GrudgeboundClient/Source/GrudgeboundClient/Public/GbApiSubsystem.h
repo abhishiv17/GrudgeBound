@@ -93,7 +93,7 @@ public:
 	 * Answer: OnBattleStarted (or OnError). Ignored while a battle is open or a request is in flight.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Battle")
-	void StartBattle(const FString& WardId, const FString& PlayerCurse);
+	void StartBattle(const FString& WardId, const FString& PlayerCurse, int32 RivalStage = 0);
 
 	/** Send one move. Answer: OnBattleTurn. A 409 (move not available) keeps the turn and the battle. */
 	UFUNCTION(BlueprintCallable, Category = "Grudgebound|Battle")

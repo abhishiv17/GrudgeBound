@@ -218,6 +218,8 @@ struct FGbSide
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Omen;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Hp = 0;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 MaxHp = 1;
+	/** 1-10; older servers send none (level 1). */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Level = 1;
 };
 
 /** Everything the battle screen draws; sent after start and after every turn. */
@@ -258,6 +260,9 @@ struct FGbBattleStart
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Matchup;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbBattleView View;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TArray<FString> Lines;
+	/** A rival fight (1-3) or 0: no sealing and no slipping away. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 RivalStage = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString RivalName;
 };
 
 /** The "chain" part of a finished battle, and GET /chain?battle=<id>: the binding or exorcism on NEAR (P2-C4). */
@@ -301,6 +306,10 @@ struct FGbBattleTurn
 	/** True when the server is writing this battle to NEAR (it runs with chain keys); see Chain. */
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bHasChain = false;
 	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbChainReceipt Chain;
+	/** Last turn only: experience the partner gained and its level before and after. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 XpGained = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Level = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 LevelBefore = 0;
 };
 
 /** A talisman as the items contract reports it (GET /player). */
@@ -388,6 +397,30 @@ struct FGbStarterChoice
  UPROPERTY(BlueprintReadOnly) int32 Guard=0;
  UPROPERTY(BlueprintReadOnly) int32 Speed=0;
 };
+/** A talisman's level and experience (Satchel "levels"). Next is -1 at the cap. */
+USTRUCT(BlueprintType)
+struct FGbLevel
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Level = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Xp = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Next = -1;
+};
+/** Where the rival stands and what they say (Satchel "rival"). The server decides; the client places the figure. */
+USTRUCT(BlueprintType)
+struct FGbRival
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bValid = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Name;
+	/** "pier", "ferry", "quay" or "plaza". */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Where;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Stage = 0;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bReady = false;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") int32 Level = 1;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString SpeciesId;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FString Line;
+};
 USTRUCT(BlueprintType)
 struct FGbArrivalProfile
 {
@@ -428,6 +461,11 @@ struct FGbSatchel
  UPROPERTY(BlueprintReadOnly) TArray<FGbKeepsake> Notes;
 	static constexpr int32 CarryLimit = 5;
  UPROPERTY(BlueprintReadOnly) FGbArrivalProfile Profile;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") TMap<FString, FGbLevel> Levels;
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") FGbRival Rival;
+	/** The ferry takes this player to Tide. Older servers send nothing: open. */
+	UPROPERTY(BlueprintReadOnly, Category = "Grudgebound") bool bTideOpen = true;
+	int32 LevelOf(const FString& Id) const { const FGbLevel* L = Levels.Find(Id); return L ? L->Level : 1; }
 	bool HasToken(const FString& Id) const { return Carried.Contains(Id) || Case.Contains(Id); }
 	bool CanCarry(const FString& Id) const { return bValid && Case.Contains(Id) && Carried.Num() < CarryLimit; }
 	bool CanUseSalve(const FString& Id) const

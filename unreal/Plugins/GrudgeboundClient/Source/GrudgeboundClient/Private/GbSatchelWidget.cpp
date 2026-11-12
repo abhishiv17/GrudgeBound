@@ -273,7 +273,7 @@ void UGbSatchelWidget::Redraw()
 	{
 		const FString Id = Options[I]; const FGbInk* Value = Data.Ink.Find(Id);
 		UGbPickRowWidget* Row = CreateWidget<UGbPickRowWidget>(this, UGbPickRowWidget::StaticClass()); if (!Row) continue;
-		Row->Setup(ArtFor(Id), NameFor(Id), FString::Printf(TEXT("%s %d"), Data.Carried.Contains(Id) ? TEXT("Carried") : TEXT("Case"), I + 1),
+		Row->Setup(ArtFor(Id), NameFor(Id), FString::Printf(TEXT("Lv %d  |  %s %d"), Data.LevelOf(Id), Data.Carried.Contains(Id) ? TEXT("Carried") : TEXT("Case"), I + 1),
 			Value && Value->MaxHp > 0 ? static_cast<float>(Value->Hp) / Value->MaxHp : -1.f,
 			Value ? FString::Printf(TEXT("%d / %d ink"), Value->Hp, Value->MaxHp) : FString(),
 			Id == PartnerToken ? TEXT("Partner") : TEXT(""), Gold, Id == SelectedToken);
@@ -291,8 +291,11 @@ void UGbSatchelWidget::Redraw()
 	SetChip(PlaceChip, PlaceText, SelectedToken.IsEmpty() ? FString() : bCarried ? FString(TEXT("In your Satchel")) : FString(TEXT("In the Case")), bCarried ? Gold : GbUi::Paper3());
 	InkBar->SetPercent(bHasInk ? static_cast<float>(Value->Hp) / Value->MaxHp : 0.f);
 	InkBar->SetFillColorAndOpacity(bHasInk && Value->Hp <= 0 ? Red : Blue);
+	const FGbLevel* Level = Data.Levels.Find(SelectedToken);
+	const FString Growth = !Level ? FString() : Level->Next < 0 ? FString::Printf(TEXT("Level %d (highest)  |  "), Level->Level)
+		: FString::Printf(TEXT("Level %d  |  %d / %d experience  |  "), Level->Level, Level->Xp, Level->Next);
 	InkText->SetText(FText::FromString(bHasInk
-		? FString::Printf(TEXT("Ink %d / %d%s"), Value->Hp, Value->MaxHp, Value->Hp <= 0 ? TEXT("  |  Visit the Mender or rest") : TEXT(""))
+		? Growth + FString::Printf(TEXT("Ink %d / %d%s"), Value->Hp, Value->MaxHp, Value->Hp <= 0 ? TEXT("  |  Visit the Mender or rest") : TEXT(""))
 		: FString(TEXT("Reading ink..."))));
 	CarryLabel->SetText(FText::FromString(bCarried ? TEXT("Leave in the Case") : TEXT("Carry in Satchel")));
 	CarryButton->SetIsEnabled(bReady && (bCarried || Data.CanCarry(SelectedToken)));

@@ -282,7 +282,7 @@ void UGbApiSubsystem::SayAsKessa(const FString& Line)
 
 // ---------------------------------------------------------------- battles
 
-void UGbApiSubsystem::StartBattle(const FString& WardId, const FString& PlayerCurse)
+void UGbApiSubsystem::StartBattle(const FString& WardId, const FString& PlayerCurse, int32 RivalStage)
 {
 	if (IsBattleOpen() || bBattleRequestInFlight) return;
 	UGbPlayerSubsystem* Player = GetGameInstance()->GetSubsystem<UGbPlayerSubsystem>();
@@ -297,7 +297,7 @@ void UGbApiSubsystem::StartBattle(const FString& WardId, const FString& PlayerCu
 	}
 	bBattleRequestInFlight = true;
 	const UGbSettings* Settings = GetDefault<UGbSettings>();
-	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, Player->GetPartner().SpeciesId, GetPlayerName(), GetPlayerAccount(), Player->GetPartnerTokenId());
+	const FString Body = GbJson::StartBody(WardId.IsEmpty() ? Settings->WardId : WardId, Player->GetPartner().SpeciesId, GetPlayerName(), GetPlayerAccount(), Player->GetPartnerTokenId(), RivalStage);
 	Send(TEXT("POST"), TEXT("/battle/start"), Body, [this](int32 Status, const FString& Text)
 	{
 		bBattleRequestInFlight = false;

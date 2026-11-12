@@ -77,6 +77,7 @@ namespace
 		S.Omen = Str(O, TEXT("omen"));
 		S.Hp = Int(O, TEXT("hp"));
 		S.MaxHp = FMath::Max(1, Int(O, TEXT("maxHp"), 1));
+		S.Level = FMath::Clamp(Int(O, TEXT("level"), 1), 1, 10);
 		return S;
 	}
 
@@ -310,6 +311,7 @@ namespace GbJson
 		B.Matchup = Str(O, TEXT("matchup"));
 		B.View = BattleView(Obj(O, TEXT("view")));
 		B.Lines = Strings(O, TEXT("lines"));
+		if (const TSharedPtr<FJsonObject> R = Obj(O, TEXT("rival"))) { B.RivalStage = Int(R, TEXT("stage")); B.RivalName = Str(R, TEXT("name")); }
 		return B;
 	}
 
@@ -325,6 +327,10 @@ namespace GbJson
 		if (T.Outcome == EGbOutcome::None) T.Outcome = T.View.Outcome;
 		T.bEnded = T.Outcome != EGbOutcome::None;
 		T.Points = Int(O, TEXT("points"));
+		if (const TSharedPtr<FJsonObject> P = Obj(O, TEXT("progress")))
+		{
+			T.XpGained = FMath::Max(0, Int(P, TEXT("gained"))); T.Level = Int(P, TEXT("level")); T.LevelBefore = Int(P, TEXT("before"));
+		}
 		double Seed = -1.0;
 		if (O.IsValid() && O->TryGetNumberField(TEXT("seed"), Seed)) T.Seed = static_cast<int64>(Seed);
 		if (const TSharedPtr<FJsonObject> C = Obj(O, TEXT("chain")))
@@ -477,6 +483,15 @@ namespace GbJson
                 Choice.Id=Str(C,TEXT("id")); Choice.Name=Str(C,TEXT("name")); Choice.Emotion=Str(C,TEXT("emotion")); Choice.Personality=Str(C,TEXT("personality"));
                 Choice.Hp=Int(Stats,TEXT("hp")); Choice.Attack=Int(Stats,TEXT("attack")); Choice.Guard=Int(Stats,TEXT("guard")); Choice.Speed=Int(Stats,TEXT("speed")); P.Choices.Add(Choice);}
         }
+        if (const auto Levels = Obj(O, TEXT("levels")))
+            for (const auto& Entry : Levels->Values)
+                if (const auto L = AsObj(Entry.Value)) { FGbLevel V; V.Level = FMath::Clamp(Int(L, TEXT("level"), 1), 1, 10); V.Xp = Int(L, TEXT("xp")); V.Next = Int(L, TEXT("next"), -1); S.Levels.Add(FString(Entry.Key), V); }
+        if (const auto R = Obj(O, TEXT("rival")))
+        {
+            S.Rival.bValid = true; S.Rival.Name = Str(R, TEXT("name")); S.Rival.Where = Str(R, TEXT("where")); S.Rival.Stage = Int(R, TEXT("stage"));
+            S.Rival.bReady = Bool(R, TEXT("ready")); S.Rival.Level = Int(R, TEXT("level"), 1); S.Rival.SpeciesId = Str(R, TEXT("speciesId")); S.Rival.Line = Str(R, TEXT("line"));
+        }
+        if (O->HasTypedField<EJson::Boolean>(TEXT("tideOpen"))) S.bTideOpen = Bool(O, TEXT("tideOpen"));
         const auto E = Obj(O, TEXT("exploration"));
         S.bExplorationAvailable = E.IsValid() && Int(E, TEXT("version")) == 1;
         if (S.bExplorationAvailable)
@@ -618,10 +633,11 @@ namespace GbJson
 		return Write(O);
 	}
 
-	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account, const FString& TokenId)
+	FString StartBody(const FString& Ward, const FString& PlayerCurse, const FString& By, const FString& Account, const FString& TokenId, int32 Rival)
 	{
 		const TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();
 		O->SetStringField(TEXT("ward"), Ward);
+		if (Rival > 0) O->SetNumberField(TEXT("rival"), Rival);
 		if (!PlayerCurse.IsEmpty()) O->SetStringField(TEXT("playerCurse"), PlayerCurse);
 		if (!TokenId.IsEmpty()) O->SetStringField(TEXT("tokenId"), TokenId);
 		if (!By.IsEmpty()) O->SetStringField(TEXT("by"), By);
