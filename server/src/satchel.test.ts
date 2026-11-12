@@ -500,7 +500,8 @@ test("Ink persists across battles and restart; zero ink blocks another fight; re
   const s = setup(join(dir, "ink.json"));
   const battles = new BattleSessions(s.world, { satchels: s.satchels, newSeed: () => 99 });
   const start = battles.start({ ward: "lantern", account: ACCOUNT }, undefined, await s.satchels.partner(ACCOUNT)).body as StartAnswer;
-  assert.equal(battles.start({ ward: "lantern", account: ACCOUNT }, undefined, await s.satchels.partner(ACCOUNT)).status, 409);
+  const again = battles.start({ ward: "lantern", account: ACCOUNT }, undefined, await s.satchels.partner(ACCOUNT));
+  assert.equal(again.status, 200); assert.equal((again.body as StartAnswer).battleId, start.battleId, "the open fight is handed back, not a second one");
   let turn: TurnAnswer;
   do {
     const r = battles.turn({ battleId: start.battleId, action: { kind: "ward" } }, ACCOUNT); assert.equal(r.status, 200);
@@ -625,9 +626,32 @@ test("HTTP Satchel routes enforce sessions, reject account injection and keep re
   assert.equal((await post("/profile/complete", arrival, headers)).status, 409);
   assert.equal((await post("/satchel/equip", { itemId: "" }, headers)).status, 409);
   assert.equal((await post("/exploration/interact", { id: "lamp-kit" }, headers)).status, 409);
+  // The reply was lost (client timeout or restart): asking again hands back the same fight.
+  const resumed = await post("/battle/start", { ward: "lantern" }, headers); assert.equal(resumed.status, 200);
+  assert.equal((await resumed.json() as StartAnswer).battleId, battleId);
   // With the starter kit a brand-new player can attempt a seal straight away (no Ember needed).
   const firstSeal = await post("/battle/turn", { battleId, action: { kind: "seal" } }, headers);
   assert.equal(firstSeal.status, 200);
+});
+
+test("an interrupted fight is handed back mid-way, rival included, with its ink and no reroll", async () => {
+  const s = setup();
+  const partner = await s.satchels.partner(ACCOUNT);
+  const battles = new BattleSessions(s.world, { satchels: s.satchels, newSeed: () => 77 });
+  const one = battles.start({ ward: "lantern", account: ACCOUNT, rival: 1 }, undefined, partner).body as StartAnswer;
+  const turn = battles.turn({ battleId: one.battleId, action: { kind: "ward" } }, ACCOUNT).body as TurnAnswer;
+  assert.equal(turn.outcome, null);
+  // Asked again for the rival (or for tall grass): the rival fight comes back, not "already fought you there".
+  for (const body of [{ ward: "lantern", account: ACCOUNT, rival: 1 }, { ward: "lantern", account: ACCOUNT }]) {
+    const r = battles.start(body, undefined, await s.satchels.partner(ACCOUNT));
+    assert.equal(r.status, 200);
+    const back = r.body as StartAnswer;
+    assert.equal(back.battleId, one.battleId); assert.equal(back.rival?.stage, 1); assert.equal(back.wild.id, one.wild.id);
+    assert.deepEqual(back.view, turn.view);
+    assert.equal(back.view.canUse.flee, false);
+  }
+  battles.abandonAccount(ACCOUNT);
+  assert.equal(battles.start({ ward: "lantern", account: ACCOUNT, rival: 1 }, undefined, partner).status, 409, "an expired pier fight still counts");
 });
 
 test("the starter kit is granted once per account, on top of anything bought first, and survives a reload", async () => {

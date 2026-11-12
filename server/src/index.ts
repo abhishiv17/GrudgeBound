@@ -326,6 +326,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const activeVows = await vows.snapshot(player.account);
       const vowGuard: import("./battles").BattleGuard = (context, action) => vows.battleGuard(activeVows, context, action);
       if (url.pathname === "/battle/start") {
+        // A fight the client lost track of (timed-out reply, restarted game) is handed back, not refused.
+        const open = battles.resume(player.account, vowGuard);
+        if (open) return send(res, open.status, open.body);
         outsideBattle(player.account);
         // Before the partner is read: reading it settles a not-yet-arrived player on the legacy starter.
         const rivalRefusal = body.rival === undefined || body.rival === null ? null : satchels.rivalRefusal(player.account, body.rival);

@@ -225,6 +225,11 @@ export class BattleSessions {
     const by = typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 40) : "A newcomer";
     if (b.account !== undefined && !isAccountId(b.account)) return fail(400, "account must be a NEAR account id");
     const account = b.account as string | undefined;
+    // Before the rival and curfew checks: an open fight is handed back whatever was asked for now.
+    if (account && this.satchels) {
+      const open = this.resume(account, guard);
+      if (open) return open;
+    }
     const rival = b.rival === undefined || b.rival === null ? undefined : b.rival;
     if (rival !== undefined && (!account || !this.satchels || !partner)) return fail(400, "A rival fight needs your signed-in Satchel.");
     if (rival !== undefined) {
@@ -243,7 +248,6 @@ export class BattleSessions {
 
     this.sweep();
     if (account && this.satchels) {
-      if (this.hasAccount(account)) return fail(409, "Finish or leave your current battle first.");
       if (!partner) return fail(400, "Choose a partner from your Satchel.");
       if (partner.hp <= 0) return fail(409, "Visit the Mender or rest");
     }
@@ -292,6 +296,34 @@ export class BattleSessions {
           .filter((line): line is string => !!line).map((line) => `Kessa: "${line}"`),
       ],
       curfews: [noExorcise, noBind].filter((x): x is string => x !== null),
+    });
+  }
+
+  /**
+   * The account's open battle, answered as a start. The client loses a fight when the start reply times out (the
+   * server waits on a NEAR read first) or the game restarts; without this every new fight was refused until it expired.
+   * Same battle, same seed, same ink: nothing is rerolled. An interrupted rival fight can still be won.
+   */
+  resume(account: string, guard?: BattleGuard): Answer<StartAnswer> | null {
+    this.sweep();
+    const s = [...this.open.values()].find((x) => x.account === account);
+    if (!s) return null;
+    s.lastSeen = this.now();
+    const wild = curseById(s.wildId);
+    const m = typeMultiplier(s.state.player.emotion, s.state.wild.emotion);
+    const curfews = s.rival ? [] : [curfewText(this.world, "exorcise", s.ward), curfewText(this.world, "bind", s.ward)]
+      .filter((x): x is string => x !== null);
+    return ok({
+      battleId: s.id,
+      ward: s.ward,
+      wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: s.omen },
+      matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
+      view: this.view(s, guard),
+      ...(s.rival ? { rival: { stage: s.rival, name: RIVAL_NAME } } : {}),
+      lines: [s.rival
+        ? `${RIVAL_NAME} hasn't moved. The fight goes on where it stopped.`
+        : `${s.state.wild.name} is still here. The fight goes on where it stopped.`],
+      curfews,
     });
   }
 
