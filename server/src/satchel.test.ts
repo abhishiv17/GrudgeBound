@@ -92,6 +92,8 @@ test("exploration rewards are once per account, ordered, and survive restart", a
   await s.explore(ACCOUNT, "lamplighter");
   await s.equip(ACCOUNT, "worn-focus");
   assert.equal(s.equipment(ACCOUNT)?.attack, 1);
+  await assert.rejects(s.explore(ACCOUNT, "reed-bundle"), isStatus(403), "Tide stays closed until the rival is beaten at the ferry");
+  beatRivalToTide(s);
   await s.explore(ACCOUNT, "reed-bundle");
   const won = createBattle({ wild: "cinder-grin" }); won.outcome = "won";
   s.applyTurn(ACCOUNT, "starter", "before", { kind: "ward" }, won, "tide");
@@ -110,7 +112,7 @@ test("exploration rewards are once per account, ordered, and survive restart", a
   assert.equal(complete.supplies.gilded, 1);
   assert.equal(complete.exploration.gear.length, 3);
   assert.equal(complete.exploration.equipped, "worn-focus");
-  assert.ok(complete.exploration.journal.every(j => j.status === "complete"));
+  assert.ok(complete.exploration.journal.filter(j => j.id !== "rival").every(j => j.status === "complete"));
   assert.ok(complete.exploration.notes.some(n => n.id === "storehouse-record"));
   assert.deepEqual((await reloaded.view(OTHER)).exploration.flags, []);
   assert.deepEqual(reloaded.supplies(OTHER), STARTER_KIT);
@@ -151,13 +153,14 @@ test("legacy Satchel migration preserves supplies and starter-kit history", asyn
   assert.deepEqual((await old.view(ACCOUNT)).supplies, STARTER_KIT);
   assert.equal(old.profile(ACCOUNT).legacyStarter, true);
   assert.equal(old.profile(ACCOUNT).complete, false, "legacy users still choose name, look and pronouns");
-  await old.explore(ACCOUNT, "dock-tin");
-  assert.equal(JSON.parse(readFileSync(file, "utf8")).version, 3);
+  await old.explore(ACCOUNT, "alley-parcel");
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).version, 4);
   assert.equal(old.supplies(ACCOUNT).salve, 2);
 });
 
 test("Tide binding objective waits for mint settlement and failed mint never completes it", async () => {
   const s = new Satchels(createWorld(2), null, { starterKit: STARTER_KIT });
+  beatRivalToTide(s);
   await s.explore(ACCOUNT, "net-mender");
   const bound = createBattle({ wild: "cinder-grin" }); bound.outcome = "bound";
   s.applyTurn(ACCOUNT, "starter", "failed", { kind: "seal" }, bound, "tide");
@@ -228,6 +231,11 @@ function setup(file?: string) {
   const shop = new Shop(world, chain, GAME, () => true, (xs) => xs[0]!, satchels);
   const broker = world.merchants.find((m) => m.id === "broker")!;
   return { world, chain, tokens, balances, calls, satchels, shop, broker, options, failOn: (m: string) => { fail = m; } };
+}
+/** Wins the first two rival fights through the same path a finished battle session uses, opening the ferry to Tide. */
+function beatRivalToTide(s: Satchels, account = ACCOUNT) {
+  s.finishBattle(account, "starter", DEFAULT_PLAYER_CURSE, "won", 1, 1, 1);
+  s.finishBattle(account, "starter", DEFAULT_PLAYER_CURSE, "won", 4, 2, 1);
 }
 const isStatus = (status: number) => (e: unknown) => e instanceof AuthError && e.status === status;
 async function settled(chain: ChainWriter, id: string) {
@@ -543,4 +551,71 @@ test("the starter kit is granted once per account, on top of anything bought fir
     assert.deepEqual((await reloaded.view(ACCOUNT)).supplies, { blank: 4, gilded: 0, salve: 1 });
     assert.deepEqual((await reloaded.view(OTHER)).supplies, { blank: 3, gilded: 0, salve: 1 });
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("partners level up from won fights only, and a level is frozen into the battle and its replay proof", async () => {
+  const s = setup();
+  s.world.wards.lantern!.grudge = { rage: 0, sorrow: 1, dread: 0 };
+  const partner = await s.satchels.partner(ACCOUNT);
+  assert.equal(partner.level, 1);
+  const before = partner.maxHp;
+  // Fleeing and losing teach nothing; a won fight gives xpForWin(foe level).
+  for (const outcome of ["fled", "lost"] as const) assert.equal(s.satchels.finishBattle(ACCOUNT, partner.tokenId, partner.speciesId, outcome, 3, undefined, 1).gained, 0);
+  const won = s.satchels.finishBattle(ACCOUNT, partner.tokenId, partner.speciesId, "won", 4, undefined, 1);
+  assert.equal(won.gained, 22); assert.equal(won.level, 2); assert.equal(won.before, 1);
+  const grown = await s.satchels.partner(ACCOUNT, partner.tokenId);
+  assert.equal(grown.level, 2); assert.equal(grown.maxHp, before + 3, "Rage grows 3 ink a level");
+  assert.equal((await s.satchels.view(ACCOUNT)).levels[partner.tokenId]?.xp, 22);
+
+  const battles = new BattleSessions(s.world, { satchels: s.satchels, newSeed: () => 1234 });
+  const start = battles.start({ ward: "lantern", account: ACCOUNT, playerLevel: 10, wildLevel: 1 }, undefined, grown).body as StartAnswer;
+  assert.equal(start.view.player.level, 2, "the client cannot choose a level");
+  assert.ok(start.view.wild.level >= 1 && start.view.wild.level <= 2, "Lantern curses come at the partner's level or one below");
+  let end: TurnAnswer;
+  do { end = battles.turn({ battleId: start.battleId, action: { kind: "attack" } }, ACCOUNT).body as TurnAnswer; } while (!end.outcome);
+  assert.equal(end.initial?.playerLevel, 2);
+  const r = record(end), logHash = battleLogHash(r);
+  const check = checkBattle({ ...r, logHash, ward: "lantern", at: 0 });
+  assert.ok(check.hashMatches && check.outcomeMatches, "a levelled battle replays from its archived setup");
+  assert.notEqual(battleLogHash({ ...r, initial: { ...r.initial!, playerLevel: 1 } }), logHash);
+  if (end.outcome === "won") assert.ok(end.progress!.gained > 0 && end.lines.some((l) => l.includes("experience")));
+  else assert.equal(end.progress!.gained, 0);
+  // Old archives without levels still build the same level-1 fight.
+  const old = createBattle({ wild: "weepwick", playerCurse: DEFAULT_PLAYER_CURSE });
+  assert.deepEqual(createBattle({ wild: "weepwick", playerCurse: DEFAULT_PLAYER_CURSE, playerLevel: 1, wildLevel: 1 }), old);
+  assert.throws(() => createBattle({ wild: "weepwick", playerLevel: 11 }), /level/);
+});
+
+test("the rival: stages in order, no sealing or running, points and experience once, Tide opens after stage 2", async () => {
+  const s = setup();
+  const partner = await s.satchels.partner(ACCOUNT);
+  const battles = new BattleSessions(s.world, { satchels: s.satchels, newSeed: () => 77 });
+  const startRival = async (stage: number, ward = "lantern") => battles.start({ ward, account: ACCOUNT, rival: stage }, undefined, await s.satchels.partner(ACCOUNT, partner.tokenId));
+  assert.equal((await s.satchels.view(ACCOUNT)).rival.where, "pier");
+  assert.equal((await startRival(2)).status, 409, "stage 2 waits for the pier");
+  assert.equal(battles.start({ ward: "tide", account: ACCOUNT }, undefined, partner).status, 409, "no Tide curses before the ferry is earned");
+  assert.equal((await startRival(1, "tide")).status, 409, "a stage is fought where the rival stands");
+
+  const one = (await startRival(1)).body as StartAnswer;
+  assert.equal(one.rival?.stage, 1); assert.equal(one.wild.id, partner.speciesId, "a mirror match");
+  assert.equal(one.view.canUse.seal, false); assert.equal(one.view.canUse.flee, false);
+  assert.equal(battles.turn({ battleId: one.battleId, action: { kind: "seal" } }, ACCOUNT).status, 409);
+  assert.equal(battles.turn({ battleId: one.battleId, action: { kind: "flee" } }, ACCOUNT).status, 409);
+  let end: TurnAnswer;
+  do { end = battles.turn({ battleId: one.battleId, action: { kind: "attack" } }, ACCOUNT).body as TurnAnswer; } while (!end.outcome);
+  assert.ok(end.lines.some((l) => l.startsWith("Dace Marrow:")));
+  assert.equal(end.points, end.outcome === "won" ? 10 : 0);
+  if (end.outcome === "won") assert.equal(end.progress!.gained, 40);
+  assert.equal((await startRival(1)).status, 409, "stage 1 is fought once, won or lost");
+  assert.equal((await s.satchels.view(ACCOUNT)).rival.where, "ferry");
+
+  // Stage 2 must be won; a loss can be retried and gives nothing.
+  assert.equal(s.satchels.finishBattle(ACCOUNT, partner.tokenId, partner.speciesId, "lost", 4, 2, 0).gained, 0);
+  assert.ok(!s.satchels.tideOpen(ACCOUNT));
+  s.satchels.finishBattle(ACCOUNT, partner.tokenId, partner.speciesId, "won", 4, 2, 0.6);
+  assert.ok(s.satchels.tideOpen(ACCOUNT));
+  assert.equal((await startRival(2)).status, 409, "a won stage is not farmed");
+  const view = await s.satchels.view(ACCOUNT);
+  assert.equal(view.rival.where, "quay"); assert.equal(view.rival.ready, false, "stage 3 waits for the storehouse");
+  assert.equal((await startRival(3, "tide")).status, 409);
 });

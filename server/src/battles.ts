@@ -15,14 +15,14 @@
  */
 import { randomInt, randomUUID } from "node:crypto";
 import {
-  CURSES, DEFAULT_PLAYER_CURSE, WARDS,
+  CURSES, DEFAULT_PLAYER_CURSE, RIVAL_NAME, RIVAL_STAGE, WARDS, rivalPartner, wildLevel,
   actionLabel, canUse, createBattle, createRng, curseById, describeEvent, fleeChance, introLine,
   curfewText, recordCapture, resolveTurn, rollEncounter, sealChance, typeMultiplier,
   type BattleEvent, type BattleState, type Combatant, type Omen, type Outcome, type PlayerAction,
   type Rng, type WardId, type World,
 } from "@grudgebound/shared";
 import { isAccountId } from "./chain";
-import { Satchels, type Partner } from "./satchel";
+import { Satchels, type BattleProgress, type Partner } from "./satchel";
 
 /** A battle nobody has touched for this long is dropped (the player walked away). */
 export const BATTLE_IDLE_MS = 15 * 60_000;
@@ -37,6 +37,7 @@ export interface SideView {
   omen: Omen;
   hp: number;
   maxHp: number;
+  level: number;
 }
 
 /** Everything a battle screen needs to draw the current turn. */
@@ -61,6 +62,8 @@ export interface StartAnswer {
   lines: string[];
   /** Curfews (R2) in force here right now, as rule text: "exorcise is forbidden in Lantern Ward during the night". */
   curfews: string[];
+  /** A rival fight: its stage and who you face. No sealing and no running. */
+  rival?: { stage: number; name: string };
 }
 
 export interface TurnAnswer {
@@ -80,8 +83,14 @@ export interface TurnAnswer {
   curfew?: string;
   /** Only when the battle has ended: where it was fought. */
   ward?: WardId;
-  initial?: { playerHp: number; items: BattleState["items"]; equipment?: import("@grudgebound/shared").EquipmentSnapshot };
+  initial?: Initial;
+  /** Only when the battle has ended, for a signed-in player: experience and level now. */
+  progress?: BattleProgress;
+  /** Only when the battle has ended: the partner's talisman id. */
+  partner?: string;
 }
+type Initial = { playerHp: number; items: BattleState["items"]; equipment?: import("@grudgebound/shared").EquipmentSnapshot;
+  playerLevel?: number; wildLevel?: number; rival?: number };
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
 
@@ -100,6 +109,9 @@ interface Session {
   lastSeen: number;
   partnerTokenId?: string;
   initial?: TurnAnswer["initial"];
+  playerLevel: number;
+  wildLevel: number;
+  rival?: number;
 }
 
 export interface BattleContext { account?: string; ward: WardId; omen: Omen }
@@ -125,8 +137,8 @@ export interface BattleSessionOptions {
   satchels?: Satchels;
 }
 
-function side(c: Combatant): SideView {
-  return { speciesId: c.speciesId, name: c.name, emotion: c.emotion, omen: c.omen, hp: c.hp, maxHp: c.maxHp };
+function side(c: Combatant, level = 1): SideView {
+  return { speciesId: c.speciesId, name: c.name, emotion: c.emotion, omen: c.omen, hp: c.hp, maxHp: c.maxHp, level };
 }
 
 export function battleView(s: BattleState): BattleView {
@@ -193,6 +205,7 @@ export class BattleSessions {
 
   private view(s: Session, guard?: BattleGuard): BattleView {
     const view = guardedView(s.state, s, guard);
+    view.player.level = s.playerLevel; view.wild.level = s.wildLevel;
     if (s.account && this.satchels) {
       const supplies = this.satchels.supplies(s.account);
       view.items = { salve: supplies.salve, gilded: supplies.gilded, blank: supplies.blank };
@@ -212,9 +225,20 @@ export class BattleSessions {
     const by = typeof b.by === "string" && b.by.trim() ? b.by.trim().slice(0, 40) : "A newcomer";
     if (b.account !== undefined && !isAccountId(b.account)) return fail(400, "account must be a NEAR account id");
     const account = b.account as string | undefined;
+    const rival = b.rival === undefined || b.rival === null ? undefined : b.rival;
+    if (rival !== undefined && (!account || !this.satchels || !partner)) return fail(400, "A rival fight needs your signed-in Satchel.");
+    if (rival !== undefined) {
+      const refusal = this.satchels!.rivalRefusal(account!, rival);
+      if (refusal) return fail(409, refusal);
+    }
+    const stage = rival === undefined ? undefined : RIVAL_STAGE[rival as number]!;
+    if (stage && ward !== stage.ward) return fail(409, `${RIVAL_NAME} is waiting in ${stage.ward === "tide" ? "Tide" : "Lantern"} Ward.`);
+    if (!stage && ward === "tide" && account && this.satchels && !this.satchels.tideOpen(account))
+      return fail(409, `The ferryman won't take you to Tide until you beat ${RIVAL_NAME} at the southern pier.`);
 
-    const noExorcise = curfewText(this.world, "exorcise", ward as WardId);
-    const noBind = curfewText(this.world, "bind", ward as WardId);
+    // Rival fights are a test between two people, not the Rite's business: curfews do not apply to them.
+    const noExorcise = stage ? null : curfewText(this.world, "exorcise", ward as WardId);
+    const noBind = stage ? null : curfewText(this.world, "bind", ward as WardId);
     if (noExorcise && noBind) return fail(409, `Curfew: "${noExorcise}" and "${noBind}". Come back when it lifts.`);
 
     this.sweep();
@@ -227,17 +251,24 @@ export class BattleSessions {
 
     const seed = this.newSeed();
     // The encounter roll uses its own stream so the battle itself replays from createRng(seed) alone.
-    const wild = rollEncounter(this.world.wards[ward as WardId].grudge, createRng((seed ^ 0x9e3779b9) >>> 0));
+    const encounterRng = createRng((seed ^ 0x9e3779b9) >>> 0);
+    const wild = stage ? curseById(rivalPartner(playerCurse)) : rollEncounter(this.world.wards[ward as WardId].grudge, encounterRng);
     const refusal = guard?.({ account, ward: ward as WardId, omen: wild.omen });
     if (refusal) return fail(409, refusal);
     const supplies = account && this.satchels ? this.satchels.supplies(account) : undefined;
     const equipment = account ? this.satchels?.equipment(account) : undefined;
-    const initial = supplies && partner ? { playerHp: partner.hp, items: { gilded: supplies.gilded, salve: supplies.salve }, ...(equipment ? { equipment } : {}) } : undefined;
+    // Levels only for signed-in partners; guest and old-client battles stay at level 1 as before.
+    const playerLevel = account && this.satchels && partner ? partner.level : 1;
+    const foeLevel = stage ? stage.level : account && this.satchels && partner ? wildLevel(ward as WardId, playerLevel, encounterRng.next()) : 1;
+    const initial: Initial | undefined = supplies && partner ? {
+      playerHp: partner.hp, items: { gilded: supplies.gilded, salve: supplies.salve }, ...(equipment ? { equipment } : {}),
+      playerLevel, wildLevel: foeLevel, ...(stage ? { rival: stage.stage } : {}),
+    } : undefined;
     const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse, ...initial });
     const s: Session = {
       id: this.newId(), ward: ward as WardId, by, account, seed, wildId: wild.id, omen: wild.omen, playerCurse,
       rng: createRng(seed), state, actions: [], lastSeen: this.now(),
-      partnerTokenId: partner?.tokenId, initial,
+      partnerTokenId: partner?.tokenId, initial, playerLevel, wildLevel: foeLevel, ...(stage ? { rival: stage.stage } : {}),
     };
     this.open.set(s.id, s);
 
@@ -248,8 +279,9 @@ export class BattleSessions {
       wild: { id: wild.id, name: wild.name, emotion: wild.emotion, omen: wild.omen },
       matchup: m > 1 ? "advantage" : m < 1 ? "disadvantage" : "even",
       view: this.view(s, guard),
+      ...(stage ? { rival: { stage: stage.stage, name: RIVAL_NAME } } : {}),
       lines: [
-        introLine(state),
+        stage ? `${RIVAL_NAME} sends out ${state.wild.name} (level ${foeLevel}). No sealing a rival's partner, and no running.` : introLine(state),
         ...(noExorcise ? [`Kessa: "Curfew: ${noExorcise}. Seal it, or the Rite pays nothing."`] : []),
         ...(noBind ? [`Kessa: "Curfew: ${noBind}. Drive it off, don't seal it."`] : []),
         ...[...new Set([guard?.(s, { kind: "attack" }), guard?.(s, { kind: "item", item: "salve" })])]
@@ -293,12 +325,13 @@ export class BattleSessions {
     if (outcome) {
       this.open.delete(s.id);
       answer.outcome = outcome;
-      const curfew = outcome === "bound" || outcome === "won" ? curfewText(this.world, outcome === "bound" ? "bind" : "exorcise", s.ward) : null;
+      const curfew = !s.rival && (outcome === "bound" || outcome === "won") ? curfewText(this.world, outcome === "bound" ? "bind" : "exorcise", s.ward) : null;
       if (curfew) {
         answer.curfew = curfew;
         answer.lines.push(`Kessa: "That broke the curfew (${curfew}). The Rite pays nothing for it."`);
       }
-      answer.points = outcome === "bound" || outcome === "won"
+      answer.points = s.rival ? (outcome === "won" ? RIVAL_STAGE[s.rival]!.points : 0)
+        : outcome === "bound" || outcome === "won"
         ? recordCapture(this.world, {
             ward: s.ward, speciesId: s.wildId, omen: s.omen, verb: outcome === "bound" ? "bind" : "exorcise", by: s.by,
           })
@@ -308,6 +341,13 @@ export class BattleSessions {
       answer.ward = s.ward;
       if (s.initial) answer.initial = s.initial;
       if (s.account) answer.account = s.account;
+      if (s.account && s.partnerTokenId && this.satchels) {
+        const p = this.satchels.finishBattle(s.account, s.partnerTokenId, s.playerCurse, outcome, s.wildLevel, s.rival, t.state.player.hp / t.state.player.maxHp);
+        answer.progress = p; answer.partner = s.partnerTokenId;
+        if (p.rivalLine) answer.lines.push(`${RIVAL_NAME}: "${p.rivalLine}"`);
+        if (p.gained) answer.lines.push(`${t.state.player.name} gained ${p.gained} experience.`);
+        if (p.level > p.before) answer.lines.push(`${t.state.player.name} grew to level ${p.level}!`);
+      }
     }
     return ok(answer);
   }

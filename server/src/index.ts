@@ -331,6 +331,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (record) {
         try { archive.add(record, t.ward ?? "lantern"); } catch (e) { console.warn(`battle archive: ${(e as Error).message}`); }
       }
+      // Wins of a minted partner go on the talisman itself (items.record_win). RECORD_WINS=off turns this off.
+      if (chain && process.env.RECORD_WINS !== "off" && t.partner?.startsWith("tal-") && (t.outcome === "won" || t.outcome === "bound"))
+        void chain.recordWin(t.partner);
       return send(res, 200, await withChain(t, record));
     });
   }

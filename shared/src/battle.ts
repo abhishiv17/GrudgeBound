@@ -10,6 +10,7 @@ import { bindChance, curseById, cursesWhere, type CurseSpecies, type Omen } from
 import { typeMultiplier, type Emotion } from "./emotions";
 import { rollSpawnEmotion, rollSpawnOmen, totalGrudge, type GrudgeMix } from "./grudge";
 import { createRng, type Rng } from "./rng";
+import { growth, RIVAL_STAGE, validLevel } from "./levels";
 
 // ------------------------------------------------------------------ tuning constants
 
@@ -83,6 +84,8 @@ export interface BattleState {
   fleeAttempts: number;
   wildWardedLastTurn: boolean;
   outcome: Outcome | null;
+  /** A rival fight (stage 1-3): no sealing their partner and no running. Absent for wild curses. */
+  rival?: number;
 }
 
 export type BattleEvent =
@@ -132,12 +135,26 @@ export interface BattleSetup {
   playerHp?: number;
   /** Frozen server-selected bonuses; old archives omit this field. */
   equipment?: import("./equipment").EquipmentSnapshot;
+  /** Frozen partner and foe levels (1-10); old archives omit them and fight at level 1. */
+  playerLevel?: number;
+  wildLevel?: number;
+  /** Rival stage 1-3; the foe is then the rival's partner. */
+  rival?: number;
+}
+
+/** A combatant's stats at a level, from its species' level-1 stats. */
+export function levelUp(c: Combatant, level: number): Combatant {
+  const g = growth(c.emotion, level);
+  return { ...c, maxHp: c.maxHp + g.hp, hp: c.hp + g.hp, attack: c.attack + g.attack, guard: c.guard + g.guard, speed: c.speed + g.speed };
 }
 
 export function createBattle(setup: BattleSetup): BattleState {
   const wild = curseById(setup.wild);
   const player = curseById(setup.playerCurse ?? defaultPlayerCurse(setup.wild));
-  const partner = makeCombatant(player);
+  for (const level of [setup.playerLevel, setup.wildLevel]) if (level !== undefined && !validLevel(level)) throw new Error("Invalid level");
+  if (setup.rival !== undefined && !RIVAL_STAGE[setup.rival]) throw new Error("Invalid rival stage");
+  let partner = makeCombatant(player);
+  if (setup.playerLevel) partner = levelUp(partner, setup.playerLevel);
   if (setup.equipment) {
     const e = setup.equipment;
     if (e.version !== 1 || !Number.isSafeInteger(e.attack) || !Number.isSafeInteger(e.guard)
@@ -145,14 +162,17 @@ export function createBattle(setup: BattleSetup): BattleState {
     partner.attack += e.attack; partner.guard += e.guard;
   }
   if (setup.playerHp !== undefined) partner.hp = Math.max(0, Math.min(partner.maxHp, setup.playerHp));
+  let foe = makeCombatant(wild, setup.omen ?? wild.omen);
+  if (setup.wildLevel) foe = levelUp(foe, setup.wildLevel);
   return {
     player: partner,
-    wild: makeCombatant(wild, setup.omen ?? wild.omen),
+    wild: foe,
     items: { ...(setup.items ?? STARTING_ITEMS) },
     turn: 0,
     fleeAttempts: 0,
     wildWardedLastTurn: false,
     outcome: null,
+    ...(setup.rival ? { rival: setup.rival } : {}),
   };
 }
 
@@ -195,6 +215,7 @@ function cloneState(s: BattleState): BattleState {
 /** Is the action allowed right now? (The UI greys out the rest.) */
 export function canUse(state: BattleState, action: PlayerAction): boolean {
   if (state.outcome) return false;
+  if (state.rival && (action.kind === "seal" || action.kind === "flee")) return false;
   if (action.kind === "item") return state.items[action.item] > 0;
   if (action.kind === "seal" && action.gilded) return state.items.gilded > 0;
   return true;

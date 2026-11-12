@@ -4,14 +4,16 @@ import { fileChanged } from "./remoteFiles";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
-  DEFAULT_PLAYER_CURSE, SALVE_HEAL_FRACTION, TICKS_PER_DAY, WARD_INFO,
-  curseById, log, makeCombatant, equipmentSnapshot, type BattleState, type PlayerAction, type World,
+  DEFAULT_PLAYER_CURSE, RIVAL_STAGE, SALVE_HEAL_FRACTION, TICKS_PER_DAY, WARD_INFO,
+  curseById, growth, levelForXp, log, makeCombatant, nextLevelXp, equipmentSnapshot, xpForWin,
+  type BattleState, type Outcome, type PlayerAction, type World,
 } from "@grudgebound/shared";
 import { AuthError } from "./auth";
 import type { ChainReceipt, ChainWriter } from "./chain";
 import { displayName } from "./rules";
 import { explorationView, interact, newExploration, validExploration, type Exploration } from "./exploration";
 import { newProfile, validProfile, profileChoice, profileView, type ArrivalProfile } from "./profile";
+import { rivalEndLine, rivalRefusal, rivalView, tideOpen } from "./rival";
 
 export const CARRY_LIMIT = 5;
 /** Existing built-in partner, not a minted or tradable asset. Scoped to the signed-in account's store. */
@@ -20,21 +22,28 @@ export type Supply = "blank" | "gilded" | "salve";
 /** Kessa's welcome (owner's choice, 7 Nov): enough for a first bind without Ember. Granted once, server-side only. */
 export const STARTER_KIT: Readonly<Record<Supply, number>> = { blank: 3, gilded: 0, salve: 1 };
 export interface Ink { hp: number; maxHp: number }
-export interface Partner extends Ink { tokenId: string; speciesId: string }
+export interface Partner extends Ink { tokenId: string; speciesId: string; level: number }
+export interface LevelView { level: number; xp: number; next: number | null }
+/** What a finished battle taught: shown on the battle screen and stored before the answer is sent. */
+export interface BattleProgress { gained: number; level: number; before: number; next: number | null; xp: number; rivalLine?: string }
 export interface SatchelView {
   carried: string[]; case: string[]; supplies: Record<Supply, number>; keepsakes: string[];
   ink: Record<string, Ink>; ember: number | null; points: number | null;
   exploration: ReturnType<typeof explorationView>;
   profile: ReturnType<typeof profileView>;
+  levels: Record<string, LevelView>;
+  rival: ReturnType<typeof rivalView>;
 }
 interface Pocket {
   initialized: boolean; carried: string[]; supplies: Record<Supply, number>; keepsakes: string[];
   ink: Record<string, Ink>; personalTick: number; pendingBindings: Record<string, Supply>;
   exploration: Exploration; pendingTideBindings: string[];
   profile: ArrivalProfile;
+  /** Experience per talisman id (the virtual starter is "starter"). */
+  xp: Record<string, number>;
 }
 const empty = (): Pocket => ({ initialized: false, carried: [], supplies: { blank: 0, gilded: 0, salve: 0 },
-  keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {}, exploration: newExploration(), pendingTideBindings: [], profile: newProfile() });
+  keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {}, exploration: newExploration(), pendingTideBindings: [], profile: newProfile(), xp: {} });
 
 export function supplyForItem(itemId: string): Supply | null {
   // Keep the existing merchant item id as a purchase alias for plain blanks.
@@ -55,14 +64,15 @@ export class Satchels {
     private readonly options: { file?: string; gameAccount?: string; canSignFor?: (account: string) => boolean; starterKit?: Readonly<Record<Supply, number>>; mintStarters?: boolean } = {}) {
     if (options.file && existsSync(options.file)) {
       const saved = JSON.parse(readFileSync(options.file, "utf8")) as { version: number; players: [string, Pocket][] };
-      if (![1, 2, 3].includes(saved.version) || !Array.isArray(saved.players)) throw new Error("Unsupported Satchel store");
+      if (![1, 2, 3, 4].includes(saved.version) || !Array.isArray(saved.players)) throw new Error("Unsupported Satchel store");
       for (const [account, p] of saved.players) {
         if (saved.version === 1) { p.exploration = newExploration(); p.pendingTideBindings = []; }
         if (saved.version < 3) p.profile = newProfile(p.initialized);
+        if (saved.version < 4) p.xp = {};
         if (typeof account !== "string" || !Array.isArray(p.carried) || p.carried.length > CARRY_LIMIT ||
             ![p.supplies.blank, p.supplies.gilded, p.supplies.salve, p.personalTick].every((n) => Number.isSafeInteger(n) && n >= 0) ||
             !p.ink || !p.pendingBindings || !Array.isArray(p.keepsakes) || !validExploration(p.exploration)
-            || !validProfile(p.profile) || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
+            || !validProfile(p.profile) || !p.xp || typeof p.xp !== "object" || !Object.values(p.xp).every((n) => Number.isSafeInteger(n) && n >= 0) || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
         this.pockets.set(account, p);
       }
     }
@@ -75,7 +85,7 @@ export class Satchels {
     if (this.options.file) {
       mkdirSync(dirname(this.options.file), { recursive: true });
       const tmp = `${this.options.file}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ version: 3, players: [...next] }), { mode: 0o600 });
+      writeFileSync(tmp, JSON.stringify({ version: 4, players: [...next] }), { mode: 0o600 });
       renameSync(tmp, this.options.file);
       fileChanged(this.options.file);
     }
@@ -109,11 +119,46 @@ export class Satchels {
         p.carried = p.carried.map(id => id === STARTER_TOKEN_ID ? minted.tokenId : id);
         if (p.ink[STARTER_TOKEN_ID]) p.ink[minted.tokenId] = p.ink[STARTER_TOKEN_ID]!;
         delete p.ink[STARTER_TOKEN_ID];
+        if (p.xp[STARTER_TOKEN_ID]) p.xp[minted.tokenId] = p.xp[STARTER_TOKEN_ID]!;
+        delete p.xp[STARTER_TOKEN_ID];
       });
     }
     return { ...await this.view(account), message: `Welcome to Hollowmere, ${chosen.name}. Your partner is ready.` };
   }
   equipment(account: string) { return equipmentSnapshot(this.read(account).exploration.equipped); }
+  level(account: string, tokenId: string): number { return levelForXp(this.read(account).xp[tokenId] ?? 0); }
+  private arrived(p: Pocket) { return p.profile.complete || p.profile.legacyStarter; }
+  /** Why this rival stage cannot start now, or null. */
+  rivalRefusal(account: string, stage: unknown): string | null {
+    const p = this.read(account); return rivalRefusal(p.exploration, stage, this.arrived(p));
+  }
+  tideOpen(account: string): boolean { return tideOpen(this.read(account).exploration); }
+  /**
+   * A finished battle, applied once by the battle session that ended it: experience for a won or bound fight (none for
+   * fleeing or losing), the rival's result, and the ink a level-up adds. Returns what to show on the battle screen.
+   */
+  finishBattle(account: string, tokenId: string, speciesId: string, outcome: Outcome, foeLevel: number, rival: number | undefined, hpLeftFraction: number): BattleProgress {
+    let progress: BattleProgress | undefined;
+    this.update(account, (p) => {
+      const xp = p.xp[tokenId] ?? 0; const before = levelForXp(xp);
+      const gained = outcome === "won" || (outcome === "bound" && !rival) ? xpForWin(foeLevel, rival) : 0;
+      const total = xp + gained; const level = levelForXp(total);
+      if (gained) p.xp[tokenId] = total;
+      if (level > before && p.ink[tokenId]) {
+        const emotion = curseById(speciesId).emotion;
+        p.ink[tokenId]!.hp += growth(emotion, level).hp - growth(emotion, before).hp;
+      }
+      let rivalLine: string | undefined;
+      if (rival && (outcome === "won" || outcome === "lost")) {
+        const flag = outcome === "won" ? `rival-${rival}-won` : rival === 1 ? "rival-1-lost" : "";
+        if (flag && !p.exploration.flags.includes(flag)) p.exploration.flags.push(flag);
+        rivalLine = rivalEndLine(rival, outcome, hpLeftFraction, p.profile.name);
+      }
+      progress = { gained, level, before, next: nextLevelXp(level), xp: total, ...(rivalLine ? { rivalLine } : {}) };
+    });
+    return progress!;
+  }
+  rivalPoints(stage: number) { return RIVAL_STAGE[stage]?.points ?? 0; }
   async explore(account: string, id: unknown) {
     let message = "";
     this.update(account, p => { message = interact(p, id); });
@@ -196,7 +241,8 @@ export class Satchels {
       });
   }
   private inkFor(account: string, token: { tokenId: string; speciesId: string }): Ink {
-    const maxHp = makeCombatant(curseById(token.speciesId)).maxHp;
+    const species = curseById(token.speciesId);
+    const maxHp = makeCombatant(species).maxHp + growth(species.emotion, this.level(account, token.tokenId)).hp;
     return { hp: Math.max(0, Math.min(maxHp, this.read(account).ink[token.tokenId]?.hp ?? maxHp)), maxHp };
   }
   async view(account: string): Promise<SatchelView> {
@@ -205,6 +251,8 @@ export class Satchels {
     return { carried: p.carried, case: owned.filter((t) => !p.carried.includes(t.tokenId)).map((t) => t.tokenId),
       supplies: p.supplies, keepsakes: p.keepsakes, exploration: explorationView(p.exploration, p.keepsakes),
       profile: profileView(p.profile),
+      levels: Object.fromEntries(owned.map((t) => { const xp = p.xp[t.tokenId] ?? 0; const level = levelForXp(xp); return [t.tokenId, { level, xp, next: nextLevelXp(level) }]; })),
+      rival: rivalView(p.exploration, p.profile.starter, p.profile.name, this.arrived(p)),
       ink: Object.fromEntries(owned.map((t) => [t.tokenId, this.inkFor(account, t)])), ember, points };
   }
   async carry(account: string, tokenId: unknown, carry: unknown): Promise<SatchelView> {
@@ -231,7 +279,7 @@ export class Satchels {
     const ink = this.inkFor(account, token);
     if (!ink.hp) throw new AuthError(409, "Visit the Mender or rest");
     if (!profile.complete && !profile.legacyStarter) this.update(account, p => { p.profile.legacyStarter = true; });
-    return { ...token, ...ink };
+    return { ...token, ...ink, level: this.level(account, token.tokenId) };
   }
 
   isRestoring(account: string) { return this.healing.has(account); }

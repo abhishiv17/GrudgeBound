@@ -3,15 +3,17 @@
  */
 import { GEAR, equipmentSnapshot } from "@grudgebound/shared";
 import { AuthError } from "./auth";
+import { RIVAL_FLAGS, tideOpen } from "./rival";
 
 export interface Exploration { flags: string[]; gear: string[]; equipped: string; tracked: string }
-export const newExploration = (): Exploration => ({ flags: [], gear: [], equipped: "", tracked: "lamp" });
+export const newExploration = (): Exploration => ({ flags: [], gear: [], equipped: "", tracked: "rival" });
+const TASKS = ["rival", "lamp", "net", "storehouse"];
 const FLAGS = ["alley-parcel", "lamp-kit", "delivery-slip", "reed-bundle", "dock-tin", "door-seen",
-  "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "net-done", "clerk-done", "storehouse-open", "storehouse-chest"];
+  "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "net-done", "clerk-done", "storehouse-open", "storehouse-chest", ...RIVAL_FLAGS];
 export function validExploration(e: Exploration): boolean {
   return !!e && Array.isArray(e.flags) && e.flags.every(f => FLAGS.includes(f)) && new Set(e.flags).size === e.flags.length
     && Array.isArray(e.gear) && e.gear.every(id => !!equipmentSnapshot(id)) && new Set(e.gear).size === e.gear.length
-    && (e.equipped === "" || e.gear.includes(e.equipped)) && ["lamp", "net", "storehouse"].includes(e.tracked);
+    && (e.equipped === "" || e.gear.includes(e.equipped)) && TASKS.includes(e.tracked);
 }
 interface RewardPocket { exploration: Exploration; keepsakes: string[]; supplies: { blank: number; gilded: number; salve: number } }
 const NOTES = [
@@ -23,7 +25,15 @@ const NOTES = [
 ];
 export function explorationView(e: Exploration, keepsakes: string[]) {
   const has = (flag: string) => e.flags.includes(flag);
+  const rivalStatus = has("rival-3-won") ? "complete" : "active";
   const journal = [
+    { id: "rival", title: "A rival on the pier", status: rivalStatus,
+      objective: has("rival-3-won") ? "You beat Dace Marrow three times. The Rite Hall holds the original record."
+        : !has("rival-1-won") && !has("rival-1-lost") ? "Face Dace Marrow on the harbour pier."
+        : !has("rival-2-won") ? "Train your partner to level 4, then beat Dace at Lantern's southern pier to earn the ferry."
+        : !has("storehouse-chest") ? "Open the sealed storehouse in Tide; Dace is waiting on the quay."
+        : "Beat Dace on Tide's quay. A level 7 partner and a good charm will help.",
+      hint: "Partners grow from won and bound battles. Fleeing or losing teaches nothing. Rest or visit the Mender before a rival fight." },
     { id: "lamp", title: "A light returned", status: has("lamp-done") ? "complete" : has("lamp-accepted") || has("lamp-kit") ? "active" : "available",
       objective: has("lamp-done") ? "The Lamplighter's kit is back. Your Worn Focus is in Gear." : has("lamp-kit") ? "Return the kit to the Lamplighter in Lantern Ward." : "Ask the Lamplighter about the missing kit.",
       hint: "Inspect the lamp kit beside the western service lane, away from the main stalls." },
@@ -50,6 +60,8 @@ export function interact(p: RewardPocket, id: unknown): string {
     if (!Number.isSafeInteger(p.supplies[key] + count)) throw new AuthError(409, "Your supplies are full.");
     p.supplies[key] += count;
   };
+  if (["reed-bundle", "dock-tin", "net-mender", "storehouse-door", "storehouse-chest"].includes(id) && !tideOpen(e))
+    throw new AuthError(403, "The ferryman won't take you to Tide until you beat Dace Marrow at the southern pier.");
   switch (id) {
     case "alley-parcel":
       if (has(id)) return "The parcel is empty. You already packed its supplies.";
@@ -94,7 +106,7 @@ export function interact(p: RewardPocket, id: unknown): string {
       mark(id); gear("etched-focus"); supplies("gilded", 1); note("storehouse-record");
       return "Found: Etched Focus (+2 Attack), 1 gilded talisman, and a copied ledger leaf. Its stamp matches your debt notice. Read it in Keepsakes.";
     default:
-      if (id.startsWith("track:") && ["lamp", "net", "storehouse"].includes(id.slice(6))) {
+      if (id.startsWith("track:") && TASKS.includes(id.slice(6))) {
         e.tracked = id.slice(6); return "Journal task tracked.";
       }
       throw new AuthError(400, "Unknown discovery or request.");

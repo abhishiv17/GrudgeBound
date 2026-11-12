@@ -75,7 +75,8 @@ export interface BattleRecord {
   actions: PlayerAction[];
   wild: { speciesId: string; emotion: Combatant["emotion"]; omen: Omen };
   playerCurse: string;
-  initial?: { playerHp: number; items: { salve: number; gilded: number }; equipment?: import("@grudgebound/shared").EquipmentSnapshot };
+  initial?: { playerHp: number; items: { salve: number; gilded: number }; equipment?: import("@grudgebound/shared").EquipmentSnapshot;
+    playerLevel?: number; wildLevel?: number; rival?: number };
 }
 
 export interface ChainTx {
@@ -592,6 +593,17 @@ export class ChainWriter {
       minted = { tokenId: result, url: explorerTxUrl(this.cfg.network, hash) };
     });
     return minted!;
+  }
+
+  /**
+   * A minted partner won a fight: the items contract counts it in the talisman's own metadata (`wins`), so the
+   * explorer shows a partner's record next to its owner. Fire-and-forget on the write queue; a failure only logs.
+   */
+  recordWin(tokenId: string): Promise<void> {
+    return this.enqueue(async () => {
+      try { await this.call(this.cfg.itemsContract, "record_win", { token_id: tokenId }); }
+      catch (e) { console.warn(`[chain] record_win ${tokenId}: ${(e as Error).message}`); }
+    });
   }
 
   /** An AI agent's account: function-call keys only, created on the game master's write queue. Testnet only. */
