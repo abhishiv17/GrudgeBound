@@ -21,15 +21,17 @@ Built at [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), track
 ## The problem
 
 Game economies are usually patched by developers: prices, rules and drop rates change when the studio decides.
-Grudgebound tries the opposite: the economy runs by itself, AI merchants and rivals trade in it with their own
-NEAR accounts, and players change the rules through a contract nobody (including us) can quietly override.
-Players never see a wallet, a seed phrase or a gas prompt.
+Grudgebound tries the opposite: the economy runs by itself, five AI agents trade in it with their own
+NEAR accounts, and players change the rules through the `rite` contract, where every rule, its cost, its author
+and its repeal is recorded for anyone to read. (What the game server still decides is listed under
+[Honest limits](#honest-limits).) Players never see a wallet, a seed phrase or a gas prompt.
 
 ## Play it (Windows)
 
 Needs Windows 10/11 64-bit and a DirectX 12 GPU with 4 GB of video memory.
 
-1. Download `Grudgebound-Win64-*.zip` from the Release (link above), unzip, run `GrudgeBound.exe`.
+1. Download `Grudgebound-Win64-*.zip` from the Release (link above), unzip, run `GrudgeBound.exe`. The exe is not
+   code-signed, so Windows may show "Windows protected your PC": click **More info**, then **Run anyway**.
 2. Click **Enter Lantern Ward** on the title screen: your browser opens the sign-in page. Enter your email, type the code you
    receive, return to the game. A NEAR testnet account is created for you in the background.
 
@@ -50,25 +52,25 @@ Needs Windows 10/11 64-bit and a DirectX 12 GPU with 4 GB of video memory.
 | **V** at the Rite Hall's shrine | Swear a vow and stake points on it. The `rite` contract returns the stake with a bonus if you keep it, or burns it if you break it. |
 | Take the ferry at the southern pier | Tide Ward: docks, its own curses and townsfolk. Walk up to anyone and press **E** to talk. |
 | **O** (Observatory) | Grudge, prices and rules over time, including rules added by AI agents, plus a fast-forward preview of the next seven days. |
-| Observatory > **Agents** **(next build)** | The five AI agents: each one's own NEAR account, its points and Ember as the contracts report them, and its latest actions with a button that opens the transaction. |
+| Observatory > **Agents** **(next build)** | The five AI agents: each one's own NEAR account, its points and Ember as the contracts report them, and its latest actions with a button that opens the transaction. An agent's Ember usually reads 0: the game mints exactly what a purchase needs and the agent pays it in the same step. |
 | **The Ninth Bell** (2-4 players, LAN) | A co-op story level: shared clues, two players holding the seal anchors together, a boss fight with revives, and a party vote between two endings. Not connected to the economy. How to host and join: [`docs/UNREAL_SETUP.md`](docs/UNREAL_SETUP.md), section 7. |
 
 Run against your own server instead of the hosted one: start the game with `-GbServer=http://127.0.0.1:8787`.
 
 ## Check it without Windows or Unreal
 
-Requirements: Node 20+ and npm. Clone, then `npm install` in the repository folder. No `.env` file, key or
+Requirements: Node 20.9+ and npm (checked on Node 25). Clone, then `npm install` in the repository folder. No `.env` file, key or
 NEAR account is needed for any row in this table.
 
 | Do this | You'll see |
 |---|---|
-| `npm test` | 168 tests pass: type triangle, Grudge, pricing, rules, the Arbiter, engine determinism, battles, replay, sign-in, vows, Satchel, rival, levels, agents' accounts. |
+| `npm test` | 169 tests pass: type triangle, Grudge, pricing, rules, the Arbiter, engine determinism, battles, replay, sign-in, vows, Satchel, rival, levels, agents' accounts. |
 | `npm run typecheck` | No errors in any workspace. |
 | `npm run sim` | A 7-day fast-forward of the town, printed in a couple of seconds: Grudge per Ward, merchant Ember and prices, points, and every rule added by AI rivals. Same seed, same result (`npm run sim -- --seed 7 --events` for another town). |
 | `npm run server`, then open `http://localhost:8787/state` | The live world as JSON, one in-game hour per real minute. Without NEAR keys the server says the chain is off and runs the same game off-chain. |
 | `http://localhost:8787/shop?merchant=broker` | The Broker's prices, each with its reason. With a NEAR AI key in `.env`, the merchant agent writes the reason; the number always comes from the formula in `shared/src/pricing.ts`. |
 | `http://localhost:8787/observatory?mode=preview` | The seven-day preview the Observatory panel draws. |
-| `npm run agent:demo` | Each AI rival chooses its next move from the legal options; the Broker explains a price. Without a NEAR AI key the scripted fallback chooses. |
+| `npm run agent:demo` | With a NEAR AI key, the LLM chooses each AI agent's next move from the legal options, and the Broker explains a price. Without a key the scripted policy chooses. |
 | `cd contracts && cargo test` | 25 contract unit tests pass: 15 for `items`, 10 for `rite` (needs Rust; toolchain notes: `contracts/README.md`). |
 
 Full local setup (server, sign-in page, Unreal editor): [`docs/UNREAL_SETUP.md`](docs/UNREAL_SETUP.md) and
@@ -78,12 +80,12 @@ Full local setup (server, sign-in page, Unreal editor): [`docs/UNREAL_SETUP.md`]
 
 | NEAR feature | What it does here | Check it |
 |---|---|---|
-| Our own contract `items` (NEP-245 multi-token) | One contract holds the Ember coin and every talisman. Each talisman keeps a purse of Ember it has earned and its win record; transfers move the purse with it. | `talisman`, `talismans_of`, `mt_balance_of` on `items.grudgebound.testnet` |
+| Our own contract `items` (multi-token, shaped on NEP-245) | One contract holds the Ember coin and every talisman. Each talisman keeps a purse of Ember it has earned and its win record; transfers move the purse with it. Partial NEP-245: balances and transfers between accounts work; `mt_transfer_call`, batch transfers and approvals are not implemented. | `talisman`, `talismans_of`, `mt_balance_of` on `items.grudgebound.testnet` |
 | Our own contract `rite` | Points, rules (cost, Kessa's decision, repeal) and vows (stakes kept or burned). A rule in force can only be repealed through the contract. | `get_active_rules`, `get_points`, `get_vows` on `rite.grudgebound.testnet` |
 | Named sub-accounts for players | Email sign-in creates a `<name>.grudgebound.testnet` account per player. | the account your **L** key opens |
 | Meta transactions (NEP-366) + relayer | Players and agents never pay gas or approve a popup; the relayer sends their signed actions and pays. | `relayer.grudgebound.testnet` transactions |
 | Sub-accounts + function-call keys for AI agents | Each of the five agents has its own account holding two function-call keys and no full-access key: one may only call `pay_minter` on `items`, the other only `propose_rule` on `rite`. The server also caps each agent's Ember and actions per in-game day. | `agent-fen`, `agent-vane`, `agent-silk`, `agent-rook-ash`, `agent-pell` under `grudgebound.testnet` |
-| NEAR AI Cloud | Agents' decisions and the merchants' explanations. The AI only chooses among legal, formula-priced options; the guardrail rejects anything else. | `agents/src` |
+| NEAR AI Cloud | On the hosted server: the merchants' one-line price explanations (the price itself always comes from the formula). The LLM agent runtime (`npm run agent:demo`) picks the agents' moves among legal, formula-priced options, and the guardrail rejects anything else; the hosted world runs the same five agents on the scripted policy. | `agents/src`, `server/src/index.ts` |
 
 Battles are resolved on the game server for speed; each result is written with its seed and a log hash so
 anyone can replay it (`npm run replay`, on a server that holds the battle archive). Ownership, points, rules
@@ -108,6 +110,10 @@ Nothing to install for the links. The two commands use [near-cli-rs](https://git
 - **Server-held player keys.** For this demo, each player's key is stored encrypted on the game server and
   the server signs for them (chosen for a wallet-free first session). This is custodial and would not be
   used on mainnet.
+- **The game server is trusted for game results.** It reports battle points to `rite`, and its arbiter (Kessa)
+  accepts or rejects rule proposals. The contracts record and enforce what follows: points balances, rule costs,
+  rules in force and their repeal, vow stakes kept or burned, and talisman ownership. They do not re-run battles.
+  The team holds the contract accounts' keys and can upgrade both contracts on testnet.
 - **Supplies, gear and partner levels are server-side.** Blank talismans, Ink Salves, charms and a partner's
   level are kept by the server; the Ember spent on supplies is on chain, and a minted partner's wins are
   written on its token.
@@ -125,7 +131,7 @@ unreal/      Unreal Engine 5.8 game (GrudgeboundClient plugin: API, Wards, battl
 server/      game server: world ticks, HTTP API, sign-in, battles, Satchel, rival, vows, chain writes
 shared/      game data, formulas (pricing.ts), tick engine, battle resolver, levels, equipment
 agents/      AI agents: runtime, guardrail, NEAR AI client, merchant explanations
-contracts/   Rust contracts: items (NEP-245), rite (points, rules, vows)
+contracts/   Rust contracts: items (multi-token, NEP-245 shape), rite (points, rules, vows)
 sim/         fast-forward simulator (CLI)
 client/      Next.js: email sign-in page (and the earlier browser version of the game)
 docs/        design, story, setup, hosting, art direction
@@ -142,6 +148,10 @@ Copy `.env.example` to `.env`. **Never commit `.env` or any key.** Sign-in and t
 - **Libraries and engines:** Unreal Engine 5.8, Next.js, React, Phaser 3, TypeScript, tsx, near-api-js,
   near-sdk (Rust), Resend (email delivery), Upstash Redis (hosted data mirror), NEAR AI Cloud. Tests use
   Node's built-in test runner and Unreal's automation framework.
+- **Templates:** Epic's Unreal Engine Top Down template (C++): the project shell, its character, game mode and
+  click-to-move input. The template's content is Epic's and is not in this repository
+  ([`docs/UNREAL_SETUP.md`](docs/UNREAL_SETUP.md) section 3 copies it from your engine). Our game is the
+  `unreal/Plugins/GrudgeboundClient` plugin and `unreal/GrudgeBound/Content/Grudgebound`.
 - **AI-written code:** a large part of the code was written with AI coding assistants and reviewed, tested
   and directed by the team.
 - **AI-generated art:** the concept art in `docs/art/concepts/` was made with AI image tools. In-game
