@@ -862,6 +862,17 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 					PC->SetViewTarget(PC->GetPawn());
 					return;
 				}
+				// "in1".."in4": stand inside a building (EGbBuilding: 1 Counting House, 2 Mender, 3 Rite Hall, 4 Room)
+				// and look through its own camera, as the door does.
+				if (Shots->Cams[V].StartsWith(TEXT("in")) && PC->GetPawn())
+				{
+					const EGbBuilding Kind = static_cast<EGbBuilding>(FCString::Atoi(*Shots->Cams[V].Mid(2)));
+					for (TObjectIterator<UGbSignInWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::Collapsed);
+					GbBuildings::Teleport(PC->GetPawn(), GbBuildings::Spawn(Kind));
+					for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director) Director->CurrentBuilding = Kind;
+					for (TActorIterator<AGbBuildingRoom> Room(W); Room; ++Room) if (Room->Building == Kind) PC->SetViewTarget(*Room);
+					return;
+				}
 				// "c" / "cw" / "cb": the character up close (standing, walking, from behind).
 				if (Shots->Cams[V].StartsWith(TEXT("c")) && PC->GetPawn())
 				{
