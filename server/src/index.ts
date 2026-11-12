@@ -297,6 +297,13 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.searchParams.has("account") && url.searchParams.get("account") !== player.account) throw new AuthError(403, "You can only load your signed-in Satchel.");
     return send(res, 200, await satchels.view(player.account));
   }
+  // A first-time tip was shown: no lock and no battle check, so it never blocks or races a real action.
+  if (req.method === "POST" && url.pathname === "/exploration/tip") {
+    const player = auth.authenticate(sessionToken(req));
+    const body = await readJson(req);
+    satchels.seeTip(player.account, body && typeof body === "object" ? (body as Record<string, unknown>).id : undefined);
+    return send(res, 200, { ok: true });
+  }
   if (req.method === "POST" && ["/profile/complete", "/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"].includes(url.pathname)) {
     const player = auth.authenticate(sessionToken(req));
     return playerAction(player.account, async () => {

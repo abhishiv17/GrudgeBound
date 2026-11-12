@@ -8,8 +8,20 @@ import { RIVAL_FLAGS, tideOpen } from "./rival";
 export interface Exploration { flags: string[]; gear: string[]; equipped: string; tracked: string }
 export const newExploration = (): Exploration => ({ flags: [], gear: [], equipped: "", tracked: "rival" });
 const TASKS = ["rival", "lamp", "net", "storehouse"];
+/**
+ * First-time tips (DRAFT text), each shown once per account and then kept in the Journal. The client decides when a
+ * moment has come (first walk, first battle, ...) and reports it to /exploration/tip; the server only remembers it.
+ */
+export const TIPS = [
+  { id: "beacon", text: "The gold beacon marks the next step of the task you track. Choose a different task in Satchel > Journal, or turn the beacon off in Settings." },
+  { id: "battle", text: "Attack to wear a curse down, then seal it with a blank talisman while it is weak. Wins and binds teach your partner; fleeing and losing teach nothing." },
+  { id: "find", text: "Finds go into your Satchel: supplies, Gear charms and Keepsakes. Keepsakes often hold the next clue." },
+  { id: "level", text: "Your partner grew a level: more ink, more strength. Its experience is shown in the Satchel." },
+  { id: "tide", text: "Tide Ward. Its curses are stronger, levels 3 to 7. The Net mender works the docks; a sealed storehouse stands on the north quay." },
+];
 const FLAGS = ["alley-parcel", "lamp-kit", "delivery-slip", "reed-bundle", "dock-tin", "door-seen",
-  "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "tide-bound", "net-done", "clerk-done", "storehouse-open", "storehouse-chest", ...RIVAL_FLAGS];
+  "lamp-accepted", "lamp-done", "net-accepted", "tide-cleared", "tide-bound", "net-done", "clerk-done", "storehouse-open", "storehouse-chest", ...RIVAL_FLAGS,
+  ...TIPS.map(t => `tip-${t.id}`)];
 export function validExploration(e: Exploration): boolean {
   return !!e && Array.isArray(e.flags) && e.flags.every(f => FLAGS.includes(f)) && new Set(e.flags).size === e.flags.length
     && Array.isArray(e.gear) && e.gear.every(id => !!equipmentSnapshot(id)) && new Set(e.gear).size === e.gear.length
@@ -62,6 +74,11 @@ const NOTES = [
 export function explorationView(e: Exploration, keepsakes: string[], who?: Who) {
   const has = (flag: string) => e.flags.includes(flag);
   const rivalStatus = has("rival-3-won") ? "complete" : "active";
+  // Where the next step happens, for the client's waypoint: "find:<id>" (a find or door), "npc:<role>", "rival",
+  // "ward:<id>" (anywhere in that Ward), or "" when there is nothing to walk to.
+  const storehouseTarget = has("storehouse-chest") ? "" : has("clerk-done") ? (has("storehouse-open") ? "find:storehouse-chest" : "find:storehouse-door")
+    : !has("delivery-slip") ? (has("lamp-kit") ? "npc:lamplighter" : "find:lamp-kit") : !has("net-done") ? netTarget(e) : "npc:receipt-clerk";
+  const rivalTarget = has("rival-3-won") ? "" : has("rival-2-won") && !has("storehouse-chest") ? storehouseTarget : "rival";
   const journal = [
     { id: "rival", title: "A rival on the pier", status: rivalStatus,
       objective: has("rival-3-won") ? "You beat Dace Marrow three times. The Rite Hall holds the original record."
@@ -69,20 +86,31 @@ export function explorationView(e: Exploration, keepsakes: string[], who?: Who) 
         : !has("rival-2-won") ? "Train your partner to level 4, then beat Dace at Lantern's southern pier to earn the ferry."
         : !has("storehouse-chest") ? "Open the sealed storehouse in Tide; Dace is waiting on the quay."
         : "Beat Dace on Tide's quay. A level 7 partner and a good charm will help.",
-      hint: "Partners grow from won and bound battles. Fleeing or losing teaches nothing. Rest or visit the Mender before a rival fight." },
+      hint: "Partners grow from won and bound battles. Fleeing or losing teaches nothing. Rest or visit the Mender before a rival fight.", target: rivalTarget },
     { id: "lamp", title: "A light returned", status: has("lamp-done") ? "complete" : has("lamp-accepted") || has("lamp-kit") ? "active" : "available",
       objective: has("lamp-done") ? "The Lamplighter's kit is back. Your Worn Focus is in Gear." : has("lamp-kit") ? "Return the kit to the Lamplighter in Lantern Ward." : "Ask the Lamplighter about the missing kit.",
-      hint: "Inspect the lamp kit beside the western service lane, away from the main stalls." },
+      hint: "Inspect the lamp kit beside the western service lane, away from the main stalls.",
+      target: has("lamp-done") ? "" : has("lamp-kit") || !has("lamp-accepted") ? "npc:lamplighter" : "find:lamp-kit" },
     { id: "net", title: "Among the reeds", status: has("net-done") ? "complete" : has("net-accepted") ? "active" : "available",
       objective: has("net-done") ? "The Net mender gave you a Ward Clasp and a brass key." : !has("net-accepted") ? "Speak with the Net mender on Tide's docks."
         : !has("reed-bundle") ? "Recover the bundle by Tide's eastern reeds." : !has("tide-cleared") ? "Win or bind one curse in Tide after accepting the request." : "Return to the Net mender with the bundle.",
-      hint: "Take the ferry from Lantern Ward's southern pier. Check the reed edge in Tide; a win counts without spending a blank." },
+      hint: "Take the ferry from Lantern Ward's southern pier. Check the reed edge in Tide; a win counts without spending a blank.", target: has("net-done") ? "" : netTarget(e) },
     { id: "storehouse", title: "The sealed storehouse", status: has("storehouse-chest") ? "complete" : has("delivery-slip") || has("door-seen") ? "active" : "available",
       objective: has("storehouse-chest") ? "You found an Etched Focus, a gilded talisman and a copied ledger leaf." : !has("clerk-done") ? "Bring the marked slip and brass key to the Receipt clerk in Lantern Ward." : "Open the marked storehouse on Tide's quay and inspect its chest.",
-      hint: "The door sits along Tide's northern quay. The slip and key are kept when used." },
+      hint: "The door sits along Tide's northern quay. The slip and key are kept when used.", target: storehouseTarget },
   ];
   return { version: 1, flags: e.flags, equipped: e.equipped, tracked: e.tracked,
-    gear: GEAR.filter(g => e.gear.includes(g.id)), journal, notes: NOTES.filter(n => keepsakes.includes(n.id)), gossip: gossip(e, who) };
+    gear: GEAR.filter(g => e.gear.includes(g.id)), journal, notes: NOTES.filter(n => keepsakes.includes(n.id)), gossip: gossip(e, who),
+    tips: TIPS.map(t => ({ ...t, seen: e.flags.includes(`tip-${t.id}`) })) };
+}
+/** Remembers that a tip was shown. Allowed mid-battle and beside other actions: it changes nothing else. */
+export function seeTip(e: Exploration, id: unknown): void {
+  if (typeof id !== "string" || !TIPS.some(t => t.id === id)) throw new AuthError(400, "Unknown tip.");
+  if (!e.flags.includes(`tip-${id}`)) e.flags.push(`tip-${id}`);
+}
+function netTarget(e: Exploration): string {
+  const has = (f: string) => e.flags.includes(f);
+  return !has("net-accepted") ? "npc:net-mender" : !has("reed-bundle") ? "find:reed-bundle" : !has("tide-cleared") ? "ward:tide" : "npc:net-mender";
 }
 
 export function interact(p: RewardPocket, id: unknown): string {

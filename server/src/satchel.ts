@@ -11,7 +11,7 @@ import {
 import { AuthError } from "./auth";
 import type { ChainReceipt, ChainWriter } from "./chain";
 import { displayName } from "./rules";
-import { explorationView, interact, newExploration, validExploration, type Exploration } from "./exploration";
+import { explorationView, interact, newExploration, seeTip, validExploration, type Exploration } from "./exploration";
 import { newProfile, validProfile, profileChoice, profileView, type ArrivalProfile } from "./profile";
 import { rivalEndLine, rivalRefusal, rivalView, tideOpen } from "./rival";
 
@@ -170,6 +170,7 @@ export class Satchels {
     this.update(account, p => { message = interact(p, id); });
     return { ...await this.view(account), message };
   }
+  seeTip(account: string, id: unknown) { this.update(account, p => seeTip(p.exploration, id)); }
   async equip(account: string, itemId: unknown) {
     if (typeof itemId !== "string") throw new AuthError(400, "Choose an equipment item.");
     this.update(account, p => {

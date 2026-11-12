@@ -162,6 +162,47 @@ test("townsfolk remember how and when each task was done, by name and pronouns, 
   assert.ok(!mira.join(" ").includes("Ari") && !(await gossip(OTHER)).join(" ").includes("storehouse"), "no gossip crosses accounts");
 });
 
+test("every unfinished task names where to go next, and tips are remembered once per account", async () => {
+  const s = new Satchels(createWorld(2), null, { starterKit: STARTER_KIT });
+  const target = async (id: string) => (await s.view(ACCOUNT)).exploration.journal.find(j => j.id === id)!.target;
+  assert.equal(await target("rival"), "rival");
+  assert.equal(await target("lamp"), "npc:lamplighter");
+  assert.equal(await target("storehouse"), "find:lamp-kit", "the storehouse starts with the Lamplighter's kit");
+  await s.explore(ACCOUNT, "lamplighter");
+  assert.equal(await target("lamp"), "find:lamp-kit");
+  await s.explore(ACCOUNT, "lamp-kit");
+  assert.equal(await target("lamp"), "npc:lamplighter");
+  await s.explore(ACCOUNT, "lamplighter");
+  assert.equal(await target("lamp"), "");
+  assert.equal(await target("net"), "npc:net-mender");
+  beatRivalToTide(s);
+  assert.equal(await target("rival"), "npc:net-mender", "stage 3 waits for the storehouse, so the rival task points along it");
+  await s.explore(ACCOUNT, "net-mender");
+  assert.equal(await target("net"), "find:reed-bundle");
+  await s.explore(ACCOUNT, "reed-bundle");
+  assert.equal(await target("net"), "ward:tide");
+  const won = createBattle({ wild: "cinder-grin" }); won.outcome = "won";
+  s.applyTurn(ACCOUNT, "starter", "w", { kind: "attack" }, won, "tide");
+  assert.equal(await target("net"), "npc:net-mender");
+  await s.explore(ACCOUNT, "net-mender");
+  assert.equal(await target("storehouse"), "npc:receipt-clerk");
+  await s.explore(ACCOUNT, "receipt-clerk");
+  assert.equal(await target("storehouse"), "find:storehouse-door");
+  await s.explore(ACCOUNT, "storehouse-door");
+  assert.equal(await target("storehouse"), "find:storehouse-chest");
+  await s.explore(ACCOUNT, "storehouse-chest");
+  assert.equal(await target("storehouse"), "");
+  assert.equal(await target("rival"), "rival");
+
+  const tips = async (account: string) => (await s.view(account)).exploration.tips;
+  assert.ok((await tips(ACCOUNT)).every(t => !t.seen && t.text.length > 0));
+  s.seeTip(ACCOUNT, "battle"); s.seeTip(ACCOUNT, "battle");
+  assert.deepEqual((await tips(ACCOUNT)).filter(t => t.seen).map(t => t.id), ["battle"]);
+  assert.ok((await tips(OTHER)).every(t => !t.seen), "tips are per account");
+  for (const bad of ["anything", 3, undefined, "tip-battle"]) assert.throws(() => s.seeTip(ACCOUNT, bad), isStatus(400));
+  await assert.rejects(s.explore(ACCOUNT, "tip:battle"), isStatus(400), "tips are not an interaction");
+});
+
 test("enabling starter settlement preserves the virtual partner's ink and welcome supplies", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "gb-starter-upgrade-")); t.after(() => rmSync(dir, { recursive: true, force: true }));
   const file = join(dir, "satchels.json"), world = createWorld(2);
