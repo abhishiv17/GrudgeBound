@@ -16,6 +16,10 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/SLeafWidget.h"
+#include "Engine/Texture2D.h"
+#if WITH_EDITOR
+#include "TextureCompiler.h"
+#endif
 
 namespace
 {
@@ -23,100 +27,190 @@ namespace
 	const FLinearColor& Crimson=GbGreybox::Color::Crimson; const FLinearColor& Sorrow=GbGreybox::Color::Sorrow; const FLinearColor& Dread=GbGreybox::Color::Dread;
 }
 
+// The four story pictures, drawn on a 150 x 103 grid of art pixels (4 screen pixels each at 1080p) so they sit
+// with the game's sprites, which are placed on the same grid (K = art pixels per sprite pixel).
+using FGbSpriteMap = TMap<FName, FSlateBrush>;
+
 class SGbStoryArt : public SLeafWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SGbStoryArt) : _Panel(0) {}
 		SLATE_ARGUMENT(int32, Panel)
+		SLATE_ARGUMENT(FGbSpriteMap, Sprites)
 	SLATE_END_ARGS()
-	void Construct(const FArguments& Args) { PanelIndex = Args._Panel; }
+	void Construct(const FArguments& Args) { PanelIndex = Args._Panel; Sprites = Args._Sprites; }
 	void SetPanel(int32 Index) { PanelIndex = Index; Invalidate(EInvalidateWidgetReason::Paint); }
-	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(480, 330); }
+	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(600, 412); }
 	virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Elements,
 		int32 LayerId, const FWidgetStyle& Style, bool bParentEnabled) const override
 	{
 		const FVector2D Size = Geometry.GetLocalSize();
-		const FVector2f Scale(Size.X / 480.f, Size.Y / 330.f);
+		const FVector2f G(Size.X / 150.f, Size.Y / 103.f);
 		int32 Layer = LayerId;
-		const FSlateBrush* Brush = FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
-		auto Box = [&](float X, float Y, float W, float H, FLinearColor Color)
+		const FSlateBrush* White = FCoreStyle::Get().GetBrush(TEXT("WhiteBrush"));
+		const FLinearColor Tint = Style.GetColorAndOpacityTint();
+		const auto Cell = [&](float X, float Y, float W, float H, const FLinearColor& Color)
 		{
-			FSlateDrawElement::MakeBox(Elements, ++Layer, Geometry.ToPaintGeometry(FVector2f(W * Scale.X, H * Scale.Y),
-				FSlateLayoutTransform(FVector2f(X * Scale.X, Y * Scale.Y))), Brush, ESlateDrawEffect::None, Color * Style.GetColorAndOpacityTint());
+			FSlateDrawElement::MakeBox(Elements, ++Layer, Geometry.ToPaintGeometry(FVector2f(W * G.X, H * G.Y),
+				FSlateLayoutTransform(FVector2f(X * G.X, Y * G.Y))), White, ESlateDrawEffect::None, Color * Tint);
 		};
-		auto Line = [&](std::initializer_list<FVector2f> Points, FLinearColor Color, float Width = 2.f)
+		const auto Sprite = [&](const TCHAR* Name, float X, float Y, float K)
 		{
-			TArray<FVector2f> Scaled;
-			for (const auto& P : Points) Scaled.Add(P * Scale);
-			FSlateDrawElement::MakeLines(Elements, ++Layer, Geometry.ToPaintGeometry(), MoveTemp(Scaled), ESlateDrawEffect::None,
-				Color * Style.GetColorAndOpacityTint(), true, Width * FMath::Min(Scale.X, Scale.Y));
+			const FSlateBrush* Brush = Sprites.Find(FName(Name));
+			if (!Brush) return;
+			FSlateDrawElement::MakeBox(Elements, ++Layer, Geometry.ToPaintGeometry(FVector2f(Brush->ImageSize.X * K * G.X, Brush->ImageSize.Y * K * G.Y),
+				FSlateLayoutTransform(FVector2f(X * G.X, Y * G.Y))), Brush, ESlateDrawEffect::None, Tint);
 		};
-		auto Receipt = [&](float X, float Y, float W, float H)
+		const auto H = [](const TCHAR* Hex) { return GbUi::Hex(Hex); };
+		const auto A = [](const FLinearColor& Color, float Alpha) { return Color.CopyWithNewOpacity(Alpha); };
+		const FLinearColor Slip = H(TEXT("E9DBBB")), Fold = H(TEXT("D6C29A")), Black = H(TEXT("05040F")), Lamp = GbGreybox::Color::Lantern;
+		// The debt notice: a folded slip with a crimson heading and a few ruled lines.
+		const auto Notice = [&](float X, float Y, float W, float Ht)
 		{
-			Box(X + 4, Y + 5, W, H, Ink.CopyWithNewOpacity(0.3f)); Box(X, Y, W, H, Paper);
-			Line({ {X, Y}, {X + W, Y}, {X + W, Y + H}, {X, Y + H}, {X, Y} }, Ink);
-			for (int32 I = 0; I < 4; ++I) Box(X + 7, Y + 12 + I * 9, W - 16 - (I % 2) * 8, 2, Ink.CopyWithNewOpacity(0.4f));
+			Cell(X + 2, Y + 2, W, Ht, A(Black, 0.4f)); Cell(X - 1, Y - 1, W + 2, Ht + 2, Black); Cell(X, Y, W, Ht, Slip);
+			Cell(X + 3, Y + 3, FMath::RoundToFloat(W * 0.55f), 2, Crimson);
+			for (int32 I = 0; I < 3 && 8 + I * 3 < Ht - 2; ++I) Cell(X + 3, Y + 8 + I * 3, W - 6 - (I % 2) * 5, 1, A(Ink, 0.55f));
 		};
-		Box(0, 0, 480, 330, Paper * FLinearColor(0.88f, 0.9f, 0.95f));
-		// Paper grain is deterministic; it never flashes or changes the story.
-		for (int32 I = 0; I < 105; ++I) Box(8 + (I * 47) % 463, 8 + (I * 83) % 313, 2, 1, Ink.CopyWithNewOpacity(0.08f));
+		// A string of lit lanterns sagging between two ends.
+		const auto Lanterns = [&](float Y, float Sag)
+		{
+			for (int32 X = 0; X < 150; ++X) { const float T = (X - 75) / 75.f; Cell(X, FMath::RoundToFloat(Y + Sag * (1.f - T * T)), 1, 1, A(Fold, 0.5f)); }
+			for (int32 I = 0; I < 12; ++I)
+			{
+				const float X = 6 + I * 12, T = (X + 1 - 75) / 75.f, Top = FMath::RoundToFloat(Y + Sag * (1.f - T * T)) + 1;
+				Cell(X - 1, Top, 5, 6, A(Lamp, 0.14f)); Cell(X, Top, 3, 4, I % 2 ? Crimson : Gold); Cell(X + 1, Top + 1, 1, 2, Lamp);
+			}
+		};
+
 		if (PanelIndex == 0)
 		{
-			Box(14, 14, 452, 187, Ink); Box(366, 35, 40, 40, Gold);
-			for (int32 I = 0; I < 7; ++I)
+			// Arrival: Hollowmere's harbour by night, a rowing boat, and the notice that brought you.
+			Cell(0, 0, 150, 20, H(TEXT("0E0B26"))); Cell(0, 20, 150, 14, H(TEXT("1A1238"))); Cell(0, 34, 150, 12, H(TEXT("2C1B45"))); Cell(0, 46, 150, 14, H(TEXT("46223F")));
+			for (int32 I = 0; I < 26; ++I) Cell((I * I * 13 + I * 41 + 9) % 150, (I * I * 7 + I * 17 + 3) % 32, 1, 1, A(Paper, I % 3 ? 0.45f : 0.9f));
+			Cell(126, 15, 8, 12, Slip); Cell(124, 17, 12, 8, Slip); Cell(128, 18, 2, 2, Fold); Cell(131, 22, 2, 1, Fold);
+			Lanterns(8, 6);
+			static const int32 Houses[][3] = { {0,14,22}, {15,12,30}, {28,16,20}, {45,13,34}, {59,15,24}, {75,12,28}, {88,17,19}, {106,13,32}, {120,14,23}, {135,15,27} };
+			int32 HouseNo = 0;
+			for (const auto& Hs : Houses)
 			{
-				const float X = 30 + I * 62, Y = 108 - (I % 3) * 15;
-				Box(X, Y, 47, 96, Sorrow); Line({ {X - 4, Y}, {X + 24, Y - 25}, {X + 52, Y} }, Paper, 4);
-				Box(X + 19, Y + 25, 10, 18, Gold);
+				const int32 X = Hs[0], W = Hs[1], Top = 60 - Hs[2];
+				Cell(X, Top, W, Hs[2], H(HouseNo++ % 2 ? TEXT("2C2654") : TEXT("231E46")));
+				for (int32 S = 0; S < 5 && W + 2 - 2 * S > 0; ++S) Cell(X - 1 + S, Top - 1 - S, W + 2 - 2 * S, 1, H(TEXT("42366E")));
+				for (int32 WY = Top + 4; WY < 55; WY += 7) for (int32 WX = X + 2; WX < X + W - 3; WX += 5)
+					Cell(WX, WY, 2, 3, (WX * 3 + WY) % 4 ? Lamp : H(TEXT("15122B")));
 			}
-			Box(14, 201, 452, 114, Sorrow);
-			for (int32 I = 0; I < 7; ++I) Line({ {25.f + I * 9, 220.f + I * 12}, {300.f + I * 15, 224.f + I * 12} }, Paper.CopyWithNewOpacity(0.3f));
-			Line({ {48, 252}, {195, 252}, {174, 283}, {68, 283}, {48, 252} }, Ink, 7);
-			Line({ {110, 250}, {110, 181}, {156, 236}, {110, 236} }, Paper, 4);
-			Receipt(320, 219, 96, 77); Box(379, 267, 22, 16, Crimson);
+			Cell(0, 60, 150, 12, H(TEXT("1B2F66"))); Cell(0, 72, 150, 16, H(TEXT("162654"))); Cell(0, 88, 150, 15, H(TEXT("111D44"))); Cell(0, 60, 150, 1, Black);
+			for (int32 I = 0; I < 44; ++I) Cell((I * 29 + 7) % 146, 62 + (I * 13) % 39, 2 + I % 4, 1, I % 3 == 0 ? A(Lamp, 0.5f) : A(H(TEXT("4A78C8")), 0.5f));
+			for (int32 J = 0; J < 8; ++J) Cell(125 + J % 2, 63 + J * 4, 10 - J, 1, A(Slip, 0.3f));
+			// The boat: lantern on the prow, the exorcist at the oar.
+			Cell(46, 66, 11, 12, A(Lamp, 0.1f)); Cell(48, 68, 7, 8, A(Lamp, 0.16f));
+			Cell(51, 73, 1, 11, H(TEXT("6B4A32"))); Cell(50, 70, 3, 4, Lamp); Cell(50, 69, 3, 1, Black);
+			Cell(35, 71, 6, 1, Black); Cell(36, 70, 4, 1, Black); Cell(36, 72, 4, 3, H(TEXT("E8C9A0"))); Cell(35, 75, 6, 2, Crimson); Cell(35, 77, 6, 7, H(TEXT("3A3566")));
+			for (int32 K = 0; K < 6; ++K) Cell(32 - K * 2, 80 + K * 2, 3, 1, H(TEXT("8A6442")));
+			Cell(20, 84, 38, 1, H(TEXT("8A6442"))); Cell(21, 85, 36, 2, H(TEXT("4A3426"))); Cell(23, 87, 32, 2, H(TEXT("2E2019"))); Cell(26, 89, 26, 1, Black);
+			Cell(47, 92, 8, 1, A(Lamp, 0.5f)); Cell(49, 95, 5, 1, A(Lamp, 0.3f));
+			Notice(108, 54, 34, 44); Cell(108, 74, 34, 1, Fold); Sprite(TEXT("wax_seal"), 119, 75, 1);
 		}
 		else if (PanelIndex == 1)
 		{
-			for (int32 I = 0; I < 5; ++I) { Box(25 + I * 87, 38, 69, 170, Ink); Box(29 + I * 87, 43, 61, 162, Dread); }
-			Box(22, 205, 435, 19, Ink); Receipt(35, 222, 90, 75); Receipt(325, 230, 100, 66);
-			Box(174, 146, 130, 116, Crimson); Box(184, 158, 110, 90, Ink);
-			Line({ {175, 145}, {198, 128}, {239, 141}, {281, 127}, {305, 145} }, Gold, 8);
-			Box(201, 181, 17, 10, Paper); Box(261, 181, 17, 10, Paper);
-			Line({ {198, 211}, {212, 229}, {226, 211}, {240, 229}, {254, 211}, {270, 229}, {282, 211} }, Paper, 3);
-			Line({ {178, 232}, {148, 269}, {131, 257} }, Ink, 6); Line({ {300, 232}, {325, 268}, {342, 253} }, Ink, 6);
-			Box(145, 78, 15, 15, Crimson); Box(240, 65, 14, 14, Sorrow); Box(330, 97, 13, 13, Dread);
+			// What the market leaves behind: shuttered fronts, dropped receipts, and the things that got up.
+			Cell(0, 0, 150, 74, H(TEXT("171230")));
+			for (int32 Bay = 0; Bay < 3; ++Bay)
+			{
+				const float X = 4 + Bay * 50;
+				for (int32 S = 0; S < 7; ++S) Cell(X + S * 6, 8, 6, 9, H(S % 2 ? TEXT("5A1026") : TEXT("8C8372")));
+				Cell(X, 17, 42, 2, Black);
+				if (Bay == 1) { Cell(X + 3, 19, 36, 55, Black); continue; }
+				Cell(X + 3, 19, 36, 55, H(TEXT("262043")));
+				for (int32 R = 0; R < 9; ++R) Cell(X + 3, 23 + R * 6, 36, 1, H(TEXT("0E0B26")));
+				Cell(X + 19, 66, 4, 4, H(TEXT("B08A2E")));
+				Notice(X + 14, 27, 14, 13);
+			}
+			Cell(0, 74, 150, 29, H(TEXT("2A2238"))); Cell(0, 74, 150, 1, Black);
+			for (int32 I = 0; I < 40; ++I) Cell((I * 31) % 146, 77 + (I * 17) % 25, 4, 1, H(TEXT("3A304E")));
+			for (int32 I = 0; I < 7; ++I)
+			{
+				const float X = 6 + I * 21 + (I % 2) * 5, Y = 86 + (I * 7) % 13;
+				Cell(X, Y, 7, 5, Slip); Cell(X + 1, Y + 1, 4, 1, A(Ink, 0.45f)); Cell(X + 1, Y + 3, 3, 1, A(Ink, 0.45f));
+			}
+			Cell(28, 26, 94, 56, A(Dread, 0.08f)); Cell(38, 20, 74, 66, A(Dread, 0.1f)); Cell(50, 16, 50, 72, A(Dread, 0.1f));
+			Cell(12, 92, 36, 3, A(Black, 0.45f)); Cell(104, 90, 36, 3, A(Black, 0.45f)); Cell(49, 92, 52, 3, A(Black, 0.5f));
+			Sprite(TEXT("curse_weepwick"), 6, 46, 1); Sprite(TEXT("curse_cinder_grin"), 98, 44, 1); Sprite(TEXT("curse_the_shuttered"), 43, 30, 1);
+			Sprite(TEXT("emo_sorrow"), 24, 30, 1); Sprite(TEXT("emo_dread"), 69, 15, 1); Sprite(TEXT("emo_rage"), 116, 28, 1);
+			for (int32 K = 0; K < 3; ++K) { Cell(29, 43 + K * 3, 1, 1, A(Sorrow, 0.7f)); Cell(74, 27 + K * 2, 1, 1, A(Dread, 0.8f)); Cell(121, 41 + K * 3, 1, 1, A(H(TEXT("C8402A")), 0.7f)); }
 		}
 		else if (PanelIndex == 2)
 		{
-			Box(16, 16, 448, 298, Ink);
-			Box(172, 60, 134, 203, Gold.CopyWithNewOpacity(0.2f));
-			Box(185, 72, 108, 176, Gold); Box(195, 81, 88, 158, Paper);
-			for (int32 I = 0; I < 7; ++I) Line({ {194, 98.f + I * 20}, {285, 98.f + I * 20} }, Gold, 2);
-			Box(181, 66, 116, 12, Crimson); Box(182, 243, 115, 12, Crimson);
-			Line({ {237, 28}, {237, 63} }, Paper); Line({ {211, 128}, {217, 129} }, Ink, 4); Line({ {262, 128}, {268, 129} }, Ink, 4);
-			Line({ {227, 152}, {238, 159}, {249, 152} }, Ink, 2);
-			Receipt(108, 202, 46, 83); Receipt(323, 187, 46, 90);
-			Line({ {187, 204}, {151, 230} }, Paper, 3); Line({ {293, 205}, {325, 217} }, Paper, 3);
-			Line({ {229, 255}, {218, 280}, {233, 296}, {242, 280}, {252, 297}, {261, 280}, {247, 255} }, Crimson, 3);
+			// Kessa's offer: the paper lantern in the Rite Hall, holding out a talisman.
+			Cell(0, 0, 150, 58, H(TEXT("2A1A2E"))); Cell(0, 58, 150, 12, H(TEXT("1E1424"))); Cell(0, 58, 150, 1, H(TEXT("3A263C")));
+			Cell(0, 70, 150, 33, H(TEXT("3A2A22")));
+			for (int32 I = 0; I < 6; ++I) Cell(0, 70 + I * 6, 150, 1, H(TEXT("2A1D18")));
+			for (int32 I = 0; I < 12; ++I) Cell((I * 27 + (I % 2) * 13) % 150, 71 + (I % 5) * 6, 1, 5, H(TEXT("2A1D18")));
+			for (const float X : { 3.f, 133.f })
+			{
+				Cell(X, 0, 14, 40, H(TEXT("7A1028"))); Cell(X, 35, 14, 2, Gold); Cell(X + 5, 38, 4, 2, H(TEXT("2A1A2E"))); Cell(X + 5, 14, 4, 4, Gold); Cell(X + 6, 15, 2, 2, H(TEXT("7A1028")));
+			}
+			// Lamplight around Kessa and the talisman, stepped so it reads as a glow rather than a box.
+			for (int32 R = 0; R < 5; ++R) { Cell(20 + R * 5, 6 + R * 7, 48 - R * 10, 82 - R * 14, A(Lamp, 0.035f)); Cell(8 + R * 6, 22 + R * 4, 72 - R * 12, 50 - R * 8, A(Lamp, 0.035f)); }
+			for (int32 R = 0; R < 5; ++R) { Cell(100 + R * 2, 4 + R * 2, 24 - R * 4, 84 - R * 4, A(Gold, 0.04f)); Cell(92 + R * 2, 18 + R * 4, 40 - R * 4, 56 - R * 8, A(Gold, 0.04f)); }
+			Cell(24, 90, 40, 3, A(Black, 0.4f));
+			Sprite(TEXT("kessa"), 18, 14, 2);
+			Sprite(TEXT("talisman"), 98, 14, 2);
+			for (const FVector2f& S : { FVector2f(92, 40), FVector2f(89, 28), FVector2f(129, 44), FVector2f(130, 60), FVector2f(111, 8), FVector2f(93, 14), FVector2f(128, 18), FVector2f(111, 82), FVector2f(92, 70), FVector2f(128, 76) })
+				Cell(S.X, S.Y, 2, 2, Gold);
+			for (int32 K = 0; K < 5; ++K) Cell(72 + K * 5, 48 - (K == 2 ? 2 : K == 1 || K == 3 ? 1 : 0), 2, 2, A(Lamp, 0.85f));
+			Notice(64, 84, 24, 13);
 		}
 		else
 		{
-			Box(50, 59, 380, 234, Ink); Box(60, 49, 176, 232, Paper); Box(242, 49, 176, 232, Paper);
-			Line({ {238, 49}, {238, 280} }, Gold, 5);
-			for (int32 I = 0; I < 8; ++I) { Box(78, 80 + I * 20, 138 - (I % 3) * 17, 2, Ink.CopyWithNewOpacity(0.4f)); Box(263, 80 + I * 20, 132 - (I % 2) * 24, 2, Ink.CopyWithNewOpacity(0.4f)); }
-			Box(300, 178, 54, 54, Crimson); Box(311, 189, 32, 32, Gold); Box(321, 199, 12, 12, Crimson);
-			Receipt(23, 216, 43, 86); Receipt(405, 204, 43, 92);
-			Line({ {70, 34}, {141, 24}, {240, 33}, {341, 23}, {410, 34} }, Ink, 2);
-			for (int32 I = 0; I < 6; ++I) { Box(80 + I * 62, 22, 14, 22, Gold); Box(83 + I * 62, 25, 8, 14, Crimson); }
+			// A place in the ledger: the Rite's book open on a desk, sealed.
+			Cell(0, 0, 150, 103, H(TEXT("2E211C")));
+			for (int32 I = 0; I < 9; ++I) Cell(0, 6 + I * 12, 150, 1, H(TEXT("241915")));
+			Lanterns(2, 5);
+			Cell(13, 21, 128, 77, A(Black, 0.4f)); Cell(10, 18, 130, 77, Black); Cell(11, 19, 128, 75, H(TEXT("6A1228")));
+			Cell(15, 22, 59, 68, H(TEXT("EFE3C6"))); Cell(76, 22, 59, 68, H(TEXT("EFE3C6"))); Cell(74, 22, 2, 68, Fold); Cell(15, 88, 120, 2, Fold);
+			Cell(72, 22, 2, 66, A(Fold, 0.5f)); Cell(76, 22, 2, 66, A(Fold, 0.5f));
+			Cell(100, 90, 4, 11, Gold); Cell(100, 99, 2, 2, H(TEXT("2E211C")));
+			Cell(20, 26, 30, 2, Crimson);
+			for (int32 I = 0; I < 6; ++I)
+			{
+				Sprite(I < 4 ? TEXT("pip_lit") : TEXT("pip_dim"), 20, 31 + I * 9, 1);
+				Cell(31, 34 + I * 9, 36 - (I % 3) * 6, 1, A(Ink, 0.6f)); Cell(31, 37 + I * 9, 20, 1, A(Ink, 0.3f));
+			}
+			Cell(81, 26, 24, 2, Crimson);
+			for (int32 I = 0; I < 2; ++I) Cell(81, 33 + I * 5, 48 - I * 10, 1, A(Ink, 0.6f));
+			Sprite(TEXT("emo_rage"), 82, 44, 1); Sprite(TEXT("emo_sorrow"), 99, 44, 1); Sprite(TEXT("emo_dread"), 116, 44, 1);
+			for (const float X : { 82.f, 99.f, 116.f }) Cell(X, 57, 11, 1, A(Ink, 0.5f));
+			Sprite(TEXT("stamp_tool"), 82, 60, 1); Sprite(TEXT("wax_seal"), 108, 64, 1);
 		}
-		Line({ {6, 6}, {474, 6}, {474, 324}, {6, 324}, {6, 6} }, Ink, 2);
+		Cell(0, 0, 150, 1, Black); Cell(0, 102, 150, 1, Black); Cell(0, 0, 1, 103, Black); Cell(149, 0, 1, 103, Black);
 		return Layer;
 	}
 private:
 	int32 PanelIndex = 0;
+	FGbSpriteMap Sprites;
 };
 
-TSharedRef<SWidget> UGbStoryArt::RebuildWidget() { return SAssignNew(Art, SGbStoryArt).Panel(PanelIndex); }
+TSharedRef<SWidget> UGbStoryArt::RebuildWidget()
+{
+	// The game's own pixel art (UI/Battle). A picture that is not imported is simply left out.
+	FGbSpriteMap Brushes;
+	for (const TCHAR* Name : { TEXT("kessa"), TEXT("talisman"), TEXT("wax_seal"), TEXT("stamp_tool"), TEXT("pip_lit"), TEXT("pip_dim"), TEXT("emo_rage"), TEXT("emo_sorrow"),
+		TEXT("emo_dread"), TEXT("curse_the_shuttered"), TEXT("curse_weepwick"), TEXT("curse_cinder_grin") })
+	{
+		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/Grudgebound/UI/Battle/%s.%s"), Name, Name));
+		if (!Texture) continue;
+#if WITH_EDITOR
+		// In the editor a texture reports a placeholder's size until it has compiled; wait for the real one.
+		FTextureCompilingManager::Get().FinishCompilation({ Texture });
+		Texture->WaitForPendingInitOrStreaming();
+#endif
+		Textures.Add(FName(Name), Texture);
+		FSlateBrush Brush; Brush.SetResourceObject(Texture); Brush.ImageSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY()); Brush.DrawAs = ESlateBrushDrawType::Image;
+		Brushes.Add(FName(Name), Brush);
+	}
+	return SAssignNew(Art, SGbStoryArt).Panel(PanelIndex).Sprites(Brushes);
+}
 void UGbStoryArt::SetPanel(int32 Index) { PanelIndex = Index; if (Art.IsValid()) Art->SetPanel(Index); }
 void UGbStoryArt::ReleaseSlateResources(bool bReleaseChildren) { Super::ReleaseSlateResources(bReleaseChildren); Art.Reset(); }
 

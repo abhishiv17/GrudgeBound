@@ -6,8 +6,9 @@
 #include "GbIntroWidget.generated.h"
 
 class SGbStoryArt;
+class UTexture2D;
 
-/** Original ink illustrations, drawn by Slate without external texture assets. */
+/** The story pictures: pixel scenes drawn by Slate, with the game's own sprites placed in them. */
 UCLASS()
 class GRUDGEBOUNDCLIENT_API UGbStoryArt : public UWidget
 {
@@ -20,6 +21,8 @@ protected:
 private:
 	int32 PanelIndex = 0;
 	TSharedPtr<SGbStoryArt> Art;
+	/** Keeps the pictures the Slate widget draws alive. */
+	UPROPERTY() TMap<FName, TObjectPtr<UTexture2D>> Textures;
 };
 
 UCLASS()
