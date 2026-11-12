@@ -18,6 +18,7 @@ protected:
 	virtual void NativeDestruct() override;
 private:
 	friend class FGbPanelPreviewTest;
+	friend struct FGbPanelFixtures;
 
 	UFUNCTION() void HandleVows(const FGbVowsOverview& Overview);
 	UFUNCTION() void HandleReceipt(const FString& JobId, const FGbChainReceipt& Receipt);

@@ -24,6 +24,7 @@ private:
 	friend class FGbSatchelSalveTest;
 	friend class FGbSatchelVisualTest;
 	friend class FGbPanelPreviewTest;
+	friend struct FGbPanelFixtures;
 	void PullPlayer();
 	static int32 MenderPriceFrom(const FGbWorldState& World);
 	void Redraw();

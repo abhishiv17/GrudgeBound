@@ -53,6 +53,7 @@ protected:
 private:
  friend class FGbObservatoryRenderTest;
  friend class FGbPanelPreviewTest;
+ friend struct FGbPanelFixtures;
  UFUNCTION() void Live();
  UFUNCTION() void Preview();
  UFUNCTION() void Grudge();

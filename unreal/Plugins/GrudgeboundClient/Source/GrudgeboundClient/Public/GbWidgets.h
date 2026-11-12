@@ -85,6 +85,7 @@ protected:
 private:
 	friend class FGbUiMotionTest;
 	friend class FGbPanelPreviewTest;
+	friend struct FGbPanelFixtures;
 	friend class FGbUiRenderTest;
 	float VisibilityBlend = 1.f;
 	bool bFadingVisibility = false;
@@ -129,6 +130,7 @@ protected:
  virtual void NativeDestruct() override;
 private:
  friend class FGbPanelPreviewTest;
+ friend struct FGbPanelFixtures;
  /** Reads the pockets, prices and names from the subsystems, then redraws. */
  UFUNCTION() void Refresh();
  /** Draws from Data, Names, Species, Price and bBusy only. */
@@ -177,6 +179,7 @@ private:
  UFUNCTION() void Action(const FString& Message);
  UFUNCTION() void Error(const FString& What,int32 Code,const FString& Message);
  friend class FGbPanelPreviewTest;
+ friend struct FGbPanelFixtures;
  UPROPERTY() TObjectPtr<UTextBlock> Status;
  UPROPERTY() TObjectPtr<UButton> RestButton;
 };
@@ -468,6 +471,7 @@ private:
 	static FString ItemArt(const FString& ItemId);
 
 	friend class FGbPanelPreviewTest;
+	friend struct FGbPanelFixtures;
 
 	UPROPERTY() TObjectPtr<UTextBlock> Title;
 	UPROPERTY() TObjectPtr<UTextBlock> Purse;
@@ -533,6 +537,7 @@ private:
 	const FGbRuleTemplate* Current() const;
 
 	friend class FGbPanelPreviewTest;
+	friend struct FGbPanelFixtures;
 
 	UPROPERTY() TObjectPtr<UTextBlock> Info;
 	UPROPERTY() TObjectPtr<UVerticalBox> ActiveList;
@@ -579,6 +584,7 @@ protected:
 
 private:
 	friend class FGbPanelPreviewTest;
+	friend struct FGbPanelFixtures;
 	/** Draws the given talismans and record (Refresh passes the player's). */
 	void Show(const TArray<FGbTalisman>& Talismans, const TMap<FString, FGbCurseInfo>& Curses, const FString& PartnerId,
 		int32 Won, int32 Bound, int32 Fled, int32 Lost, int32 Points, int32 Ember, bool bOnChain);

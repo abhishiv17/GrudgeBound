@@ -12,6 +12,7 @@
 #include "GbIntroWidget.h"
 #include "GbSatchelWidget.h"
 #include "GbObservatoryWidget.h"
+#include "GbPanelFixtures.h"
 #include "GbStorySubsystem.h"
 #include "GbCoopMission.h"
 #include "GameFramework/WorldSettings.h"
@@ -768,6 +769,45 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 #if !UE_BUILD_SHIPPING
 	// Development aid: -GbShot=<folder> saves pictures and quits. -GbShotCams="x,y,z,pitch,yaw,fov;..." are fixed
 	// cameras (world cm), "p" is the player's own camera. -GbShotMenu=<tab> adds the HUD and one tab of the menu.
+	// -GbShotPanels=<folder>: each building and pocket panel as the game shows it (over the Ward), filled
+	// with the preview test's sample data, saved as <panel>.png 1.5 s apart, then quit.
+	FString PanelFolder;
+	if (FParse::Value(FCommandLine::Get(), TEXT("GbShotPanels="), PanelFolder))
+	{
+		struct FPanelShots { int32 Step = 0; FTimerHandle Timer; };
+		TSharedRef<FPanelShots> Shots = MakeShared<FPanelShots>();
+		TWeakObjectPtr<UWorld> World = &InWorld;
+		InWorld.GetTimerManager().SetTimer(Shots->Timer, FTimerDelegate::CreateLambda([World, Shots, PanelFolder]()
+		{
+			UWorld* W = World.Get();
+			APlayerController* PC = W ? W->GetFirstPlayerController() : nullptr;
+			AGbUiDirector* Director = nullptr;
+			if (W) for (TActorIterator<AGbUiDirector> It(W); It; ++It) Director = *It;
+			if (!PC || !Director || !Director->Hud) return;
+			const TArray<FString>& Names = FGbPanelFixtures::Shots();
+			const int32 K = Shots->Step++;
+			const int32 I = K / 2;
+			if (I >= Names.Num()) { FPlatformMisc::RequestExit(false); return; }
+			if (K % 2 == 1) { FScreenshotRequest::RequestScreenshot(PanelFolder / (Names[I] + TEXT(".png")), true, false); return; }
+			const FString& Name = Names[I];
+			UGbWidgetBase* Panel = Name == TEXT("TalismanCase") ? static_cast<UGbWidgetBase*>(Director->TalismanCase.Get())
+				: Name == TEXT("Mender") ? static_cast<UGbWidgetBase*>(Director->Mender.Get())
+				: Name.StartsWith(TEXT("Satchel")) ? static_cast<UGbWidgetBase*>(Director->Satchel.Get())
+				: Name == TEXT("Broker") ? static_cast<UGbWidgetBase*>(Director->Shop.Get())
+				: Name == TEXT("Rite") ? static_cast<UGbWidgetBase*>(Director->Rules.Get())
+				: Name == TEXT("Vows") ? static_cast<UGbWidgetBase*>(Director->VowShrine.Get())
+				: Name.StartsWith(TEXT("Observatory")) ? static_cast<UGbWidgetBase*>(Director->Observatory.Get())
+				: static_cast<UGbWidgetBase*>(Director->Room.Get());
+			const TArray<UUserWidget*> Others = { Director->Encounter, Director->Battle, Director->TalismanCase, Director->Rules, Director->Shop,
+				Director->SignIn, Director->VowShrine, Director->Intro, Director->Satchel, Director->Mender, Director->Room, Director->Observatory };
+			for (UUserWidget* Other : Others) if (Other && Other != Panel) Other->SetVisibility(ESlateVisibility::Collapsed);
+			PC->SetViewTarget(PC->GetPawn());
+			Director->Hud->SetVisibility(ESlateVisibility::HitTestInvisible);
+			Panel->SetVisibility(ESlateVisibility::Visible);
+			FGbPanelFixtures::Fill(Panel, Name);
+		}), 1.5f, true, 8.f);
+	}
+
 	FString ShotFolder;
 	if (FParse::Value(FCommandLine::Get(), TEXT("GbShot="), ShotFolder))
 	{
