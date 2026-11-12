@@ -5,11 +5,12 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_PLAYER_CURSE, SALVE_HEAL_FRACTION, TICKS_PER_DAY, WARD_INFO,
-  curseById, log, makeCombatant, type BattleState, type PlayerAction, type World,
+  curseById, log, makeCombatant, equipmentSnapshot, type BattleState, type PlayerAction, type World,
 } from "@grudgebound/shared";
 import { AuthError } from "./auth";
 import type { ChainReceipt, ChainWriter } from "./chain";
 import { displayName } from "./rules";
+import { explorationView, interact, newExploration, validExploration, type Exploration } from "./exploration";
 
 export const CARRY_LIMIT = 5;
 /** Existing built-in partner, not a minted or tradable asset. Scoped to the signed-in account's store. */
@@ -22,13 +23,15 @@ export interface Partner extends Ink { tokenId: string; speciesId: string }
 export interface SatchelView {
   carried: string[]; case: string[]; supplies: Record<Supply, number>; keepsakes: string[];
   ink: Record<string, Ink>; ember: number | null; points: number | null;
+  exploration: ReturnType<typeof explorationView>;
 }
 interface Pocket {
   initialized: boolean; carried: string[]; supplies: Record<Supply, number>; keepsakes: string[];
   ink: Record<string, Ink>; personalTick: number; pendingBindings: Record<string, Supply>;
+  exploration: Exploration; pendingTideBindings: string[];
 }
 const empty = (): Pocket => ({ initialized: false, carried: [], supplies: { blank: 0, gilded: 0, salve: 0 },
-  keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {} });
+  keepsakes: [], ink: {}, personalTick: 0, pendingBindings: {}, exploration: newExploration(), pendingTideBindings: [] });
 
 export function supplyForItem(itemId: string): Supply | null {
   // Keep the existing merchant item id as a purchase alias for plain blanks.
@@ -49,11 +52,13 @@ export class Satchels {
     private readonly options: { file?: string; gameAccount?: string; canSignFor?: (account: string) => boolean; starterKit?: Readonly<Record<Supply, number>> } = {}) {
     if (options.file && existsSync(options.file)) {
       const saved = JSON.parse(readFileSync(options.file, "utf8")) as { version: number; players: [string, Pocket][] };
-      if (saved.version !== 1 || !Array.isArray(saved.players)) throw new Error("Unsupported Satchel store");
+      if (![1, 2].includes(saved.version) || !Array.isArray(saved.players)) throw new Error("Unsupported Satchel store");
       for (const [account, p] of saved.players) {
+        if (saved.version === 1) { p.exploration = newExploration(); p.pendingTideBindings = []; }
         if (typeof account !== "string" || !Array.isArray(p.carried) || p.carried.length > CARRY_LIMIT ||
             ![p.supplies.blank, p.supplies.gilded, p.supplies.salve, p.personalTick].every((n) => Number.isSafeInteger(n) && n >= 0) ||
-            !p.ink || !p.pendingBindings || !Array.isArray(p.keepsakes)) throw new Error("Invalid Satchel store");
+            !p.ink || !p.pendingBindings || !Array.isArray(p.keepsakes) || !validExploration(p.exploration)
+            || !Array.isArray(p.pendingTideBindings) || !p.pendingTideBindings.every(id => typeof id === "string")) throw new Error("Invalid Satchel store");
         this.pockets.set(account, p);
       }
     }
@@ -66,7 +71,7 @@ export class Satchels {
     if (this.options.file) {
       mkdirSync(dirname(this.options.file), { recursive: true });
       const tmp = `${this.options.file}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ version: 1, players: [...next] }), { mode: 0o600 });
+      writeFileSync(tmp, JSON.stringify({ version: 2, players: [...next] }), { mode: 0o600 });
       renameSync(tmp, this.options.file);
       fileChanged(this.options.file);
     }
@@ -74,6 +79,20 @@ export class Satchels {
   }
 
   supplies(account: string) { return this.read(account).supplies; }
+  equipment(account: string) { return equipmentSnapshot(this.read(account).exploration.equipped); }
+  async explore(account: string, id: unknown) {
+    let message = "";
+    this.update(account, p => { message = interact(p, id); });
+    return { ...await this.view(account), message };
+  }
+  async equip(account: string, itemId: unknown) {
+    if (typeof itemId !== "string") throw new AuthError(400, "Choose an equipment item.");
+    this.update(account, p => {
+      if (itemId !== "" && (!equipmentSnapshot(itemId) || !p.exploration.gear.includes(itemId))) throw new AuthError(403, "You do not own this equipment.");
+      p.exploration.equipped = itemId;
+    });
+    return { ...await this.view(account), message: itemId ? "Charm equipped. Its bonus applies to your next battle." : "Charm unequipped." };
+  }
   addSupply(account: string, supply: Supply, count = 1) {
     if (!Number.isSafeInteger(count) || count <= 0) throw new Error("Invalid supply count");
     this.update(account, (p) => {
@@ -89,7 +108,7 @@ export class Satchels {
     return null;
   }
   /** Apply once per accepted turn, including failed seal rolls. Invalid/rejected moves spend nothing. */
-  applyTurn(account: string, tokenId: string, battleId: string, action: PlayerAction, state: BattleState) {
+  applyTurn(account: string, tokenId: string, battleId: string, action: PlayerAction, state: BattleState, ward?: string) {
     this.update(account, (p) => {
       const supply = action.kind === "seal" ? (action.gilded ? "gilded" : "blank") : action.kind === "item" ? "salve" : null;
       if (supply) {
@@ -98,6 +117,10 @@ export class Satchels {
         if (state.outcome === "bound") p.pendingBindings[battleId] = supply;
       }
       p.ink[tokenId] = { hp: state.player.hp, maxHp: state.player.maxHp };
+      if (ward === "tide" && p.exploration.flags.includes("net-accepted")) {
+        if (state.outcome === "won" && !p.exploration.flags.includes("tide-cleared")) p.exploration.flags.push("tide-cleared");
+        if (state.outcome === "bound" && !p.pendingTideBindings.includes(battleId)) p.pendingTideBindings.push(battleId);
+      }
     });
     if (state.outcome === "bound") this.binding.add(account);
   }
@@ -107,12 +130,19 @@ export class Satchels {
     this.update(account, (p) => {
       const supply = p.pendingBindings[battleId]!;
       if (receipt.status === "failed" && !receipt.tokenId) p.supplies[supply]++;
+      if (p.pendingTideBindings.includes(battleId) && (receipt.status === "done" || receipt.tokenId)
+        && !p.exploration.flags.includes("tide-cleared")) p.exploration.flags.push("tide-cleared");
+      p.pendingTideBindings = p.pendingTideBindings.filter(id => id !== battleId);
       delete p.pendingBindings[battleId];
     });
     this.binding.delete(account);
   }
   completeOfflineBinding(account: string, battleId: string) {
-    if (this.read(account).pendingBindings[battleId]) this.update(account, (p) => { delete p.pendingBindings[battleId]; });
+    if (this.read(account).pendingBindings[battleId]) this.update(account, (p) => {
+      delete p.pendingBindings[battleId];
+      if (p.pendingTideBindings.includes(battleId) && !p.exploration.flags.includes("tide-cleared")) p.exploration.flags.push("tide-cleared");
+      p.pendingTideBindings = p.pendingTideBindings.filter(id => id !== battleId);
+    });
     this.binding.delete(account);
   }
 
@@ -138,7 +168,7 @@ export class Satchels {
     const [owned, ember, points] = await Promise.all([this.owned(account), this.chain?.ember(account) ?? null, this.chain?.points(account) ?? null]);
     this.sync(account, owned); const p = this.read(account);
     return { carried: p.carried, case: owned.filter((t) => !p.carried.includes(t.tokenId)).map((t) => t.tokenId),
-      supplies: p.supplies, keepsakes: p.keepsakes,
+      supplies: p.supplies, keepsakes: p.keepsakes, exploration: explorationView(p.exploration, p.keepsakes),
       ink: Object.fromEntries(owned.map((t) => [t.tokenId, this.inkFor(account, t)])), ember, points };
   }
   async carry(account: string, tokenId: unknown, carry: unknown): Promise<SatchelView> {

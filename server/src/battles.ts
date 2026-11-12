@@ -80,7 +80,7 @@ export interface TurnAnswer {
   curfew?: string;
   /** Only when the battle has ended: where it was fought. */
   ward?: WardId;
-  initial?: { playerHp: number; items: BattleState["items"] };
+  initial?: { playerHp: number; items: BattleState["items"]; equipment?: import("@grudgebound/shared").EquipmentSnapshot };
 }
 
 type Answer<T> = { status: 200; body: T } | { status: number; body: { error: string } };
@@ -231,7 +231,8 @@ export class BattleSessions {
     const refusal = guard?.({ account, ward: ward as WardId, omen: wild.omen });
     if (refusal) return fail(409, refusal);
     const supplies = account && this.satchels ? this.satchels.supplies(account) : undefined;
-    const initial = supplies && partner ? { playerHp: partner.hp, items: { gilded: supplies.gilded, salve: supplies.salve } } : undefined;
+    const equipment = account ? this.satchels?.equipment(account) : undefined;
+    const initial = supplies && partner ? { playerHp: partner.hp, items: { gilded: supplies.gilded, salve: supplies.salve }, ...(equipment ? { equipment } : {}) } : undefined;
     const state = createBattle({ wild: wild.id, omen: wild.omen, playerCurse, ...initial });
     const s: Session = {
       id: this.newId(), ward: ward as WardId, by, account, seed, wildId: wild.id, omen: wild.omen, playerCurse,
@@ -275,7 +276,7 @@ export class BattleSessions {
     if (noBind) return fail(409, `Curfew: "${noBind}". You can't seal it here now.`);
 
     const t = resolveTurn(s.state, action, s.rng);
-    if (s.account && s.partnerTokenId && this.satchels) this.satchels.applyTurn(s.account, s.partnerTokenId, s.id, action, t.state);
+    if (s.account && s.partnerTokenId && this.satchels) this.satchels.applyTurn(s.account, s.partnerTokenId, s.id, action, t.state, s.ward);
     s.state = t.state;
     s.actions.push(action);
     s.lastSeen = this.now();

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -8,7 +8,7 @@ import { createServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  createBattle, createRng, createWorld, DEFAULT_PLAYER_CURSE, quoteSellPrice, step, totalGrudge,
+  createBattle, createRng, createWorld, DEFAULT_PLAYER_CURSE, quoteSellPrice, step, totalGrudge, resolveTurn,
 } from "@grudgebound/shared";
 import { AuthError } from "./auth";
 import { ChainWriter, battleLogHash, type BattleRecord, type ChainTalisman } from "./chain";
@@ -24,6 +24,96 @@ test("fifty rests leave the shared event feed unchanged", async () => {
   const s = setup(); const before = structuredClone(s.world.events);
   for (let i = 0; i < 50; i++) await s.satchels.rest(ACCOUNT);
   assert.deepEqual(s.world.events, before);
+});
+
+test("exploration rewards are once per account, ordered, and survive restart", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gb-discovery-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "satchels.json"), world = createWorld(2);
+  const s = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  await assert.rejects(s.explore(ACCOUNT, "storehouse-chest"), isStatus(403));
+  await assert.rejects(s.equip(ACCOUNT, "etched-focus"), isStatus(403));
+  await assert.rejects(s.explore(ACCOUNT, "fake-discovery"), isStatus(400));
+  await Promise.all(Array.from({ length: 12 }, () => s.explore(ACCOUNT, "alley-parcel")));
+  assert.deepEqual(s.supplies(ACCOUNT), { blank: 5, salve: 2, gilded: 0 });
+  await s.explore(ACCOUNT, "lamp-kit"); // find before accepting
+  await s.explore(ACCOUNT, "lamplighter");
+  await s.equip(ACCOUNT, "worn-focus");
+  assert.equal(s.equipment(ACCOUNT)?.attack, 1);
+  await s.explore(ACCOUNT, "reed-bundle");
+  const won = createBattle({ wild: "cinder-grin" }); won.outcome = "won";
+  s.applyTurn(ACCOUNT, "starter", "before", { kind: "ward" }, won, "tide");
+  assert.ok(!(await s.explore(ACCOUNT, "net-mender")).exploration.flags.includes("net-done"));
+  const fled = { ...won, outcome: "fled" as const };
+  s.applyTurn(ACCOUNT, "starter", "flee", { kind: "flee" }, fled, "tide");
+  s.applyTurn(ACCOUNT, "starter", "elsewhere", { kind: "ward" }, won, "lantern");
+  assert.ok(!(await s.view(ACCOUNT)).exploration.flags.includes("tide-cleared"));
+  s.applyTurn(ACCOUNT, "starter", "victory", { kind: "attack" }, won, "tide");
+  await s.explore(ACCOUNT, "net-mender");
+  await s.explore(ACCOUNT, "receipt-clerk");
+  await s.explore(ACCOUNT, "storehouse-door");
+  await s.explore(ACCOUNT, "storehouse-chest");
+  const reloaded = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  const complete = await reloaded.explore(ACCOUNT, "storehouse-chest");
+  assert.equal(complete.supplies.gilded, 1);
+  assert.equal(complete.exploration.gear.length, 3);
+  assert.equal(complete.exploration.equipped, "worn-focus");
+  assert.ok(complete.exploration.journal.every(j => j.status === "complete"));
+  assert.ok(complete.exploration.notes.some(n => n.id === "storehouse-record"));
+  assert.deepEqual((await reloaded.view(OTHER)).exploration.flags, []);
+  assert.deepEqual(reloaded.supplies(OTHER), STARTER_KIT);
+});
+
+test("legacy Satchel migration preserves supplies and starter-kit history", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "gb-discovery-migration-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, "satchels.json"), world = createWorld(2);
+  const s = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  await s.view(ACCOUNT);
+  const saved = JSON.parse(readFileSync(file, "utf8")); saved.version = 1;
+  for (const [, p] of saved.players) { delete p.exploration; delete p.pendingTideBindings; }
+  writeFileSync(file, JSON.stringify(saved));
+  const old = new Satchels(world, null, { file, starterKit: STARTER_KIT });
+  assert.deepEqual((await old.view(ACCOUNT)).supplies, STARTER_KIT);
+  await old.explore(ACCOUNT, "dock-tin");
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).version, 2);
+  assert.equal(old.supplies(ACCOUNT).salve, 2);
+});
+
+test("Tide binding objective waits for mint settlement and failed mint never completes it", async () => {
+  const s = new Satchels(createWorld(2), null, { starterKit: STARTER_KIT });
+  await s.explore(ACCOUNT, "net-mender");
+  const bound = createBattle({ wild: "cinder-grin" }); bound.outcome = "bound";
+  s.applyTurn(ACCOUNT, "starter", "failed", { kind: "seal" }, bound, "tide");
+  assert.ok(!(await s.view(ACCOUNT)).exploration.flags.includes("tide-cleared"));
+  s.settleBinding(ACCOUNT, "failed", { status: "failed", error: "mint rejected" } as any);
+  assert.ok(!(await s.view(ACCOUNT)).exploration.flags.includes("tide-cleared"));
+  s.applyTurn(ACCOUNT, "starter", "minted", { kind: "seal" }, bound, "tide");
+  s.settleBinding(ACCOUNT, "minted", { status: "failed", tokenId: "minted-token", error: "points failed" } as any);
+  assert.ok((await s.view(ACCOUNT)).exploration.flags.includes("tide-cleared"));
+});
+
+test("equipment changes real battle damage, is frozen, and is included in replay proof", async () => {
+  const s = setup();
+  s.world.wards.lantern!.grudge = { rage: 0, sorrow: 1, dread: 0 };
+  await s.satchels.explore(ACCOUNT, "lamp-kit"); await s.satchels.explore(ACCOUNT, "lamplighter");
+  await s.satchels.equip(ACCOUNT, "worn-focus");
+  const battles = new BattleSessions(s.world, { satchels: s.satchels, newSeed: () => 99 });
+  const start = battles.start({ ward: "lantern", account: ACCOUNT, equipment: { attack: 999 } }, undefined, await s.satchels.partner(ACCOUNT)).body as StartAnswer;
+  // Internal mutation simulates a changed catalog/loadout; the already-created fight keeps its snapshot.
+  await s.satchels.equip(ACCOUNT, "");
+  let end: TurnAnswer;
+  do { end = battles.turn({ battleId: start.battleId, action: { kind: "attack" } }, ACCOUNT).body as TurnAnswer; } while (!end.outcome);
+  assert.equal(end.initial?.equipment?.attack, 1);
+  const r = record(end), logHash = battleLogHash(r);
+  const check = checkBattle({ ...r, logHash, ward: "lantern", at: 0 });
+  assert.ok(check.hashMatches && check.outcomeMatches);
+  assert.notEqual(battleLogHash({ ...r, initial: { ...r.initial!, equipment: undefined } }), logHash);
+  const plain = createBattle({ wild: start.wild.id, playerCurse: end.view.player.speciesId });
+  const geared = createBattle({ wild: start.wild.id, playerCurse: end.view.player.speciesId, equipment: end.initial!.equipment });
+  assert.equal(geared.player.attack, plain.player.attack + 1);
+  assert.ok(resolveTurn(geared, { kind: "attack" }, createRng(4)).state.wild.hp
+    < resolveTurn(plain, { kind: "attack" }, createRng(4)).state.wild.hp, "equipment changes damage with identical rolls");
 });
 
 function setup(file?: string) {
@@ -324,7 +414,7 @@ test("HTTP Satchel routes enforce sessions, reject account injection and keep re
   for (let i = 0; i < 150 && !output.includes("Grudgebound server on"); i++) { assert.equal(child.exitCode, null, errors); await delay(50); }
   assert.ok(output.includes("Grudgebound server on"), errors);
   assert.equal((await fetch(base + "/satchel")).status, 401);
-  for (const path of ["/satchel/carry", "/satchel/salve", "/mender/restore", "/rest"]) assert.equal((await post(path, {})).status, 401);
+  for (const path of ["/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"]) assert.equal((await post(path, {})).status, 401);
   const start = await post("/auth/email/start", { email: "satchel@example.com" });
   const { challengeId } = await start.json() as { challengeId: string };
   for (let i = 0; i < 50 && !output.includes("[local sign-in]"); i++) await delay(20);
@@ -337,12 +427,22 @@ test("HTTP Satchel routes enforce sessions, reject account injection and keep re
   assert.equal((await fetch(base + "/satchel?account=victim.testnet", { headers })).status, 403);
   assert.equal((await post("/rest", { account: "victim.testnet" }, headers)).status, 403);
   assert.equal((await post("/satchel/carry", { tokenId: "foreign", carry: true }, headers)).status, 403);
+  assert.equal((await post("/exploration/interact", { id: "alley-parcel", account: "victim.testnet" }, headers)).status, 403);
+  assert.equal((await post("/exploration/interact", { id: "storehouse-chest" }, headers)).status, 403);
+  for (let i = 0; i < 2; ++i) {
+    const found = await post("/exploration/interact", { id: "alley-parcel", blank: 99999 }, headers);
+    assert.equal(found.status, 200);
+    assert.deepEqual((await found.json() as { supplies: object }).supplies, { blank: 5, gilded: 0, salve: 2 });
+  }
+  assert.equal((await post("/satchel/equip", { itemId: "etched-focus" }, headers)).status, 403);
   const before = await (await fetch(base + "/state")).json() as { tick: number };
   const rest = await post("/rest", {}, headers); assert.equal(rest.status, 200);
   assert.equal((await (await fetch(base + "/state")).json() as { tick: number }).tick, before.tick);
   const battle = await post("/battle/start", { ward: "lantern" }, headers); assert.equal(battle.status, 200);
   const { battleId } = await battle.json() as StartAnswer;
   assert.equal((await post("/rest", {}, headers)).status, 409);
+  assert.equal((await post("/satchel/equip", { itemId: "" }, headers)).status, 409);
+  assert.equal((await post("/exploration/interact", { id: "lamp-kit" }, headers)).status, 409);
   // With the starter kit a brand-new player can attempt a seal straight away (no Ember needed).
   const firstSeal = await post("/battle/turn", { battleId, action: { kind: "seal" } }, headers);
   assert.equal(firstSeal.status, 200);

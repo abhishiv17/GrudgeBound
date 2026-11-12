@@ -130,12 +130,20 @@ export interface BattleSetup {
   items?: Inventory;
   /** Persisted partner ink; omitted for old/full-health replays. */
   playerHp?: number;
+  /** Frozen server-selected bonuses; old archives omit this field. */
+  equipment?: import("./equipment").EquipmentSnapshot;
 }
 
 export function createBattle(setup: BattleSetup): BattleState {
   const wild = curseById(setup.wild);
   const player = curseById(setup.playerCurse ?? defaultPlayerCurse(setup.wild));
   const partner = makeCombatant(player);
+  if (setup.equipment) {
+    const e = setup.equipment;
+    if (e.version !== 1 || !Number.isSafeInteger(e.attack) || !Number.isSafeInteger(e.guard)
+      || e.attack < 0 || e.attack > 2 || e.guard < 0 || e.guard > 2) throw new Error("Invalid equipment snapshot");
+    partner.attack += e.attack; partner.guard += e.guard;
+  }
   if (setup.playerHp !== undefined) partner.hp = Math.max(0, Math.min(partner.maxHp, setup.playerHp));
   return {
     player: partner,

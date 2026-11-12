@@ -297,12 +297,14 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.searchParams.has("account") && url.searchParams.get("account") !== player.account) throw new AuthError(403, "You can only load your signed-in Satchel.");
     return send(res, 200, await satchels.view(player.account));
   }
-  if (req.method === "POST" && ["/satchel/carry", "/satchel/salve", "/mender/restore", "/rest"].includes(url.pathname)) {
+  if (req.method === "POST" && ["/satchel/carry", "/satchel/salve", "/satchel/equip", "/exploration/interact", "/mender/restore", "/rest"].includes(url.pathname)) {
     const player = auth.authenticate(sessionToken(req));
     return playerAction(player.account, async () => {
       const body = playerBody(await readJson(req), player);
       outsideBattle(player.account);
       const result = url.pathname === "/satchel/carry" ? await satchels.carry(player.account, body.tokenId, body.carry)
+        : url.pathname === "/satchel/equip" ? await satchels.equip(player.account, body.itemId)
+        : url.pathname === "/exploration/interact" ? await satchels.explore(player.account, body.id)
         : url.pathname === "/satchel/salve" ? await satchels.useSalve(player.account, body.tokenId)
         : url.pathname === "/mender/restore" ? await satchels.restore(player.account, body.tokenId)
         : await satchels.rest(player.account);

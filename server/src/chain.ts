@@ -75,7 +75,7 @@ export interface BattleRecord {
   actions: PlayerAction[];
   wild: { speciesId: string; emotion: Combatant["emotion"]; omen: Omen };
   playerCurse: string;
-  initial?: { playerHp: number; items: { salve: number; gilded: number } };
+  initial?: { playerHp: number; items: { salve: number; gilded: number }; equipment?: import("@grudgebound/shared").EquipmentSnapshot };
 }
 
 export interface ChainTx {

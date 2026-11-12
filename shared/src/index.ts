@@ -11,3 +11,4 @@ export * from "./vows";
 export * from "./engine";
 export * from "./battle";
 export * from "./battleText";
+export * from "./equipment";
