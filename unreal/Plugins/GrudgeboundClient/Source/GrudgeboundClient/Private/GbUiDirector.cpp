@@ -42,6 +42,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
 #include "Misc/CommandLine.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "UnrealClient.h"
 #include "UObject/UObjectIterator.h"
@@ -1027,6 +1028,162 @@ void UGbGameFlowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			Panel->SetVisibility(ESlateVisibility::Visible);
 			FGbPanelFixtures::Fill(Panel, Name);
 		}), 1.5f, true, 8.f);
+	}
+
+	// -GbPathSpec=<file> -GbPathOut=<folder>: camera moves for trailer footage. Run with -benchmark -fps=30 so
+	// every engine tick is exactly 1/30 s and each frame is saved as <folder>/<shot>/fNNNN.png. One shot per line:
+	//   <name> <frames> [setup tokens] <key> <key> ...   key = x,y,z,pitch,yaw[,fov] (world cm), or @dx,dy,dz,pitch,yaw[,fov]
+	//   relative to the player when the shot starts. Tokens: rival-<spot>, t (Tide quay), f (board the ferry),
+	//   follow (keys stay relative to the player every frame), pawn=x,y,z,yaw, pawnto=x,y,z (walks over the shot),
+	//   linear (no ease), pcam (the player's own camera instead of keys), skip=N (ticks to wait after setup, default 20).
+	FString PathSpec;
+	if (FParse::Value(FCommandLine::Get(), TEXT("GbPathSpec="), PathSpec))
+	{
+		struct FPathKey { FVector L = FVector::ZeroVector; FVector R = FVector::ZeroVector; bool bRel = false; };
+		struct FPathShot { FString Name; int32 Frames = 0; TArray<FPathKey> Keys; TArray<FString> Setup; };
+		struct FPathRun
+		{
+			TArray<FPathShot> Shots; FString Out; int32 Shot = 0; int32 Tick = 0; int32 Phase = 0; int32 Frame = 0; int32 Skip = 20;
+			FVector Origin = FVector::ZeroVector; FVector PawnFrom = FVector::ZeroVector; FVector PawnTo = FVector::ZeroVector;
+			bool bPawnMove = false; bool bFollow = false; bool bLinear = false; bool bPlayerCam = false;
+			TWeakObjectPtr<ACameraActor> Cam; FDelegateHandle Handle;
+		};
+		TSharedRef<FPathRun> Run = MakeShared<FPathRun>();
+		FParse::Value(FCommandLine::Get(), TEXT("GbPathOut="), Run->Out);
+		TArray<FString> Lines;
+		FFileHelper::LoadFileToStringArray(Lines, *PathSpec);
+		for (FString Line : Lines)
+		{
+			Line.TrimStartAndEndInline();
+			if (Line.IsEmpty() || Line.StartsWith(TEXT("#"))) continue;
+			TArray<FString> T; Line.ParseIntoArrayWS(T);
+			if (T.Num() < 2) continue;
+			FPathShot S; S.Name = T[0]; S.Frames = FCString::Atoi(*T[1]);
+			for (int32 I = 2; I < T.Num(); ++I)
+			{
+				const TCHAR C = T[I][0];
+				const bool bRel = C == TEXT('@');
+				if (bRel || C == TEXT('-') || FChar::IsDigit(C))
+				{
+					TArray<FString> P; T[I].Mid(bRel ? 1 : 0).ParseIntoArray(P, TEXT(","));
+					if (P.Num() < 5) continue;
+					FPathKey K; K.bRel = bRel;
+					K.L = FVector(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]));
+					K.R = FVector(FCString::Atof(*P[3]), FCString::Atof(*P[4]), P.Num() >= 6 ? FCString::Atof(*P[5]) : 60.f);
+					S.Keys.Add(K);
+				}
+				else S.Setup.Add(T[I]);
+			}
+			Run->Shots.Add(S);
+		}
+		auto Spline = [](const TArray<FVector>& V, float U) -> FVector
+		{
+			if (V.Num() == 1) return V[0];
+			const float X = FMath::Clamp(U, 0.f, 1.f) * (V.Num() - 1);
+			const int32 I = FMath::Min(FMath::FloorToInt(X), V.Num() - 2);
+			const float F = X - I;
+			const FVector P0 = V[FMath::Max(I - 1, 0)], P1 = V[I], P2 = V[I + 1], P3 = V[FMath::Min(I + 2, V.Num() - 1)];
+			return 0.5f * ((2.f * P1) + (-P0 + P2) * F + (2.f * P0 - 5.f * P1 + 4.f * P2 - P3) * F * F + (-P0 + 3.f * P1 - 3.f * P2 + P3) * F * F * F);
+		};
+		TWeakObjectPtr<UWorld> World = &InWorld;
+		Run->Handle = FWorldDelegates::OnWorldTickStart.AddLambda([World, Run, Spline](UWorld* W, ELevelTick, float)
+		{
+			if (W != World.Get() || !W) return;
+			APlayerController* PC = W->GetFirstPlayerController();
+			APawn* Me = PC ? PC->GetPawn() : nullptr;
+			if (!PC || !Me) return;
+			if (++Run->Tick < 240) return; // streaming and first shaders settle
+			if (Run->Shot >= Run->Shots.Num())
+			{
+				if (Run->Phase++ > 30) { FWorldDelegates::OnWorldTickStart.Remove(Run->Handle); FPlatformMisc::RequestExit(false); }
+				return;
+			}
+			const FPathShot& S = Run->Shots[Run->Shot];
+			if (Run->Phase == 0)
+			{
+				for (TObjectIterator<UGbSignInWidget> It; It; ++It) if (It->GetWorld() == W) It->SetVisibility(ESlateVisibility::Collapsed);
+				Run->bPawnMove = Run->bFollow = Run->bLinear = Run->bPlayerCam = false; Run->Skip = 20;
+				for (const FString& Tok : S.Setup)
+				{
+					if (Tok == TEXT("follow")) Run->bFollow = true;
+					else if (Tok == TEXT("linear")) Run->bLinear = true;
+					else if (Tok == TEXT("pcam")) Run->bPlayerCam = true;
+					else if (Tok.StartsWith(TEXT("skip="))) Run->Skip = FCString::Atoi(*Tok.Mid(5));
+					else if (Tok.StartsWith(TEXT("rival-")))
+					{
+						for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director) { Director->bRivalPinned = true; Director->PlaceRivalAt(Tok.Mid(6)); }
+					}
+					else if (Tok == TEXT("t"))
+					{
+						for (TActorIterator<AGbTideWard> Tide(W); Tide; ++Tide)
+						{
+							GbBuildings::Teleport(Me, Tide->GetLandingLocation() - FVector(900.f, 0.f, 0.f));
+							if (UGbPlayerSubsystem* Player = PlayerOf(W)) Player->SetWardId(TEXT("tide"));
+						}
+					}
+					else if (Tok == TEXT("f"))
+					{
+						for (TActorIterator<AGbUiDirector> Director(W); Director; ++Director)
+							for (TActorIterator<AGbBuildingDoor> Door(W); Door; ++Door)
+								if (Door->Use == EGbBuildingUse::Travel && Door->TravelWard == TEXT("tide"))
+								{
+									GbBuildings::Teleport(Me, Door->GetActorLocation());
+									Director->Current = AGbUiDirector::EScreen::Ward;
+									Director->UseBuilding(*Door);
+								}
+					}
+					else if (Tok.StartsWith(TEXT("pawn=")) || Tok.StartsWith(TEXT("pawnto=")))
+					{
+						const bool bTo = Tok.StartsWith(TEXT("pawnto="));
+						TArray<FString> P; Tok.Mid(bTo ? 7 : 5).ParseIntoArray(P, TEXT(","));
+						if (P.Num() < 3) continue;
+						const FVector L(FCString::Atof(*P[0]), FCString::Atof(*P[1]), FCString::Atof(*P[2]));
+						if (bTo) { Run->bPawnMove = true; Run->PawnTo = L; }
+						else
+						{
+							GbBuildings::Teleport(Me, L);
+							if (P.Num() >= 4) Me->SetActorRotation(FRotator(0.f, FCString::Atof(*P[3]), 0.f));
+						}
+					}
+				}
+				if (UGbExorcistLook* Look = UGbExorcistLook::Ensure(Me)) Look->SetPreviewWalk(Run->bPawnMove);
+				Run->Phase = 1; Run->Frame = 0; Run->Tick = 240;
+				return;
+			}
+			if (Run->Phase == 1)
+			{
+				if (Run->Tick < 240 + Run->Skip) return;
+				Run->Origin = Me->GetActorLocation();
+				Run->PawnFrom = Run->Origin;
+				if (Run->bPawnMove && !Run->PawnTo.IsZero())
+				{
+					const FVector D = Run->PawnTo - Run->PawnFrom;
+					Me->SetActorRotation(FRotator(0.f, D.Rotation().Yaw, 0.f));
+				}
+				if (!Run->bPlayerCam)
+				{
+					if (!Run->Cam.IsValid()) Run->Cam = W->SpawnActor<ACameraActor>();
+					Run->Cam->GetCameraComponent()->SetConstraintAspectRatio(false);
+					PC->SetViewTarget(Run->Cam.Get());
+				}
+				else PC->SetViewTarget(Me);
+				Run->Phase = 2;
+			}
+			const float X = S.Frames > 1 ? float(Run->Frame) / float(S.Frames - 1) : 0.f;
+			const float U = Run->bLinear ? X : 0.5f - 0.5f * FMath::Cos(PI * X);
+			if (Run->bPawnMove) Me->SetActorLocation(FMath::Lerp(Run->PawnFrom, Run->PawnTo, X), false, nullptr, ETeleportType::TeleportPhysics);
+			if (!Run->bPlayerCam && Run->Cam.IsValid() && S.Keys.Num() > 0)
+			{
+				const FVector Base = Run->bFollow ? Me->GetActorLocation() : Run->Origin;
+				TArray<FVector> Ls, Rs;
+				for (const FPathKey& K : S.Keys) { Ls.Add(K.bRel ? Base + K.L : K.L); Rs.Add(K.R); }
+				const FVector L = Spline(Ls, U), R = Spline(Rs, U);
+				Run->Cam->SetActorLocationAndRotation(L, FRotator(R.X, R.Y, 0.f));
+				Run->Cam->GetCameraComponent()->SetFieldOfView(R.Z);
+			}
+			FScreenshotRequest::RequestScreenshot(FString::Printf(TEXT("%s/%s/f%04d.png"), *Run->Out, *S.Name, Run->Frame), false, false);
+			if (++Run->Frame >= S.Frames) { ++Run->Shot; Run->Phase = 0; }
+		});
 	}
 
 	FString ShotFolder;
