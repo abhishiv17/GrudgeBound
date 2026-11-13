@@ -5,12 +5,11 @@ A Windows game (Unreal Engine 5) set in Hollowmere, a harbour town where **greed
 raises a Grudge; the Grudge spawns curses; players fight and bind those curses into talismans they own,
 then spend the points they earn to add rules to the game for everyone.
 
-Built at [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), track **Games With Real Economies**.
+Built at [NEAR HACKATHON](https://nearhackathon.com) (1-14 November 2026), tracks **Games With Real Economies** and **Agent Economy**.
 
-<!-- OWNER: add the demo video link. -->
 | | |
 |---|---|
-| Demo video | added with the demo post |
+| Trailer (2:23) | [YouTube](https://youtu.be/XgUaBAAAkWM) · [demo post on X](https://x.com/abhishiv17/status/2121149511699673525) |
 | Windows build (GitHub Release) | [Grudgebound for Windows (13 Nov)](https://github.com/abhishiv17/GrudgeBound/releases/tag/build-2026-11-13), 344 MB zip, built from `eb7f5a6` (SHA-256 in the release notes) |
 | Hosted game server | `https://grudgebound-server.onrender.com` ([health](https://grudgebound-server.onrender.com/health), [live town](https://grudgebound-server.onrender.com/state), [AI agents' accounts](https://grudgebound-server.onrender.com/agents)). Free hosting: the first request after a quiet spell can take up to a minute. |
 | Contracts (NEAR testnet) | [`items.grudgebound.testnet`](https://testnet.nearblocks.io/address/items.grudgebound.testnet) · [`rite.grudgebound.testnet`](https://testnet.nearblocks.io/address/rite.grudgebound.testnet) |
@@ -143,7 +142,6 @@ Copy `.env.example` to `.env`. **Never commit `.env` or any key.** Sign-in and t
 
 ## Disclosures (hackathon rule Q-005)
 
-<!-- OWNER: confirm the AI-code wording and the Q-015 line before submission. -->
 - **Libraries and engines:** Unreal Engine 5.8, Next.js, React, Phaser 3, TypeScript, tsx, near-api-js,
   near-sdk (Rust), Resend (email delivery), Upstash Redis (hosted data mirror), NEAR AI Cloud. Tests use
   Node's built-in test runner and Unreal's automation framework.
@@ -163,12 +161,8 @@ Copy `.env.example` to `.env`. **Never commit `.env` or any key.** Sign-in and t
 
 ## Team
 
-<!-- OWNER: names are yours to fill in. -->
-| Seat | Owns | Who |
-|---|---|---|
-| Chain & Server | contracts, relayer, server, deploy | _TBD_ |
-| Game Client | Unreal client, battles, UI, art, demo video | _TBD_ |
-| AI & Economy | pricing, Grudge tuning, agents, simulator, Observatory | _TBD_ |
+Solo entry by [abhishiv17](https://github.com/abhishiv17): contracts, relayer, server, Unreal client, battles,
+UI, art, economy, AI agents and the trailer.
 
 ## License
 
