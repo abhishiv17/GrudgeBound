@@ -161,7 +161,10 @@ Copy `.env.example` to `.env`. **Never commit `.env` or any key.** Sign-in and t
 
 ## Team
 
-A team of two, led by [abhishiv17](https://github.com/abhishiv17).
+| Member | Work |
+|---|---|
+| [abhishiv17](https://github.com/abhishiv17) (lead) | most of the project: contracts, relayer, server, Unreal client, battles, UI, art, economy, AI agents, trailer |
+| Chethan S | initial setup |
 
 ## License
 
